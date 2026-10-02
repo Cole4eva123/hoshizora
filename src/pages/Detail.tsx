@@ -16,9 +16,9 @@ import {
   img,
   nextEpisodeText,
   relativeDays,
+  releaseOf,
   useLogo,
   useTmdb,
-  yearOf,
 } from '@/lib/tmdb'
 import { cn } from '@/lib/utils'
 
@@ -77,16 +77,15 @@ function TitleInfo({ m }: { m: Details }) {
   if (!ready) return null
   return (
     <div className="max-w-2xl animate-in duration-700 fade-in slide-in-from-bottom-2 motion-reduce:animate-none">
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-foreground/75">
+      <Title m={m} logo={logo} as="h1" />
+      <Ratings m={m}>
         <span>{m.media_type === 'tv' ? '剧集' : '电影'}</span>
-        <span>{yearOf(m)}</span>
+        <span>{releaseOf(m)}</span>
         {m.genres.slice(0, 3).map((g) => (
           <span key={g.id}>{g.name}</span>
         ))}
         {!!m.runtime && <span>{m.runtime} 分钟</span>}
-      </p>
-      <Title m={m} logo={logo} as="h1" />
-      <Ratings m={m} />
+      </Ratings>
       <p className="mt-4 max-w-xl text-[15px] leading-7 text-foreground/80">
         {m.overview || 'TMDB 上还没有这部作品的中文简介。'}
       </p>

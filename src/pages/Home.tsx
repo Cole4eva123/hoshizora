@@ -5,7 +5,7 @@ import { PosterRow } from '@/components/PosterRow'
 import { PosterWall, Title } from '@/components/PosterWall'
 import { Ratings } from '@/components/Ratings'
 import { Button } from '@/components/ui/button'
-import { type Media, type MediaList, categories, hasToken, useLogo, useTmdb, yearOf } from '@/lib/tmdb'
+import { type Media, type MediaList, categories, hasToken, releaseOf, useLogo, useTmdb } from '@/lib/tmdb'
 
 const shuffled = <T,>(list: T[]) =>
   list
@@ -55,12 +55,11 @@ function Info({ m }: { m: Media }) {
   if (!ready) return null
   return (
     <div className="max-w-2xl animate-in duration-700 fade-in slide-in-from-bottom-2 motion-reduce:animate-none">
-      <p className="flex items-center gap-3 text-sm text-foreground/75">
-        <span>{m.media_type === 'tv' ? '剧集' : '电影'}</span>
-        <span>{yearOf(m)}</span>
-      </p>
       <Title m={m} logo={logo} />
-      <Ratings m={m} />
+      <Ratings m={m}>
+        <span>{m.media_type === 'tv' ? '剧集' : '电影'}</span>
+        <span>{releaseOf(m)}</span>
+      </Ratings>
       {m.overview && (
         <p className="mt-4 line-clamp-2 max-w-xl text-[15px] leading-7 text-foreground/80 md:line-clamp-3">
           {m.overview}

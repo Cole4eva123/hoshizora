@@ -48,6 +48,12 @@ export const typeOf = (c: Category): MediaType => (c.path.includes('/tv') ? 'tv'
 export const titleOf = (m: Media) => m.title ?? m.name ?? ''
 export const originalTitleOf = (m: Media) => m.original_title ?? m.original_name ?? ''
 export const yearOf = (m: Media) => (m.release_date ?? m.first_air_date ?? '').slice(0, 4)
+const fullDate = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'long' })
+// release or first air date in full, "2026年9月28日"
+export const releaseOf = (m: Media) => {
+  const date = m.release_date || m.first_air_date
+  return date ? fullDate.format(dayOf(date)) : ''
+}
 export const img = (path: string | null, size: 'w300' | 'w342' | 'w500' | 'w1280') =>
   path ? `https://image.tmdb.org/t/p/${size}${path}` : undefined
 

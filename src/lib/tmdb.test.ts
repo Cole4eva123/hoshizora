@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { type Details, type Episode, type Logo, daysUntil, isDarkInk, nextEpisodeText, pickLogo } from './tmdb'
+import { type Details, type Episode, type Logo, type Media, daysUntil, isDarkInk, nextEpisodeText, pickLogo, releaseOf } from './tmdb'
 
 const now = new Date('2026-10-02T21:30')
 const ep = (season_number: number, episode_number: number, air_date: string | null) =>
@@ -40,4 +40,10 @@ test('logo: Simplified Chinese, then the original language, then English; dark i
   expect(isDarkInk(ink(147, 10, 11, 255))).toBe(false)
   expect(isDarkInk(ink(255, 255, 255, 255))).toBe(false)
   expect(isDarkInk(ink(0, 0, 0, 0))).toBe(false) // nothing opaque
+})
+
+test('release date in full', () => {
+  expect(releaseOf({ media_type: 'movie', release_date: '2026-09-28' } as Media)).toBe('2026年9月28日')
+  expect(releaseOf({ media_type: 'tv', first_air_date: '2025-03-27' } as Media)).toBe('2025年3月27日')
+  expect(releaseOf({ media_type: 'movie', release_date: '' } as Media)).toBe('') // not dated yet
 })

@@ -28,7 +28,7 @@ export function Title({ m, logo, as: Heading = 'h2' }: { m: Media; logo?: Logo; 
   return (
     <>
       {art ? (
-        <Heading className="mt-3">
+        <Heading>
           <img
             src={img(art.file_path, 'w500')}
             srcSet={`${img(art.file_path, 'w1280')} 2x`}
@@ -44,7 +44,7 @@ export function Title({ m, logo, as: Heading = 'h2' }: { m: Media; logo?: Logo; 
           />
         </Heading>
       ) : (
-        <Heading className="mt-3 line-clamp-2 font-heading text-4xl leading-tight font-black text-balance md:text-6xl">
+        <Heading className="line-clamp-2 font-heading text-4xl leading-tight font-black text-balance md:text-6xl">
           {title}
         </Heading>
       )}

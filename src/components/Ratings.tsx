@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useRatings } from '@/lib/ratings'
 import type { Media } from '@/lib/tmdb'
 import { cn } from '@/lib/utils'
@@ -32,7 +33,8 @@ const sources = {
   },
 }
 
-export function Ratings({ m }: { m: Media }) {
+// `children` (type, date…) follow the scores on the same line, in a quieter colour.
+export function Ratings({ m, children }: { m: Media; children?: ReactNode }) {
   const r = useRatings(m)
   const scores: [keyof typeof sources, string | undefined][] = [
     ['tmdb', m.vote_average ? m.vote_average.toFixed(1) : undefined],
@@ -57,6 +59,7 @@ export function Ratings({ m }: { m: Media }) {
             </span>
           )
         })}
+      <span className="contents text-foreground/75">{children}</span>
     </p>
   )
 }
