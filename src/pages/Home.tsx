@@ -2,8 +2,8 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { History, Pause, Play } from 'lucide-react'
 import { PosterRow } from '@/components/PosterRow'
+import { Ratings } from '@/components/Ratings'
 import { Button } from '@/components/ui/button'
-import { useRatings } from '@/lib/ratings'
 import { cn } from '@/lib/utils'
 import {
   type Media,
@@ -142,30 +142,6 @@ function Info({ m }: { m: Media }) {
         </p>
       )}
     </div>
-  )
-}
-
-// Each source keeps its own colour so the scores can be told apart at a glance.
-function Ratings({ m }: { m: Media }) {
-  const r = useRatings(m)
-  const rows: [string, string, string | undefined][] = [
-    ['TMDB', 'text-(--tmdb)', m.vote_average ? m.vote_average.toFixed(1) : undefined],
-    ['IMDb', 'text-[#f5c518]', r.imdb?.toFixed(1)],
-    ['烂番茄', 'text-[#fa320a]', r.tomatoes === undefined ? undefined : `${r.tomatoes}%`],
-    ['豆瓣', 'text-[#00b51d]', r.douban?.toFixed(1)],
-    ['MAL', 'text-[#6f8fe0]', r.mal?.toFixed(2)],
-  ]
-  return (
-    <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-      {rows
-        .filter(([, , v]) => v)
-        .map(([label, color, v]) => (
-          <span key={label}>
-            <span className={cn('mr-1.5 font-semibold', color)}>{label}</span>
-            {v}
-          </span>
-        ))}
-    </p>
   )
 }
 
