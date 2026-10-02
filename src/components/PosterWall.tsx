@@ -7,7 +7,8 @@ import { cn } from '@/lib/utils'
 const scrollToSlide = (el: HTMLElement | null, i: number) => el?.scrollTo({ left: i * el.clientWidth })
 
 // A full-screen, swipeable wall of backdrops. `info` describes the current slide over its lower left,
-// and `children` sit on its lower edge.
+// and `children` sit on its lower edge, with the wall running past the fold so only about their top half
+// shows on the first screen (posters grow with the screen width, hence vw).
 export function PosterWall({
   label,
   backdrops,
@@ -32,7 +33,13 @@ export function PosterWall({
   }, [index, paused, backdrops.length])
 
   return (
-    <section aria-label={label} className="relative -ml-(--rail) flex min-h-svh flex-col justify-end pb-6">
+    <section
+      aria-label={label}
+      className={cn(
+        'relative -ml-(--rail) flex flex-col justify-end pb-6',
+        children ? 'min-h-[calc(100svh+30vw)] md:min-h-[calc(100svh+15vw)]' : 'min-h-svh',
+      )}
+    >
       {current && (
         // The current backdrop, blurred, stays behind the whole page.
         <img
