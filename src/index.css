@@ -1,0 +1,99 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-heading: "Noto Serif SC", "Songti SC", serif;
+  --font-heading--font-feature-settings: "palt";
+  --color-tone: var(--tone);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Dark only. 墨 ink, 黛 surface, 月白 text, 青瓷 celadon accent. */
+:root {
+  color-scheme: dark;
+  --background: #0e1619;
+  --foreground: #d8e2df;
+  --card: #142024;
+  --card-foreground: var(--foreground);
+  --popover: #142024;
+  --popover-foreground: var(--foreground);
+  --primary: #8fcaab;
+  --primary-foreground: #0e1619;
+  --secondary: #1c2b30;
+  --secondary-foreground: var(--foreground);
+  --muted: #1c2b30;
+  --muted-foreground: #8c9d9b;
+  --accent: #1c2b30;
+  --accent-foreground: var(--foreground);
+  --destructive: #e5857a;
+  --border: #22343a;
+  --input: #2a3e45;
+  --ring: #8fcaab;
+  --radius: 0.75rem;
+
+  /* search scopes: all servers / TMDB / one server */
+  --tmdb: #63b8dc;
+  --apricot: #e2a47c;
+  --tone: var(--primary);
+
+  /* left rail width and page gutter, shared by sidebar, hero and rows */
+  --rail: calc(4.5rem + env(safe-area-inset-left));
+  --gutter: 1.25rem;
+}
+
+@media (width >= 48rem) {
+  :root {
+    --rail: calc(12rem + env(safe-area-inset-left));
+    --gutter: 2.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
