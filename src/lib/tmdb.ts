@@ -40,12 +40,62 @@ export const categories = [
 ]
 
 export type Category = (typeof categories)[number]
+export type MediaType = 'movie' | 'tv'
+
+// Discover results carry no media_type, so a row's type comes from its endpoint.
+export const typeOf = (c: Category): MediaType => (c.path.includes('/tv') ? 'tv' : 'movie')
 
 export const titleOf = (m: Media) => m.title ?? m.name ?? ''
 export const originalTitleOf = (m: Media) => m.original_title ?? m.original_name ?? ''
 export const yearOf = (m: Media) => (m.release_date ?? m.first_air_date ?? '').slice(0, 4)
-export const img = (path: string | null, size: 'w300' | 'w342' | 'w1280') =>
+export const img = (path: string | null, size: 'w300' | 'w342' | 'w500' | 'w1280') =>
   path ? `https://image.tmdb.org/t/p/${size}${path}` : undefined
+
+export type Episode = {
+  id: number
+  season_number: number
+  episode_number: number
+  name: string
+  overview: string
+  air_date: string | null
+  runtime: number | null
+  still_path: string | null
+}
+
+// A movie or show with images and credits appended. The season and episode fields are TV only.
+export type Details = Media & {
+  genres: { id: number; name: string }[]
+  runtime?: number
+  status: string
+  number_of_seasons?: number
+  number_of_episodes?: number
+  seasons?: { id: number; season_number: number; name: string }[]
+  next_episode_to_air?: Episode | null
+  last_episode_to_air?: Episode | null
+  images: { backdrops: { file_path: string }[] }
+  credits: { cast: { credit_id: string; name: string; character: string; profile_path: string | null }[] }
+}
+
+// Air dates are calendar days, so count whole days from today's date rather than from the clock.
+export const dayOf = (date: string) => new Date(`${date}T00:00`)
+export const daysUntil = (date: string, now = new Date()) =>
+  Math.round((dayOf(date).getTime() - new Date(now).setHours(0, 0, 0, 0)) / 86_400_000)
+export const airDate = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })
+export const relativeDays = new Intl.RelativeTimeFormat('zh-CN', { numeric: 'auto' })
+
+// When the next episode comes out, or why there isn't one.
+export function nextEpisodeText(tv: Details, now = new Date()) {
+  const seasons = tv.number_of_seasons ?? 1
+  const next = tv.next_episode_to_air
+  if (next) {
+    const ep = seasons > 1 ? `第 ${next.season_number} 季第 ${next.episode_number} 集` : `第 ${next.episode_number} 集`
+    if (!next.air_date) return `下一集：${ep}，播出时间还没公布`
+    return `下一集：${ep}，${airDate.format(dayOf(next.air_date))}播出（${relativeDays.format(daysUntil(next.air_date, now), 'day')}）`
+  }
+  const done = ({ Ended: '已完结', Canceled: '已停播' } as Record<string, string>)[tv.status]
+  if (!done) return '下一集的播出时间还没公布'
+  return `${done}，共 ${seasons > 1 ? `${seasons} 季 ` : ''}${tv.number_of_episodes} 集`
+}
 
 const errorText = (e: unknown) => {
   if (!axios.isAxiosError(e)) return e instanceof Error ? e.message : String(e)

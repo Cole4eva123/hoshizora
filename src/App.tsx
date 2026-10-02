@@ -1,4 +1,4 @@
-import { NavLink, Outlet, ScrollRestoration, useMatch } from 'react-router'
+import { NavLink, Outlet, ScrollRestoration, useLocation } from 'react-router'
 import { Heart, House, LibraryBig, Search, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -11,7 +11,9 @@ const nav = [
 ]
 
 export default function App() {
-  const inCategory = useMatch('/category/:key') !== null
+  const { pathname } = useLocation()
+  // categories and titles are opened from Home, so Home stays highlighted there
+  const underHome = /^\/(category|movie|tv)\//.test(pathname)
 
   return (
     <>
@@ -34,7 +36,7 @@ export default function App() {
             className={({ isActive }) =>
               cn(
                 'mx-2 flex flex-col items-center gap-1 rounded-xl py-2 text-[11px] text-muted-foreground transition-colors last:mt-auto hover:bg-white/4 hover:text-foreground md:mx-3 md:flex-row md:gap-3 md:px-3 md:text-[15px]',
-                (isActive || (to === '/' && inCategory)) && 'bg-white/7 text-foreground [&>svg]:text-primary',
+                (isActive || (to === '/' && underHome)) && 'bg-white/7 text-foreground [&>svg]:text-primary',
               )
             }
           >

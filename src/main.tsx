@@ -6,6 +6,7 @@ import '@fontsource/noto-serif-sc/900.css'
 import './index.css'
 import App from '@/App'
 import Category from '@/pages/Category'
+import Detail from '@/pages/Detail'
 import Favorites from '@/pages/Favorites'
 import Home from '@/pages/Home'
 import Library from '@/pages/Library'
@@ -19,6 +20,8 @@ const router = createBrowserRouter(
       children: [
         { index: true, element: <Home /> },
         { path: 'category/:key', element: <Category /> },
+        { path: 'movie/:id', element: <Detail type="movie" /> },
+        { path: 'tv/:id', element: <Detail type="tv" /> },
         { path: 'favorites', element: <Favorites /> },
         { path: 'library', element: <Library /> },
         { path: 'search', element: <Search /> },
