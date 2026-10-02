@@ -15,9 +15,10 @@ export default function App() {
 
   return (
     <>
+      {/* Blur only, no tint: Home's poster wall shows through, darkened by its own left scrim. */}
       <nav
         aria-label="主导航"
-        className="fixed inset-y-0 left-0 z-30 flex w-(--rail) flex-col gap-1 border-r border-white/6 bg-background/55 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[env(safe-area-inset-left)] backdrop-blur-2xl backdrop-saturate-150"
+        className="fixed inset-y-0 left-0 z-30 flex w-(--rail) flex-col gap-1 border-r border-white/6 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[env(safe-area-inset-left)] backdrop-blur-2xl backdrop-saturate-150"
       >
         <div className="mb-6 flex items-center justify-center gap-2.5 md:justify-start md:px-5">
           <span className="grid size-9 place-items-center rounded-lg bg-primary font-heading text-xl font-black text-primary-foreground">
