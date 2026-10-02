@@ -1,10 +1,59 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { Pause, Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { img } from '@/lib/tmdb'
+import { type Logo, type Media, img, isDarkInk, originalTitleOf, titleOf } from '@/lib/tmdb'
 import { cn } from '@/lib/utils'
 
 const scrollToSlide = (el: HTMLElement | null, i: number) => el?.scrollTo({ left: i * el.clientWidth })
+
+// TMDB's image host allows cross-origin reads, so a loaded logo can be sampled on a small canvas.
+const isDark = (logo: HTMLImageElement) => {
+  try {
+    const c = Object.assign(document.createElement('canvas'), { width: 48, height: 16 })
+    const g = c.getContext('2d')!
+    g.drawImage(logo, 0, 0, c.width, c.height)
+    return isDarkInk(g.getImageData(0, 0, c.width, c.height).data)
+  } catch {
+    return false // unreadable canvas: show the logo as it is
+  }
+}
+
+// The title in its own lettering when TMDB has a logo, else in our serif. Under a logo in another language goes
+// the Chinese name; otherwise the original name goes there, as with the text title.
+export function Title({ m, logo, as: Heading = 'h2' }: { m: Media; logo?: Logo; as?: 'h1' | 'h2' }) {
+  const [tone, setTone] = useState<'light' | 'dark' | 'broken'>()
+  const title = titleOf(m)
+  const original = originalTitleOf(m)
+  const art = tone !== 'broken' && logo
+  return (
+    <>
+      {art ? (
+        <Heading className="mt-3">
+          <img
+            src={img(art.file_path, 'w500')}
+            srcSet={`${img(art.file_path, 'w1280')} 2x`}
+            alt={title}
+            crossOrigin="anonymous"
+            onLoad={(e) => setTone(isDark(e.currentTarget) ? 'dark' : 'light')}
+            onError={() => setTone('broken')}
+            className={cn(
+              'max-h-20 max-w-[min(100%,32rem)] transition-opacity md:max-h-28',
+              !tone && 'opacity-0',
+              tone === 'dark' && 'brightness-0 invert',
+            )}
+          />
+        </Heading>
+      ) : (
+        <Heading className="mt-3 line-clamp-2 font-heading text-4xl leading-tight font-black text-balance md:text-6xl">
+          {title}
+        </Heading>
+      )}
+      {original !== title && (
+        <p className="mt-2 text-sm text-foreground/60">{art && art.iso_639_1 !== 'zh' ? title : original}</p>
+      )}
+    </>
+  )
+}
 
 // A full-screen, swipeable wall of backdrops. `info` describes the current slide over its lower left,
 // and `children` sit on its lower edge, with the wall running past the fold so only about their top half

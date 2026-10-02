@@ -2,10 +2,10 @@ import { type ReactNode, useMemo } from 'react'
 import { Link } from 'react-router'
 import { History } from 'lucide-react'
 import { PosterRow } from '@/components/PosterRow'
-import { PosterWall } from '@/components/PosterWall'
+import { PosterWall, Title } from '@/components/PosterWall'
 import { Ratings } from '@/components/Ratings'
 import { Button } from '@/components/ui/button'
-import { type Media, type MediaList, categories, hasToken, originalTitleOf, titleOf, useTmdb, yearOf } from '@/lib/tmdb'
+import { type Media, type MediaList, categories, hasToken, useLogo, useTmdb, yearOf } from '@/lib/tmdb'
 
 const shuffled = <T,>(list: T[]) =>
   list
@@ -50,18 +50,16 @@ function TrendingWall({ children }: { children: ReactNode }) {
 }
 
 function Info({ m }: { m: Media }) {
-  const title = titleOf(m)
-  const original = originalTitleOf(m)
+  const { ready, logo } = useLogo(m)
+  // wait for the logo lookup so the plain title doesn't flash first
+  if (!ready) return null
   return (
     <div className="max-w-2xl animate-in duration-700 fade-in slide-in-from-bottom-2 motion-reduce:animate-none">
       <p className="flex items-center gap-3 text-sm text-foreground/75">
         <span>{m.media_type === 'tv' ? '剧集' : '电影'}</span>
         <span>{yearOf(m)}</span>
       </p>
-      <h2 className="mt-3 line-clamp-2 font-heading text-4xl leading-tight font-black text-balance md:text-6xl">
-        {title}
-      </h2>
-      {original !== title && <p className="mt-2 text-sm text-foreground/60">{original}</p>}
+      <Title m={m} logo={logo} />
       <Ratings m={m} />
       {m.overview && (
         <p className="mt-4 line-clamp-2 max-w-xl text-[15px] leading-7 text-foreground/80 md:line-clamp-3">

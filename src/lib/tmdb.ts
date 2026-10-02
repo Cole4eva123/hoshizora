@@ -76,6 +76,40 @@ export type Details = Media & {
   credits: { cast: { credit_id: string; name: string; character: string; profile_path: string | null }[] }
 }
 
+export type Logo = { file_path: string; iso_639_1: string | null; iso_3166_1: string | null }
+
+// A title's own lettering: Simplified Chinese first, then the original language, then English, then any.
+export function pickLogo(logos: Logo[], originalLanguage?: string) {
+  const find = (lang?: string, region?: string) =>
+    logos.find((l) => l.iso_639_1 === lang && (!region || l.iso_3166_1 === region))
+  return find('zh', 'CN') ?? find(originalLanguage) ?? find('en') ?? logos[0]
+}
+
+export function useLogo(m: Media) {
+  const { data, error } = useTmdb<{ logos: Logo[] }>(
+    `/${m.media_type}/${m.id}/images?include_image_language=zh,${m.original_language},en,null`,
+  )
+  return { ready: Boolean(data || error), logo: data && pickLogo(data.logos, m.original_language) }
+}
+
+// Some logos are drawn dark for light posters and vanish on the dark wall. Takes RGBA pixels; true when the
+// average colour of the opaque ink has under ~1.5:1 contrast against the background, i.e. practically invisible.
+export function isDarkInk(px: Uint8ClampedArray) {
+  let [r, g, b, n] = [0, 0, 0, 0]
+  for (let i = 0; i < px.length; i += 4)
+    if (px[i + 3] > 127) {
+      r += px[i]
+      g += px[i + 1]
+      b += px[i + 2]
+      n++
+    }
+  const linear = (sum: number) => {
+    const v = sum / n / 255
+    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+  }
+  return n > 0 && 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b) < 0.036
+}
+
 // Air dates are calendar days, so count whole days from today's date rather than from the clock.
 export const dayOf = (date: string) => new Date(`${date}T00:00`)
 export const daysUntil = (date: string, now = new Date()) =>

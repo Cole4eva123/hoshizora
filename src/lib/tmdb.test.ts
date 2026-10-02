@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { type Details, type Episode, daysUntil, nextEpisodeText } from './tmdb'
+import { type Details, type Episode, type Logo, daysUntil, isDarkInk, nextEpisodeText, pickLogo } from './tmdb'
 
 const now = new Date('2026-10-02T21:30')
 const ep = (season_number: number, episode_number: number, air_date: string | null) =>
@@ -22,4 +22,22 @@ test('next episode: season shown only when there are several, countdown in days'
     '已停播，共 3 季 30 集',
   )
   expect(nextEpisodeText(show({}), now)).toBe('下一集的播出时间还没公布')
+})
+
+test('logo: Simplified Chinese, then the original language, then English; dark ink is caught', () => {
+  const logo = (iso_639_1: string, iso_3166_1: string) => ({ file_path: `/${iso_639_1}-${iso_3166_1}`, iso_639_1, iso_3166_1 }) as Logo
+  const pick = (logos: Logo[], lang: string) => pickLogo(logos, lang)?.file_path
+  expect(pick([logo('en', 'US'), logo('zh', 'TW'), logo('zh', 'CN')], 'en')).toBe('/zh-CN')
+  expect(pick([logo('zh', 'TW'), logo('en', 'US'), logo('ja', 'JP')], 'ja')).toBe('/ja-JP')
+  expect(pick([logo('zh', 'TW'), logo('en', 'US')], 'es')).toBe('/en-US')
+  expect(pick([logo('zh', 'TW')], 'ar')).toBe('/zh-TW')
+  expect(pick([], 'en')).toBeUndefined()
+
+  const ink = (...rgba: number[]) => new Uint8ClampedArray(rgba)
+  expect(isDarkInk(ink(0, 0, 0, 255, 255, 255, 255, 0))).toBe(true) // black ink; the transparent white pixel doesn't count
+  // measured averages of real logos: 我宁愿死 near-black red, 生化危机 blood red at about 2:1
+  expect(isDarkInk(ink(51, 8, 6, 255))).toBe(true)
+  expect(isDarkInk(ink(147, 10, 11, 255))).toBe(false)
+  expect(isDarkInk(ink(255, 255, 255, 255))).toBe(false)
+  expect(isDarkInk(ink(0, 0, 0, 0))).toBe(false) // nothing opaque
 })

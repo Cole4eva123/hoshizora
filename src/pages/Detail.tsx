@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router'
 import { ChevronDown, ChevronLeft } from 'lucide-react'
 import { Page } from '@/components/Page'
 import { Row } from '@/components/PosterRow'
-import { PosterWall } from '@/components/PosterWall'
+import { PosterWall, Title } from '@/components/PosterWall'
 import { Ratings } from '@/components/Ratings'
 import { Button } from '@/components/ui/button'
 import {
@@ -15,9 +15,8 @@ import {
   daysUntil,
   img,
   nextEpisodeText,
-  originalTitleOf,
   relativeDays,
-  titleOf,
+  useLogo,
   useTmdb,
   yearOf,
 } from '@/lib/tmdb'
@@ -73,8 +72,9 @@ function BackButton() {
 }
 
 function TitleInfo({ m }: { m: Details }) {
-  const title = titleOf(m)
-  const original = originalTitleOf(m)
+  const { ready, logo } = useLogo(m)
+  // wait for the logo lookup so the plain title doesn't flash first
+  if (!ready) return null
   return (
     <div className="max-w-2xl animate-in duration-700 fade-in slide-in-from-bottom-2 motion-reduce:animate-none">
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-foreground/75">
@@ -85,8 +85,7 @@ function TitleInfo({ m }: { m: Details }) {
         ))}
         {!!m.runtime && <span>{m.runtime} 分钟</span>}
       </p>
-      <h1 className="mt-3 font-heading text-4xl leading-tight font-black text-balance md:text-6xl">{title}</h1>
-      {original !== title && <p className="mt-2 text-sm text-foreground/60">{original}</p>}
+      <Title m={m} logo={logo} as="h1" />
       <Ratings m={m} />
       <p className="mt-4 max-w-xl text-[15px] leading-7 text-foreground/80">
         {m.overview || 'TMDB 上还没有这部作品的中文简介。'}
