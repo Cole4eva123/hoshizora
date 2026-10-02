@@ -11,4 +11,10 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(import.meta.dirname, './src') },
   },
+  server: {
+    // Douban sends no CORS headers, so the browser reaches it through the dev server
+    proxy: {
+      '/douban': { target: 'https://movie.douban.com', changeOrigin: true, rewrite: (p) => p.replace(/^\/douban/, '') },
+    },
+  },
 })

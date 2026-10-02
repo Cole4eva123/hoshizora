@@ -21,6 +21,7 @@ export type Media = {
   backdrop_path: string | null
   overview: string
   vote_average: number
+  original_language?: string
   release_date?: string
   first_air_date?: string
 }
@@ -55,22 +56,22 @@ const errorText = (e: unknown) => {
 // ponytail: cached for the whole session, add a TTL if long sessions show stale rows
 const cache = new Map<string, Promise<unknown>>()
 
-function load(path: string) {
+function getTmdb<T>(path: string) {
   let p = cache.get(path)
   if (!p) {
     p = token ? api.get(path).then((r) => r.data) : Promise.reject(new Error('还没有配置 TMDB 令牌'))
     p.catch(() => cache.delete(path)) // failed requests retry on next mount
     cache.set(path, p)
   }
-  return p
+  return p as Promise<T>
 }
 
 export function useTmdb<T>(path: string) {
   const [state, setState] = useState<{ data?: T; error?: string }>({})
   useEffect(() => {
     let live = true
-    load(path).then(
-      (data) => live && setState({ data: data as T }),
+    getTmdb<T>(path).then(
+      (data) => live && setState({ data }),
       (e) => live && setState({ error: errorText(e) }),
     )
     return () => {

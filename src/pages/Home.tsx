@@ -1,8 +1,9 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { History, Pause, Play, Star } from 'lucide-react'
+import { History, Pause, Play } from 'lucide-react'
 import { PosterRow } from '@/components/PosterRow'
 import { Button } from '@/components/ui/button'
+import { useRatings } from '@/lib/ratings'
 import { cn } from '@/lib/utils'
 import {
   type Media,
@@ -129,23 +130,42 @@ function Info({ m }: { m: Media }) {
       <p className="flex items-center gap-3 text-sm text-foreground/75">
         <span>{m.media_type === 'tv' ? '剧集' : '电影'}</span>
         <span>{yearOf(m)}</span>
-        {m.vote_average > 0 && (
-          <span className="inline-flex items-center gap-1">
-            <Star className="size-3.5 fill-current" />
-            {m.vote_average.toFixed(1)}
-          </span>
-        )}
       </p>
       <h2 className="mt-3 line-clamp-2 font-heading text-4xl leading-tight font-black text-balance md:text-6xl">
         {title}
       </h2>
       {original !== title && <p className="mt-2 text-sm text-foreground/60">{original}</p>}
+      <Ratings m={m} />
       {m.overview && (
         <p className="mt-4 line-clamp-2 max-w-xl text-[15px] leading-7 text-foreground/80 md:line-clamp-3">
           {m.overview}
         </p>
       )}
     </div>
+  )
+}
+
+// Each source keeps its own colour so the scores can be told apart at a glance.
+function Ratings({ m }: { m: Media }) {
+  const r = useRatings(m)
+  const rows: [string, string, string | undefined][] = [
+    ['TMDB', 'text-(--tmdb)', m.vote_average ? m.vote_average.toFixed(1) : undefined],
+    ['IMDb', 'text-[#f5c518]', r.imdb?.toFixed(1)],
+    ['烂番茄', 'text-[#fa320a]', r.tomatoes === undefined ? undefined : `${r.tomatoes}%`],
+    ['豆瓣', 'text-[#00b51d]', r.douban?.toFixed(1)],
+    ['MAL', 'text-[#6f8fe0]', r.mal?.toFixed(2)],
+  ]
+  return (
+    <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+      {rows
+        .filter(([, , v]) => v)
+        .map(([label, color, v]) => (
+          <span key={label}>
+            <span className={cn('mr-1.5 font-semibold', color)}>{label}</span>
+            {v}
+          </span>
+        ))}
+    </p>
   )
 }
 
