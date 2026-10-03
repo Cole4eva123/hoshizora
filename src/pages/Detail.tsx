@@ -118,7 +118,7 @@ function Episodes({ tv }: { tv: Details }) {
 
   return (
     <Row
-      title="剧集"
+      title="选集"
       extra={
         <>
           <p className={cn('mt-1 text-sm', tv.next_episode_to_air ? 'text-primary' : 'text-muted-foreground')}>

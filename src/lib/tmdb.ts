@@ -30,12 +30,12 @@ export type MediaList = { results: Media[] }
 
 // Home rows. A row shows the first page of its request (20 titles), so its length is fixed.
 export const categories = [
-  { key: 'movie', title: '电影', path: '/trending/movie/week' },
+  { key: 'movie', title: '热门电影', path: '/trending/movie/week' },
   { key: 'kdrama', title: '韩剧', path: '/discover/tv?with_original_language=ko&with_genres=18&without_genres=16' },
   { key: 'us', title: '美剧', path: '/discover/tv?with_origin_country=US&with_genres=18&without_genres=16' },
   { key: 'cdrama', title: '国产剧', path: '/discover/tv?with_origin_country=CN&with_genres=18&without_genres=16' },
   { key: 'jdrama', title: '日剧', path: '/discover/tv?with_original_language=ja&with_genres=18&without_genres=16' },
-  { key: 'anime', title: '动画', path: '/discover/tv?with_genres=16' },
+  { key: 'anime', title: '动画剧集', path: '/discover/tv?with_genres=16' },
   { key: 'doc', title: '纪录片', path: '/discover/movie?with_genres=99' },
 ]
 

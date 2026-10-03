@@ -73,7 +73,7 @@ function Fallback({ error }: { error?: string }) {
   if (!error) return <div />
   return (
     <div className="pointer-events-auto max-w-xl">
-      <h2 className="font-heading text-4xl font-black md:text-5xl">热门影视会在这里轮播</h2>
+      <h2 className="font-heading text-4xl font-black md:text-5xl">热门作品会在这里轮播</h2>
       <p className="mt-4 text-[15px] leading-7 text-foreground/75">
         {hasToken ? (
           error
@@ -94,7 +94,7 @@ function ContinueWatching() {
       <h2 className="text-lg font-semibold">继续观看</h2>
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border border-dashed px-5 py-5 text-sm text-muted-foreground">
         <History className="size-5 shrink-0" />
-        <p className="min-w-48 flex-1">连接 Emby 服务器后，没看完的影片会排在这里，点一下就能接着看。</p>
+        <p className="min-w-48 flex-1">连接 Emby 服务器后，没看完的作品会排在这里，点一下就能接着看。</p>
         <Button asChild variant="secondary" size="sm">
           <Link to="/library">去媒体库</Link>
         </Button>
