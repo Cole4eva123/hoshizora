@@ -4,29 +4,25 @@ import { ChevronDown, ChevronLeft } from 'lucide-react'
 import { Page } from '@/components/Page'
 import { Pills } from '@/components/Pills'
 import { Frame, Row } from '@/components/PosterRow'
-import { PosterWall, Title } from '@/components/PosterWall'
-import { Ratings } from '@/components/Ratings'
+import { PosterWall, TitleInfo } from '@/components/PosterWall'
 import { Button } from '@/components/ui/button'
 import {
   type Details,
   type Episode,
   type MediaType,
-  airDate,
-  dayOf,
+  airDateOf,
   daysUntil,
   img,
   nextEpisodeText,
   relativeDays,
-  releaseOf,
   useDetails,
-  useLogo,
-  useTmdb,
+  useSeason,
 } from '@/lib/tmdb'
 import { cn, pill } from '@/lib/utils'
 
 export default function Detail({ type }: { type: MediaType }) {
   const { id } = useParams()
-  const { details: m, error } = useDetails(type, id!)
+  const { details: m, backdrops, error } = useDetails(type, id!)
 
   if (error)
     return (
@@ -36,16 +32,22 @@ export default function Detail({ type }: { type: MediaType }) {
     )
   if (!m) return null
 
-  const backdrops = m.images.backdrops.slice(0, 8).map((b) => b.file_path)
+  const facts = [...m.genres.slice(0, 3).map((g) => g.name), m.runtime ? `${m.runtime} 分钟` : '']
   return (
     <>
       <PosterWall
         label="剧照"
-        backdrops={backdrops.length || !m.backdrop_path ? backdrops : [m.backdrop_path]}
-        info={() => <TitleInfo m={m} />}
+        backdrops={backdrops}
+        info={() => (
+          <TitleInfo m={m} as="h1" facts={facts}>
+            <p className="mt-4 max-w-xl text-[15px] leading-7 text-foreground/80">
+              {m.overview || 'TMDB 上还没有这部作品的中文简介。'}
+            </p>
+          </TitleInfo>
+        )}
       />
       <BackButton />
-      <div className="space-y-12 pt-4 pb-[max(4rem,env(safe-area-inset-bottom))]">
+      <div className="space-y-12 pt-4 pb-(--page-bottom)">
         {!!m.seasons?.length && <Episodes tv={m} />}
         <Cast cast={m.credits.cast} />
       </div>
@@ -62,33 +64,11 @@ function BackButton() {
     <Button
       variant="ghost"
       onClick={() => (key === 'default' ? navigate('/') : navigate(-1))}
-      className="absolute top-[max(var(--gutter),env(safe-area-inset-top))] left-[calc(var(--gutter)+3rem)] h-10"
+      className="absolute top-(--menu-top) left-[calc(var(--gutter)+3rem)] h-10"
     >
       <ChevronLeft />
       返回
     </Button>
-  )
-}
-
-function TitleInfo({ m }: { m: Details }) {
-  const { ready, logo } = useLogo(m)
-  // wait for the logo lookup so the plain title doesn't flash first
-  if (!ready) return null
-  return (
-    <div className="max-w-2xl animate-in duration-700 fade-in slide-in-from-bottom-2 motion-reduce:animate-none">
-      <Title m={m} logo={logo} as="h1" />
-      <Ratings m={m}>
-        <span>{m.media_type === 'tv' ? '剧集' : '电影'}</span>
-        <span>{releaseOf(m)}</span>
-        {m.genres.slice(0, 3).map((g) => (
-          <span key={g.id}>{g.name}</span>
-        ))}
-        {!!m.runtime && <span>{m.runtime} 分钟</span>}
-      </Ratings>
-      <p className="mt-4 max-w-xl text-[15px] leading-7 text-foreground/80">
-        {m.overview || 'TMDB 上还没有这部作品的中文简介。'}
-      </p>
-    </div>
   )
 }
 
@@ -102,10 +82,8 @@ function Episodes({ tv }: { tv: Details }) {
   const latest = seasons.slice(-5)
   const older = seasons.slice(0, -5)
   const olderPicked = older.some((s) => s.season_number === season)
-  const { data, error } = useTmdb<{ season_number: number; episodes: Episode[] }>(`/tv/${tv.id}/season/${season}`)
-  // after switching seasons, `data` holds the previous season until the new one arrives
-  const episodes = data?.season_number === season ? data.episodes : undefined
-  // open at the latest aired episode, with whatever airs next beside it
+  const { episodes, error } = useSeason(tv.id, season)
+  // an airing season opens at its latest aired episode, with the next one beside it; a finished one at the start
   const next = episodes?.findIndex((e) => !e.air_date || daysUntil(e.air_date) >= 0) ?? -1
 
   return (
@@ -162,8 +140,6 @@ function Episodes({ tv }: { tv: Details }) {
 }
 
 function EpisodeCard({ e }: { e: Episode }) {
-  // TMDB names untranslated episodes "第 N 集", so don't print the number twice
-  const name = e.name === `第 ${e.episode_number} 集` ? '' : e.name
   const days = e.air_date ? daysUntil(e.air_date) : -1
   return (
     <div className="snap-start">
@@ -171,11 +147,11 @@ function EpisodeCard({ e }: { e: Episode }) {
         {e.episode_number}
       </Frame>
       <h3 className="mt-2 truncate text-sm font-medium">
-        <span className={cn(name && 'mr-1.5 text-muted-foreground')}>第 {e.episode_number} 集</span>
-        {name}
+        <span className={cn(e.name && 'mr-1.5 text-muted-foreground')}>第 {e.episode_number} 集</span>
+        {e.name}
       </h3>
       <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
-        <span>{e.air_date ? airDate.format(dayOf(e.air_date)) : '播出时间未定'}</span>
+        <span>{e.air_date ? airDateOf(e.air_date) : '播出时间未定'}</span>
         {days >= 0 && <span className="text-primary">{relativeDays.format(days, 'day')}</span>}
         {!!e.runtime && <span>{e.runtime} 分钟</span>}
       </p>

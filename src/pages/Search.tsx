@@ -20,7 +20,7 @@ const scopes = [
     icon: Layers,
     tone: '[--tone:var(--primary)]',
     placeholder: '在所有服务器里找作品',
-    empty: { icon: Layers, title: '还没有可搜索的服务器', body: <>先去{toLibrary}连接 Emby 服务器，这里会一次搜遍所有服务器。</> },
+    empty: { title: '还没有可搜索的服务器', body: <>先去{toLibrary}连接 Emby 服务器，这里会一次搜遍所有服务器。</> },
   },
   {
     key: 'tmdb',
@@ -29,7 +29,7 @@ const scopes = [
     icon: Globe,
     tone: '[--tone:var(--tmdb)]',
     placeholder: '在 TMDB 查作品或演员',
-    empty: { icon: Globe, title: 'TMDB 的结果会列在这里', body: <>自己服务器上没有的作品，也能在这里查到资料。</> },
+    empty: { title: 'TMDB 的结果会列在这里', body: <>自己服务器上没有的作品，也能在这里查到资料。</> },
   },
   {
     key: 'server',
@@ -38,7 +38,7 @@ const scopes = [
     icon: Server,
     tone: '[--tone:var(--apricot)]',
     placeholder: '在这台服务器里找作品',
-    empty: { icon: Server, title: '还没有可选的服务器', body: <>先去{toLibrary}连接 Emby 服务器，再挑一台单独搜索。</> },
+    empty: { title: '还没有可选的服务器', body: <>先去{toLibrary}连接 Emby 服务器，再挑一台单独搜索。</> },
   },
 ]
 
@@ -88,7 +88,7 @@ export default function Search() {
         </div>
 
         <div className="mt-12">
-          <EmptyState icon={scope.empty.icon} title={scope.empty.title}>
+          <EmptyState icon={scope.icon} title={scope.empty.title}>
             {scope.empty.body}
           </EmptyState>
         </div>

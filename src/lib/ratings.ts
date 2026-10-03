@@ -39,18 +39,32 @@ export async function douban(m: Media, get = doubanGet) {
 // ponytail: cached for the session and never retried, a failed source stays empty until reload
 const cache = new Map<string, Promise<Ratings>[]>()
 
-// Each source fills in as soon as it answers, so a slow Douban lookup doesn't hold back the rest.
+// A title's lookups, one per source, started the first time the title is asked for.
+function lookups(m: Media) {
+  const key = `${m.media_type}/${m.id}`
+  let sources = cache.get(key)
+  if (!sources) {
+    sources = [mdblist(m), douban(m).then((rate) => ({ douban: rate }))]
+    cache.set(key, sources)
+  }
+  return sources
+}
+
+// Each source fills in as soon as it answers, so a slow Douban lookup doesn't hold back the rest. Ratings follow the
+// title rather than the object: callers needn't keep `m` stable, and another title starts empty, not with these.
 export function useRatings(m: Media) {
-  const [ratings, setRatings] = useState<Ratings>({})
+  const sources = lookups(m)
+  const [state, setState] = useState<{ sources: Promise<Ratings>[]; ratings: Ratings }>()
   useEffect(() => {
     let live = true
-    const key = `${m.media_type}/${m.id}`
-    let sources = cache.get(key)
-    if (!sources) cache.set(key, (sources = [mdblist(m), douban(m).then((douban) => ({ douban }))]))
-    for (const p of sources) p.then((r) => live && setRatings((s) => ({ ...s, ...r })), () => {})
+    for (const p of sources)
+      p.then(
+        (r) => live && setState((s) => ({ sources, ratings: { ...(s?.sources === sources ? s.ratings : {}), ...r } })),
+        () => {},
+      )
     return () => {
       live = false
     }
-  }, [m])
-  return ratings
+  }, [sources])
+  return state?.sources === sources ? state.ratings : {}
 }

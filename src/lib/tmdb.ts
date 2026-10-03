@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 
 const token: string | undefined = import.meta.env.VITE_TMDB_TOKEN
 export const hasToken = Boolean(token)
@@ -29,7 +29,7 @@ export type Media = {
   first_air_date?: string
 }
 
-// Home rows. A row shows the first page of its request (20 titles), so its length is fixed.
+// The 分类: each is a home row (the first page of its request, 20 titles) and a /category page that pages on.
 // `votes` is how many ratings a title needs to rank under 高分; without a floor, 10/10 from a single vote tops every
 // list. Set per 分类 since TMDB's audience is uneven: in Oct 2026 a floor of 200 left 国产剧 5 titles and 美剧 904.
 // Only /discover lists can be sorted, so the trending row has none.
@@ -45,8 +45,12 @@ export const categories: Category[] = [
 
 export type Category = { key: string; title: string; path: string; votes?: number }
 
+// Today's trending titles, movies and shows mixed (with people, which useTitles drops).
+export const trendingToday = '/trending/all/day'
+
 // A list endpoint's type is in its path: /discover/tv, /trending/tv, …
 const typeIn = (path: string): MediaType => (path.includes('/tv') ? 'tv' : 'movie')
+const withQuery = (path: string, query: string) => `${path}${path.includes('?') ? '&' : '?'}${query}`
 
 // The orders a 分类 offers. TMDB does the sorting, as the list arrives a page at a time: sorting in the browser
 // would only reorder the pages loaded so far. Each `hint` says which titles the order leaves out.
@@ -61,27 +65,21 @@ export function sortsOf(c: Category, today = new Date()) {
       key: 'latest',
       label: '最新',
       hint: tv ? '最近开播的在前，还没开播的不算' : '最近上映的在前，还没上映的不算',
-      path: `${c.path}&sort_by=${date}.desc&${date}.lte=${day}`,
+      path: withQuery(c.path, `sort_by=${date}.desc&${date}.lte=${day}`),
     },
     {
       key: 'rating',
       label: '高分',
       hint: `只算至少 ${c.votes} 人评过分的作品`,
-      path: `${c.path}&sort_by=vote_average.desc&vote_count.gte=${c.votes}`,
+      path: withQuery(c.path, `sort_by=vote_average.desc&vote_count.gte=${c.votes}`),
     },
-    { key: 'votes', label: '口碑', hint: '评过分的人越多越靠前', path: `${c.path}&sort_by=vote_count.desc` },
+    { key: 'votes', label: '口碑', hint: '评过分的人越多越靠前', path: withQuery(c.path, 'sort_by=vote_count.desc') },
   ]
 }
 
 export const titleOf = (m: Media) => m.title ?? m.name ?? ''
 export const originalTitleOf = (m: Media) => m.original_title ?? m.original_name ?? ''
 export const yearOf = (m: Media) => (m.release_date ?? m.first_air_date ?? '').slice(0, 4)
-const fullDate = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'long' })
-// release or first air date in full, "2026年9月28日"
-export const releaseOf = (m: Media) => {
-  const date = m.release_date || m.first_air_date
-  return date ? fullDate.format(dayOf(date)) : ''
-}
 export const img = (path: string | null, size: 'w300' | 'w342' | 'w500' | 'w1280') =>
   path ? `https://image.tmdb.org/t/p/${size}${path}` : undefined
 
@@ -126,7 +124,7 @@ export function useLogo(m: Media) {
   return { ready: Boolean(data || error), logo: data && pickLogo(data.logos, m.original_language) }
 }
 
-// Some logos are drawn dark for light posters and vanish on the dark wall. Takes RGBA pixels; true when the
+// Some 片名艺术字 is drawn dark for light posters and vanishes on the dark wall. Takes RGBA pixels; true when the
 // average colour of the opaque ink has under ~1.5:1 contrast against the background, i.e. practically invisible.
 export function isDarkInk(px: Uint8ClampedArray) {
   let [r, g, b, n] = [0, 0, 0, 0]
@@ -145,11 +143,18 @@ export function isDarkInk(px: Uint8ClampedArray) {
 }
 
 // Air dates are calendar days, so count whole days from today's date rather than from the clock.
-export const dayOf = (date: string) => new Date(`${date}T00:00`)
+const dayOf = (date: string) => new Date(`${date}T00:00`)
 export const daysUntil = (date: string, now = new Date()) =>
   Math.round((dayOf(date).getTime() - new Date(now).setHours(0, 0, 0, 0)) / 86_400_000)
-export const airDate = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })
+const airDate = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })
+export const airDateOf = (date: string) => airDate.format(dayOf(date)) // "2026年10月8日周四"
 export const relativeDays = new Intl.RelativeTimeFormat('zh-CN', { numeric: 'auto' })
+const fullDate = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'long' })
+// release or first air date in full, "2026年9月28日"
+export const releaseOf = (m: Media) => {
+  const date = m.release_date || m.first_air_date
+  return date ? fullDate.format(dayOf(date)) : ''
+}
 
 // When the next episode comes out, or why there isn't one.
 export function nextEpisodeText(tv: Details, now = new Date()) {
@@ -158,7 +163,7 @@ export function nextEpisodeText(tv: Details, now = new Date()) {
   if (next) {
     const ep = seasons > 1 ? `第 ${next.season_number} 季第 ${next.episode_number} 集` : `第 ${next.episode_number} 集`
     if (!next.air_date) return `下一集：${ep}，播出时间还没公布`
-    return `下一集：${ep}，${airDate.format(dayOf(next.air_date))}播出（${relativeDays.format(daysUntil(next.air_date, now), 'day')}）`
+    return `下一集：${ep}，${airDateOf(next.air_date)}播出（${relativeDays.format(daysUntil(next.air_date, now), 'day')}）`
   }
   const done = ({ Ended: '已完结', Canceled: '已停播' } as Record<string, string>)[tv.status]
   if (!done) return '下一集的播出时间还没公布'
@@ -171,58 +176,65 @@ const errorText = (e: unknown) => {
   return e.response ? `TMDB 返回错误 ${e.response.status}` : '连不上 TMDB，检查一下网络'
 }
 
-// ponytail: cached for the whole session, add a TTL if long sessions show stale rows
-const cache = new Map<string, Promise<unknown>>()
-// What the settled requests answered, read during render: a page that mounts again (back from a title) is drawn
-// full height in its first frame, which is when the router restores its scroll position.
+// ponytail: cached for the whole session, add a TTL if long sessions show stale rows; answers would then change,
+// which useTmdbAll's memo assumes they don't
+const cache = new Map<string, Promise<void>>()
+// What the settled requests answered; an answer never changes once in. Hooks read it during render, so a page that
+// mounts again (back from a title) is drawn full height in its first frame, when the router restores its scroll.
 const answers = new Map<string, unknown>()
+const listeners = new Set<() => void>()
+const subscribe = (listener: () => void) => {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
 
-function getTmdb<T>(path: string) {
+function getTmdb(path: string) {
   let p = cache.get(path)
   if (!p) {
     p = token
-      ? api.get(path).then((r) => (answers.set(path, r.data), r.data))
+      ? api.get(path).then((r) => {
+          answers.set(path, r.data)
+          listeners.forEach((l) => l())
+        })
       : Promise.reject(new Error('还没有配置 TMDB 令牌'))
     p.catch(() => cache.delete(path)) // failed requests are asked again on retry or the next mount
     cache.set(path, p)
   }
-  return p as Promise<T>
+  return p
 }
 
-const same = (a: unknown[] | undefined, b: unknown[]) => a?.length === b.length && a.every((x, i) => x === b[i])
-
-// Several requests answered together, in order. While new ones load, the previous answers stay.
+// The answers to several requests, in order, each undefined until it arrives, and never another request's answer.
+// The missing ones are asked for; `retry` asks again for the ones that failed.
 function useTmdbAll<T>(paths: string[]) {
   const key = paths.join('\n')
-  const [attempt, setAttempt] = useState(0)
-  const [state, setState] = useState<{ data?: T[]; error?: string }>(() =>
-    paths.every((p) => answers.has(p)) ? { data: paths.map((p) => answers.get(p) as T) } : {},
+  // which of these answers are in, like '1101'; it changes, and so re-renders, when one comes in
+  const settled = useSyncExternalStore(subscribe, () => paths.map((p) => (answers.has(p) ? 1 : 0)).join(''))
+  const data = useMemo(
+    () => key.split('\n').map((p, i) => (settled[i] === '1' ? (answers.get(p) as T) : undefined)),
+    [key, settled],
   )
+  const [failed, setFailed] = useState<{ key: string; error: string }>()
+  const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     let live = true
-    Promise.all(key.split('\n').map((p) => getTmdb<T>(p))).then(
-      // answers already on screen keep the state as is, so nothing re-renders and derived lists keep their identity
-      (data) => live && setState((s) => (!s.error && same(s.data, data) ? s : { data })),
-      (e) => live && setState((s) => ({ ...s, error: errorText(e) })),
-    )
+    for (const p of key.split('\n')) getTmdb(p).catch((e) => live && setFailed({ key, error: errorText(e) }))
     return () => {
       live = false
+      setFailed(undefined) // an error goes with its request: other requests, and a retry, start clean
     }
   }, [key, attempt])
-  const retry = () => {
-    setState(({ data }) => ({ data }))
-    setAttempt((n) => n + 1)
-  }
-  return { ...state, retry }
+  const retry = () => setAttempt((n) => n + 1)
+  return { data, error: failed?.key === key ? failed.error : undefined, retry }
 }
 
-export function useTmdb<T>(path: string) {
+function useTmdb<T>(path: string) {
   const { data, error } = useTmdbAll<T>([path])
-  return { data: data?.[0], error }
+  return { data: data[0], error }
 }
 
 // A list result as TMDB sends it: /discover and /trending/{movie,tv} leave out media_type, /trending/all mixes in people.
 type Listed = Omit<Media, 'media_type'> & { media_type?: MediaType | 'person' }
+type ListPage = { total_pages: number; results: Listed[] }
 
 // The 作品 in a list, each with its type: its own when TMDB sends one, else the one in the endpoint path. Pages are
 // numbered by offset and popularity shifts between requests, so a title can come back on the next page: kept once.
@@ -242,21 +254,40 @@ const maxPages = 500
 // The first `pages` (≥ 1) pages of a list as one list of 作品. `loading` while pages are on their way, `more` when TMDB has
 // pages after them, `retry` asks again for the ones that failed.
 export function useTitles(path: string, pages = 1) {
-  pages = Math.min(pages, maxPages)
-  const paths = Array.from({ length: pages }, (_, i) => `${path}${path.includes('?') ? '&' : '?'}page=${i + 1}`)
-  const { data, error, retry } = useTmdbAll<{ total_pages: number; results: Listed[] }>(paths)
-  const titles = useMemo(() => data && toTitles(path, data.flatMap((p) => p.results)), [data, path])
-  const more = !!data?.length && pages < Math.min(data[0].total_pages, maxPages)
-  return { titles, loading: data?.length !== pages, more, error, retry }
+  pages = Math.min(Math.max(1, Math.floor(pages)) || 1, maxPages)
+  const paths = Array.from({ length: pages }, (_, i) => withQuery(path, `page=${i + 1}`))
+  const { data, error, retry } = useTmdbAll<ListPage>(paths)
+  // The pages in so far, from the first: their titles stay on screen while the next page loads.
+  const arrived = useMemo(() => {
+    const gap = data.indexOf(undefined)
+    return (gap < 0 ? data : data.slice(0, gap)) as ListPage[]
+  }, [data])
+  const titles = useMemo(
+    () => (arrived.length ? toTitles(path, arrived.flatMap((p) => p.results)) : undefined),
+    [arrived, path],
+  )
+  const more = !!arrived.length && pages < Math.min(arrived[0].total_pages, maxPages)
+  return { titles, loading: arrived.length < pages, more, error, retry }
 }
 
 // include_image_language=null keeps only textless backdrops, which suit the wall. For shows, credits is the current
 // cast; aggregate_credits covers every season but runs to megabytes for long-running ones.
+// `backdrops` are the 剧照 for the wall: textless ones, else the main backdrop, which may carry text.
 export function useDetails(type: MediaType, id: string) {
   const { data, error } = useTmdb<Omit<Details, 'media_type'>>(
     `/${type}/${id}?append_to_response=images,credits&include_image_language=null`,
   )
-  // details leave out media_type; memoized because ratings refetch whenever the title object changes
-  const details = useMemo(() => data && { ...data, media_type: type }, [data, type])
-  return { details, error }
+  const backdrops = data ? data.images.backdrops.slice(0, 8).map((b) => b.file_path) : []
+  if (!backdrops.length && data?.backdrop_path) backdrops.push(data.backdrop_path)
+  return { details: data && { ...data, media_type: type }, backdrops, error } // details leave out media_type
+}
+
+// A season's episodes. TMDB names an untranslated episode "第 N 集"; that name is dropped, as the number shows anyway.
+export function useSeason(tvId: number, season: number) {
+  const { data, error } = useTmdb<{ episodes: Episode[] }>(`/tv/${tvId}/season/${season}`)
+  const episodes = useMemo(
+    () => data?.episodes.map((e) => (e.name === `第 ${e.episode_number} 集` ? { ...e, name: '' } : e)),
+    [data],
+  )
+  return { episodes, error }
 }

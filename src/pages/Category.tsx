@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { Navigate, useParams, useSearchParams } from 'react-router'
 import { Page } from '@/components/Page'
 import { Pills } from '@/components/Pills'
-import { PosterCard, PosterSkeleton } from '@/components/PosterRow'
+import { PosterCard, PosterSkeletons } from '@/components/PosterRow'
 import { Button } from '@/components/ui/button'
 import { categories, sortsOf, useTitles } from '@/lib/tmdb'
 
@@ -26,13 +26,10 @@ export default function Category() {
           <p className="mt-3 text-sm text-muted-foreground">{sort.hint}</p>
         </div>
       )}
-      {/* keyed by the request, so another sort or 分类 gets a fresh list instead of the last one's titles */}
-      <Titles key={path} path={path} />
+      <Titles path={path} />
     </Page>
   )
 }
-
-const skeletons = (n: number, pulse: boolean) => Array.from({ length: n }, (_, i) => <PosterSkeleton key={i} pulse={pulse} />)
 
 function Titles({ path }: { path: string }) {
   const [params, setParams] = useSearchParams()
@@ -44,7 +41,10 @@ function Titles({ path }: { path: string }) {
   // once if the end is still in range, as on a tall screen.
   useEffect(() => {
     if (loading || error || !more) return
-    const next = (p: URLSearchParams) => (p.set('pages', String(pages + 1)), p)
+    const next = (p: URLSearchParams) => {
+      p.set('pages', String(pages + 1))
+      return p
+    }
     const io = new IntersectionObserver(
       ([e]) => e.isIntersecting && setParams(next, { replace: true, preventScrollReset: true }),
       { rootMargin: '0px 0px 200% 0px' },
@@ -60,7 +60,7 @@ function Titles({ path }: { path: string }) {
     <>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-x-4 gap-y-7">
         {titles?.map((m) => <PosterCard key={m.id} m={m} />)}
-        {loading && skeletons(titles ? 6 : 12, !error)}
+        {loading && <PosterSkeletons n={titles ? 6 : 12} pulse={!error} />}
       </div>
       <div ref={end} />
       <p className="sr-only" aria-live="polite">

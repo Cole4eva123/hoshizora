@@ -2,10 +2,9 @@ import { type ReactNode, useMemo } from 'react'
 import { Link } from 'react-router'
 import { History } from 'lucide-react'
 import { PosterRow } from '@/components/PosterRow'
-import { PosterWall, Title } from '@/components/PosterWall'
-import { Ratings } from '@/components/Ratings'
+import { PosterWall, TitleInfo } from '@/components/PosterWall'
 import { Button } from '@/components/ui/button'
-import { type Media, categories, hasToken, releaseOf, useLogo, useTitles } from '@/lib/tmdb'
+import { categories, hasToken, trendingToday, useTitles } from '@/lib/tmdb'
 
 const shuffled = <T,>(list: T[]) =>
   list
@@ -21,7 +20,7 @@ export default function Home() {
       <TrendingWall>
         <PosterRow category={first} />
       </TrendingWall>
-      <div className="space-y-10 pt-4 pb-[max(4rem,env(safe-area-inset-bottom))]">
+      <div className="space-y-10 pt-4 pb-(--page-bottom)">
         <ContinueWatching />
         {rest.map((c) => (
           <PosterRow key={c.key} category={c} />
@@ -33,41 +32,33 @@ export default function Home() {
 
 // The first screen: today's trending titles on the poster wall, with the first row sitting on its lower edge.
 function TrendingWall({ children }: { children: ReactNode }) {
-  const { titles, error } = useTitles('/trending/all/day')
+  const { titles, error } = useTitles(trendingToday)
   const slides = useMemo(() => shuffled(titles?.filter((m) => m.backdrop_path) ?? []).slice(0, 8), [titles])
   return (
     <PosterWall
       label="热门推荐"
       backdrops={slides.map((m) => m.backdrop_path!)}
-      info={(i) => (slides[i] ? <Info key={slides[i].id} m={slides[i]} /> : <Fallback error={error} />)}
+      info={(i) =>
+        slides[i] ? (
+          <TitleInfo m={slides[i]}>
+            {slides[i].overview && (
+              <p className="mt-4 line-clamp-2 max-w-xl text-[15px] leading-7 text-foreground/80 md:line-clamp-3">
+                {slides[i].overview}
+              </p>
+            )}
+          </TitleInfo>
+        ) : (
+          <Fallback error={error} />
+        )
+      }
     >
       {children}
     </PosterWall>
   )
 }
 
-function Info({ m }: { m: Media }) {
-  const { ready, logo } = useLogo(m)
-  // wait for the logo lookup so the plain title doesn't flash first
-  if (!ready) return null
-  return (
-    <div className="max-w-2xl animate-in duration-700 fade-in slide-in-from-bottom-2 motion-reduce:animate-none">
-      <Title m={m} logo={logo} />
-      <Ratings m={m}>
-        <span>{m.media_type === 'tv' ? '剧集' : '电影'}</span>
-        <span>{releaseOf(m)}</span>
-      </Ratings>
-      {m.overview && (
-        <p className="mt-4 line-clamp-2 max-w-xl text-[15px] leading-7 text-foreground/80 md:line-clamp-3">
-          {m.overview}
-        </p>
-      )}
-    </div>
-  )
-}
-
 function Fallback({ error }: { error?: string }) {
-  if (!error) return <div />
+  if (!error) return null
   return (
     <div className="pointer-events-auto max-w-xl">
       <h2 className="font-heading text-4xl font-black md:text-5xl">热门作品会在这里轮播</h2>

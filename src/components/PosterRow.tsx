@@ -1,4 +1,4 @@
-import { type ReactNode, useLayoutEffect, useRef } from 'react'
+import { Children, type ReactNode, isValidElement, useLayoutEffect, useRef } from 'react'
 import { Link } from 'react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -29,13 +29,14 @@ export function PosterCard({ m }: { m: Media }) {
   )
 }
 
-export function PosterSkeleton({ pulse }: { pulse: boolean }) {
-  return (
-    <div className={cn(pulse && 'animate-pulse')}>
+// `n` placeholder cards while titles load; they stop pulsing once loading has failed.
+export function PosterSkeletons({ n, pulse }: { n: number; pulse: boolean }) {
+  return Array.from({ length: n }, (_, i) => (
+    <div key={i} className={cn(pulse && 'animate-pulse')}>
       <div className="aspect-2/3 rounded-lg bg-muted/70" />
       <div className="mt-2 h-4 w-3/4 rounded bg-muted/70" />
     </div>
-  )
+  ))
 }
 
 // A titled, horizontally scrolling row. `track` sets how wide its items are and `extra` sits under the title.
@@ -53,13 +54,16 @@ export function Row({
   children: ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  // the items' keys: a new list, like another season's episodes, has other keys
+  const items = Children.map(children, (c) => (isValidElement(c) ? c.key : null))?.join(' ')
 
-  // Jump to item `start` once it's known, e.g. the latest episode of a long season.
+  // Jump to item `start` whenever a new list arrives, e.g. the latest aired episode of the season just picked.
   useLayoutEffect(() => {
+    if (start === undefined) return
     const el = ref.current!
-    const item = start === undefined ? undefined : (el.children[start] as HTMLElement | undefined)
+    const item = el.children[start] as HTMLElement | undefined
     if (item) el.scrollTo({ left: item.offsetLeft - parseFloat(getComputedStyle(el).paddingLeft), behavior: 'instant' })
-  }, [start])
+  }, [start, items])
 
   // One click moves exactly one screenful of items.
   const page = (dir: 1 | -1) => {
@@ -109,9 +113,7 @@ export function PosterRow({ category }: { category: Category }) {
       }
       track="auto-cols-[calc((100%-2*0.75rem)/3)] sm:auto-cols-[calc((100%-3*1rem)/4)] lg:auto-cols-[calc((100%-4*1rem)/5)] xl:auto-cols-[calc((100%-5*1rem)/6)]"
     >
-      {titles
-        ? titles.map((m) => <PosterCard key={m.id} m={m} />)
-        : Array.from({ length: 6 }, (_, i) => <PosterSkeleton key={i} pulse={!error} />)}
+      {titles ? titles.map((m) => <PosterCard key={m.id} m={m} />) : <PosterSkeletons n={6} pulse={!error} />}
     </Row>
   )
 }

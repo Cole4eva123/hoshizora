@@ -73,6 +73,10 @@
 
   /* page gutter, shared by the corner menu, hero and rows; clears the notch in landscape */
   --gutter: max(1.25rem, env(safe-area-inset-left));
+  /* the corner menu's top, which the back button and page titles line up under; clears the notch in portrait */
+  --menu-top: max(var(--gutter), env(safe-area-inset-top));
+  /* room below a page's last row, clear of the home indicator */
+  --page-bottom: max(4rem, env(safe-area-inset-bottom));
 }
 
 @media (width >= 48rem) {

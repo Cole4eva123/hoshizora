@@ -1,12 +1,13 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { Pause, Play } from 'lucide-react'
+import { Ratings } from '@/components/Ratings'
 import { Button } from '@/components/ui/button'
-import { type Logo, type Media, img, isDarkInk, originalTitleOf, titleOf } from '@/lib/tmdb'
+import { type Logo, type Media, img, isDarkInk, originalTitleOf, releaseOf, titleOf, useLogo } from '@/lib/tmdb'
 import { cn } from '@/lib/utils'
 
 const scrollToSlide = (el: HTMLElement | null, i: number) => el?.scrollTo({ left: i * el.clientWidth })
 
-// TMDB's image host allows cross-origin reads, so a loaded logo can be sampled on a small canvas.
+// TMDB's image host allows cross-origin reads, so loaded 片名艺术字 can be sampled on a small canvas.
 const isDark = (logo: HTMLImageElement) => {
   try {
     const c = Object.assign(document.createElement('canvas'), { width: 48, height: 16 })
@@ -14,13 +15,13 @@ const isDark = (logo: HTMLImageElement) => {
     g.drawImage(logo, 0, 0, c.width, c.height)
     return isDarkInk(g.getImageData(0, 0, c.width, c.height).data)
   } catch {
-    return false // unreadable canvas: show the logo as it is
+    return false // unreadable canvas: show the lettering as it is
   }
 }
 
-// The title in its own lettering when TMDB has a logo, else in our serif. Under a logo in another language goes
-// the Chinese name; otherwise the original name goes there, as with the text title.
-export function Title({ m, logo, as: Heading = 'h2' }: { m: Media; logo?: Logo; as?: 'h1' | 'h2' }) {
+// The title in its 片名艺术字 when TMDB has some, else in our serif. Under lettering in another language goes the
+// Chinese name; otherwise the original name goes there, as with the text title.
+function Title({ m, logo, as: Heading = 'h2' }: { m: Media; logo?: Logo; as?: 'h1' | 'h2' }) {
   const [tone, setTone] = useState<'light' | 'dark' | 'broken'>()
   const title = titleOf(m)
   const original = originalTitleOf(m)
@@ -52,6 +53,38 @@ export function Title({ m, logo, as: Heading = 'h2' }: { m: Media; logo?: Logo; 
         <p className="mt-2 text-sm text-foreground/60">{art && art.iso_639_1 !== 'zh' ? title : original}</p>
       )}
     </>
+  )
+}
+
+// What the wall says about a title, over its lower left: the name, the scores with its type, date and `facts`, then
+// `children`. Held back until the 片名艺术字 lookup is done, so the plain title doesn't flash first. Keyed by the
+// title, so the next one fades in afresh and doesn't inherit this one's lettering state.
+export function TitleInfo({
+  m,
+  as,
+  facts = [],
+  children,
+}: {
+  m: Media
+  as?: 'h1' | 'h2'
+  facts?: string[]
+  children?: ReactNode
+}) {
+  const { ready, logo } = useLogo(m)
+  if (!ready) return null
+  return (
+    <div
+      key={`${m.media_type}/${m.id}`}
+      className="max-w-2xl animate-in duration-700 fade-in slide-in-from-bottom-2 motion-reduce:animate-none"
+    >
+      <Title m={m} logo={logo} as={as} />
+      <Ratings m={m}>
+        {[m.media_type === 'tv' ? '剧集' : '电影', releaseOf(m), ...facts].filter(Boolean).map((fact) => (
+          <span key={fact}>{fact}</span>
+        ))}
+      </Ratings>
+      {children}
+    </div>
   )
 }
 
@@ -122,7 +155,8 @@ export function PosterWall({
       <div className="pointer-events-none relative mb-8 flex flex-wrap items-end justify-between gap-6 px-(--gutter)">
         {info(index)}
         {backdrops.length > 1 && (
-          <div className="pointer-events-auto flex items-center gap-2">
+          // ml-auto: on the right even while the title is held back and they are the row's only item
+          <div className="pointer-events-auto ml-auto flex items-center gap-2">
             {backdrops.map((path, i) => (
               <button
                 key={path}
