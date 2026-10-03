@@ -142,45 +142,81 @@ const errorText = (e: unknown) => {
 
 // ponytail: cached for the whole session, add a TTL if long sessions show stale rows
 const cache = new Map<string, Promise<unknown>>()
+// What the settled requests answered, read during render: a page that mounts again (back from a title) is drawn
+// full height in its first frame, which is when the router restores its scroll position.
+const answers = new Map<string, unknown>()
 
 function getTmdb<T>(path: string) {
   let p = cache.get(path)
   if (!p) {
-    p = token ? api.get(path).then((r) => r.data) : Promise.reject(new Error('还没有配置 TMDB 令牌'))
-    p.catch(() => cache.delete(path)) // failed requests retry on next mount
+    p = token
+      ? api.get(path).then((r) => (answers.set(path, r.data), r.data))
+      : Promise.reject(new Error('还没有配置 TMDB 令牌'))
+    p.catch(() => cache.delete(path)) // failed requests are asked again on retry or the next mount
     cache.set(path, p)
   }
   return p as Promise<T>
 }
 
-export function useTmdb<T>(path: string) {
-  const [state, setState] = useState<{ data?: T; error?: string }>({})
+const same = (a: unknown[] | undefined, b: unknown[]) => a?.length === b.length && a.every((x, i) => x === b[i])
+
+// Several requests answered together, in order. While new ones load, the previous answers stay.
+function useTmdbAll<T>(paths: string[]) {
+  const key = paths.join('\n')
+  const [attempt, setAttempt] = useState(0)
+  const [state, setState] = useState<{ data?: T[]; error?: string }>(() =>
+    paths.every((p) => answers.has(p)) ? { data: paths.map((p) => answers.get(p) as T) } : {},
+  )
   useEffect(() => {
     let live = true
-    getTmdb<T>(path).then(
-      (data) => live && setState({ data }),
-      (e) => live && setState({ error: errorText(e) }),
+    Promise.all(key.split('\n').map((p) => getTmdb<T>(p))).then(
+      // answers already on screen keep the state as is, so nothing re-renders and derived lists keep their identity
+      (data) => live && setState((s) => (!s.error && same(s.data, data) ? s : { data })),
+      (e) => live && setState((s) => ({ ...s, error: errorText(e) })),
     )
     return () => {
       live = false
     }
-  }, [path])
-  return state
+  }, [key, attempt])
+  const retry = () => {
+    setState(({ data }) => ({ data }))
+    setAttempt((n) => n + 1)
+  }
+  return { ...state, retry }
+}
+
+export function useTmdb<T>(path: string) {
+  const { data, error } = useTmdbAll<T>([path])
+  return { data: data?.[0], error }
 }
 
 // A list result as TMDB sends it: /discover and /trending/{movie,tv} leave out media_type, /trending/all mixes in people.
 type Listed = Omit<Media, 'media_type'> & { media_type?: MediaType | 'person' }
 
-// The 作品 in a list, each with its type: its own when TMDB sends one, else the one in the endpoint path.
+// The 作品 in a list, each with its type: its own when TMDB sends one, else the one in the endpoint path. Pages are
+// numbered by offset and popularity shifts between requests, so a title can come back on the next page: kept once.
 export const toTitles = (path: string, results: Listed[]): Media[] => {
-  const type = path.includes('/tv') ? 'tv' : 'movie'
-  return results.flatMap((m) => (m.media_type === 'person' ? [] : [{ ...m, media_type: m.media_type ?? type }]))
+  const seen = new Set<string>()
+  return results.flatMap((m) => {
+    const media_type = m.media_type ?? (path.includes('/tv') ? 'tv' : 'movie')
+    if (media_type === 'person' || seen.has(media_type + m.id)) return []
+    seen.add(media_type + m.id)
+    return [{ ...m, media_type }]
+  })
 }
 
-export function useTitles(path: string) {
-  const { data, error } = useTmdb<{ results: Listed[] }>(path)
-  const titles = useMemo(() => data && toTitles(path, data.results), [data, path])
-  return { titles, error }
+// TMDB serves at most 500 pages of any list.
+const maxPages = 500
+
+// The first `pages` (≥ 1) pages of a list as one list of 作品. `loading` while pages are on their way, `more` when TMDB has
+// pages after them, `retry` asks again for the ones that failed.
+export function useTitles(path: string, pages = 1) {
+  pages = Math.min(pages, maxPages)
+  const paths = Array.from({ length: pages }, (_, i) => `${path}${path.includes('?') ? '&' : '?'}page=${i + 1}`)
+  const { data, error, retry } = useTmdbAll<{ total_pages: number; results: Listed[] }>(paths)
+  const titles = useMemo(() => data && toTitles(path, data.flatMap((p) => p.results)), [data, path])
+  const more = !!data?.length && pages < Math.min(data[0].total_pages, maxPages)
+  return { titles, loading: data?.length !== pages, more, error, retry }
 }
 
 // include_image_language=null keeps only textless backdrops, which suit the wall. For shows, credits is the current
