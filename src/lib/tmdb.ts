@@ -30,17 +30,48 @@ export type Media = {
 }
 
 // Home rows. A row shows the first page of its request (20 titles), so its length is fixed.
-export const categories = [
+// `votes` is how many ratings a title needs to rank under 高分; without a floor, 10/10 from a single vote tops every
+// list. Set per 分类 since TMDB's audience is uneven: in Oct 2026 a floor of 200 left 国产剧 5 titles and 美剧 904.
+// Only /discover lists can be sorted, so the trending row has none.
+export const categories: Category[] = [
   { key: 'movie', title: '热门电影', path: '/trending/movie/week' },
-  { key: 'kdrama', title: '韩剧', path: '/discover/tv?with_original_language=ko&with_genres=18&without_genres=16' },
-  { key: 'us', title: '美剧', path: '/discover/tv?with_origin_country=US&with_genres=18&without_genres=16' },
-  { key: 'cdrama', title: '国产剧', path: '/discover/tv?with_origin_country=CN&with_genres=18&without_genres=16' },
-  { key: 'jdrama', title: '日剧', path: '/discover/tv?with_original_language=ja&with_genres=18&without_genres=16' },
-  { key: 'anime', title: '动画剧集', path: '/discover/tv?with_genres=16' },
-  { key: 'doc', title: '纪录片', path: '/discover/movie?with_genres=99' },
+  { key: 'kdrama', title: '韩剧', path: '/discover/tv?with_original_language=ko&with_genres=18&without_genres=16', votes: 100 },
+  { key: 'us', title: '美剧', path: '/discover/tv?with_origin_country=US&with_genres=18&without_genres=16', votes: 200 },
+  { key: 'cdrama', title: '国产剧', path: '/discover/tv?with_origin_country=CN&with_genres=18&without_genres=16', votes: 50 },
+  { key: 'jdrama', title: '日剧', path: '/discover/tv?with_original_language=ja&with_genres=18&without_genres=16', votes: 50 },
+  { key: 'anime', title: '动画剧集', path: '/discover/tv?with_genres=16', votes: 200 },
+  { key: 'doc', title: '纪录片', path: '/discover/movie?with_genres=99', votes: 200 },
 ]
 
-export type Category = (typeof categories)[number]
+export type Category = { key: string; title: string; path: string; votes?: number }
+
+// A list endpoint's type is in its path: /discover/tv, /trending/tv, …
+const typeIn = (path: string): MediaType => (path.includes('/tv') ? 'tv' : 'movie')
+
+// The orders a 分类 offers. TMDB does the sorting, as the list arrives a page at a time: sorting in the browser
+// would only reorder the pages loaded so far. Each `hint` says which titles the order leaves out.
+export function sortsOf(c: Category, today = new Date()) {
+  if (!c.votes) return []
+  const tv = typeIn(c.path) === 'tv'
+  const date = tv ? 'first_air_date' : 'primary_release_date'
+  const day = today.toLocaleDateString('en-CA') // YYYY-MM-DD in local time
+  return [
+    { key: 'popular', label: '热门', hint: '最近关注的人最多', path: c.path }, // discover's default order
+    {
+      key: 'latest',
+      label: '最新',
+      hint: tv ? '最近开播的在前，还没开播的不算' : '最近上映的在前，还没上映的不算',
+      path: `${c.path}&sort_by=${date}.desc&${date}.lte=${day}`,
+    },
+    {
+      key: 'rating',
+      label: '高分',
+      hint: `只算至少 ${c.votes} 人评过分的作品`,
+      path: `${c.path}&sort_by=vote_average.desc&vote_count.gte=${c.votes}`,
+    },
+    { key: 'votes', label: '口碑', hint: '评过分的人越多越靠前', path: `${c.path}&sort_by=vote_count.desc` },
+  ]
+}
 
 export const titleOf = (m: Media) => m.title ?? m.name ?? ''
 export const originalTitleOf = (m: Media) => m.original_title ?? m.original_name ?? ''
@@ -198,7 +229,7 @@ type Listed = Omit<Media, 'media_type'> & { media_type?: MediaType | 'person' }
 export const toTitles = (path: string, results: Listed[]): Media[] => {
   const seen = new Set<string>()
   return results.flatMap((m) => {
-    const media_type = m.media_type ?? (path.includes('/tv') ? 'tv' : 'movie')
+    const media_type = m.media_type ?? typeIn(path)
     if (media_type === 'person' || seen.has(media_type + m.id)) return []
     seen.add(media_type + m.id)
     return [{ ...m, media_type }]

@@ -1,31 +1,52 @@
 import { useEffect, useRef } from 'react'
 import { Navigate, useParams, useSearchParams } from 'react-router'
 import { Page } from '@/components/Page'
+import { Pills } from '@/components/Pills'
 import { PosterCard, PosterSkeleton } from '@/components/PosterRow'
 import { Button } from '@/components/ui/button'
-import { type Category as CategoryType, categories, useTitles } from '@/lib/tmdb'
+import { categories, sortsOf, useTitles } from '@/lib/tmdb'
 
+// The sort and the pages shown live in the URL, so coming back from a title brings back the same list, as long as
+// it was, and the scroll position with it.
 export default function Category() {
   const { key } = useParams()
+  const [params, setParams] = useSearchParams()
   const category = categories.find((c) => c.key === key)
-  return category ? <Grid key={category.key} category={category} /> : <Navigate to="/" replace />
+  if (!category) return <Navigate to="/" replace />
+
+  const sorts = sortsOf(category)
+  const sort = sorts.find((s) => s.key === params.get('sort')) ?? sorts[0]
+  const path = sort?.path ?? category.path
+  return (
+    <Page title={category.title} back>
+      {sort && (
+        <div className="mb-8">
+          {/* a new sort starts over from its first page, at the top */}
+          <Pills legend="排序" options={sorts} value={sort.key} onChange={(s) => setParams({ sort: s }, { replace: true })} />
+          <p className="mt-3 text-sm text-muted-foreground">{sort.hint}</p>
+        </div>
+      )}
+      {/* keyed by the request, so another sort or 分类 gets a fresh list instead of the last one's titles */}
+      <Titles key={path} path={path} />
+    </Page>
+  )
 }
 
 const skeletons = (n: number, pulse: boolean) => Array.from({ length: n }, (_, i) => <PosterSkeleton key={i} pulse={pulse} />)
 
-function Grid({ category }: { category: CategoryType }) {
-  // The pages shown live in the URL, so coming back from a title brings them all back and the scroll position with them.
+function Titles({ path }: { path: string }) {
   const [params, setParams] = useSearchParams()
   const pages = Math.max(1, Math.floor(Number(params.get('pages'))) || 1)
-  const { titles, loading, more, error, retry } = useTitles(category.path, pages)
+  const { titles, loading, more, error, retry } = useTitles(path, pages)
   const end = useRef<HTMLDivElement>(null)
 
   // Ask for the next page about two screens before the end shows. Each page gets a fresh observer, which reports at
   // once if the end is still in range, as on a tall screen.
   useEffect(() => {
     if (loading || error || !more) return
+    const next = (p: URLSearchParams) => (p.set('pages', String(pages + 1)), p)
     const io = new IntersectionObserver(
-      ([e]) => e.isIntersecting && setParams({ pages: String(pages + 1) }, { replace: true, preventScrollReset: true }),
+      ([e]) => e.isIntersecting && setParams(next, { replace: true, preventScrollReset: true }),
       { rootMargin: '0px 0px 200% 0px' },
     )
     io.observe(end.current!)
@@ -36,7 +57,7 @@ function Grid({ category }: { category: CategoryType }) {
   // tried and dropped: a remounted page gets placeholder heights, so on phones back navigation lands rows off. Window
   // the grid by rows (TanStack Virtual) if lists ever run to thousands.
   return (
-    <Page title={category.title} back>
+    <>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-x-4 gap-y-7">
         {titles?.map((m) => <PosterCard key={m.id} m={m} />)}
         {loading && skeletons(titles ? 6 : 12, !error)}
@@ -55,6 +76,6 @@ function Grid({ category }: { category: CategoryType }) {
       ) : (
         titles && !loading && !more && <p className="mt-10 text-center text-sm text-muted-foreground">没有更多了</p>
       )}
-    </Page>
+    </>
   )
 }

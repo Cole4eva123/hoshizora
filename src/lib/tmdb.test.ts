@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { type Details, type Episode, type Logo, type Media, daysUntil, isDarkInk, nextEpisodeText, pickLogo, releaseOf, toTitles } from './tmdb'
+import { type Category, type Details, type Episode, type Logo, type Media, daysUntil, isDarkInk, nextEpisodeText, pickLogo, releaseOf, sortsOf, toTitles } from './tmdb'
 
 const now = new Date('2026-10-02T21:30')
 const ep = (season_number: number, episode_number: number, air_date: string | null) =>
@@ -56,4 +56,18 @@ test('lists hand out 作品 that know their type, once each, and no people', () 
   expect(types('/trending/all/day', listed(1, 'tv'), listed(2, 'person'), listed(3, 'movie'))).toEqual(['1 tv', '3 movie'])
   // a title that slid onto the next page shows once; a show and a movie may share an id
   expect(types('/trending/all/day', listed(1, 'tv'), listed(1, 'movie'), listed(1, 'tv'))).toEqual(['1 tv', '1 movie'])
+})
+
+test('sorting: TMDB sorts, 最新 skips the unreleased, 高分 needs the 分类 vote floor, trending has none', () => {
+  const day = new Date('2026-10-02T23:30') // late evening is still the 2nd locally
+  const paths = (c: Category) => Object.fromEntries(sortsOf(c, day).map((s) => [s.key, s.path]))
+  const show = { key: 'k', title: '韩剧', path: '/discover/tv?with_genres=18', votes: 100 }
+  expect(paths(show)).toEqual({
+    popular: '/discover/tv?with_genres=18', // the home row's request, so the two share a cache
+    latest: '/discover/tv?with_genres=18&sort_by=first_air_date.desc&first_air_date.lte=2026-10-02',
+    rating: '/discover/tv?with_genres=18&sort_by=vote_average.desc&vote_count.gte=100',
+    votes: '/discover/tv?with_genres=18&sort_by=vote_count.desc',
+  })
+  expect(paths({ ...show, path: '/discover/movie?with_genres=99' }).latest).toContain('primary_release_date.lte=2026-10-02')
+  expect(sortsOf({ key: 'm', title: '热门电影', path: '/trending/movie/week' })).toEqual([])
 })

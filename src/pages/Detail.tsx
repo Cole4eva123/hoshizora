@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router'
 import { ChevronDown, ChevronLeft } from 'lucide-react'
 import { Page } from '@/components/Page'
+import { Pills } from '@/components/Pills'
 import { Frame, Row } from '@/components/PosterRow'
 import { PosterWall, Title } from '@/components/PosterWall'
 import { Ratings } from '@/components/Ratings'
@@ -21,7 +22,7 @@ import {
   useLogo,
   useTmdb,
 } from '@/lib/tmdb'
-import { cn } from '@/lib/utils'
+import { cn, pill } from '@/lib/utils'
 
 export default function Detail({ type }: { type: MediaType }) {
   const { id } = useParams()
@@ -91,12 +92,6 @@ function TitleInfo({ m }: { m: Details }) {
   )
 }
 
-const pill = (picked: boolean) =>
-  cn(
-    'cursor-pointer rounded-full border px-4 py-1.5 text-sm transition-colors hover:bg-card',
-    picked && 'border-primary bg-primary/10 text-primary',
-  )
-
 function Episodes({ tv }: { tv: Details }) {
   const seasons = tv.seasons!
   // open on the season that's airing, else the latest one
@@ -122,26 +117,13 @@ function Episodes({ tv }: { tv: Details }) {
             {nextEpisodeText(tv)}
           </p>
           {seasons.length > 1 && (
-            <fieldset className="mt-4 flex flex-wrap gap-2">
-              <legend className="sr-only">选择一季</legend>
-              {latest.map((s) => (
-                <label
-                  key={s.id}
-                  className={cn(
-                    pill(s.season_number === season),
-                    'has-focus-visible:outline-2 has-focus-visible:outline-primary',
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="season"
-                    checked={s.season_number === season}
-                    onChange={() => setSeason(s.season_number)}
-                    className="sr-only"
-                  />
-                  {s.name}
-                </label>
-              ))}
+            <Pills
+              legend="选择一季"
+              options={latest.map((s) => ({ key: s.season_number, label: s.name }))}
+              value={season}
+              onChange={setSeason}
+              className="mt-4"
+            >
               {older.length > 0 && (
                 <div className="relative">
                   <select
@@ -162,7 +144,7 @@ function Episodes({ tv }: { tv: Details }) {
                   <ChevronDown className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2" />
                 </div>
               )}
-            </fieldset>
+            </Pills>
           )}
           {error && <p className="mt-4 text-sm text-muted-foreground">{error}</p>}
           {episodes?.length === 0 && <p className="mt-4 text-sm text-muted-foreground">这一季还没有分集信息。</p>}
