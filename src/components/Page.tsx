@@ -4,7 +4,8 @@ import { ChevronLeft, type LucideIcon } from 'lucide-react'
 
 export function Page({ title, back, children }: { title: string; back?: boolean; children: ReactNode }) {
   return (
-    <div className="px-(--gutter) pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(4rem,env(safe-area-inset-bottom))]">
+    // the top padding clears the corner menu
+    <div className="px-(--gutter) pt-[calc(max(var(--gutter),env(safe-area-inset-top))+4.5rem)] pb-[max(4rem,env(safe-area-inset-bottom))]">
       {back && (
         <Link to="/" className="-ml-1 mb-3 flex w-fit items-center gap-0.5 text-sm text-muted-foreground hover:text-foreground">
           <ChevronLeft className="size-4" />

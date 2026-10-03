@@ -85,7 +85,7 @@ export function PosterWall({
     <section
       aria-label={label}
       className={cn(
-        'relative -ml-(--rail) flex flex-col justify-end pb-6',
+        'relative flex flex-col justify-end pb-6',
         children ? 'min-h-[calc(100svh+30vw)] md:min-h-[calc(100svh+15vw)]' : 'min-h-svh',
       )}
     >
@@ -116,7 +116,7 @@ export function PosterWall({
       {/* Fades out at the bottom so the page below doesn't start at a visible edge. */}
       <div className="pointer-events-none absolute inset-0 bg-linear-to-r from-background/90 via-background/30 to-transparent mask-b-from-75%" />
 
-      <div className="pointer-events-none relative mb-8 flex flex-wrap items-end justify-between gap-6 pr-(--gutter) pl-[calc(var(--rail)+var(--gutter))]">
+      <div className="pointer-events-none relative mb-8 flex flex-wrap items-end justify-between gap-6 px-(--gutter)">
         {info(index)}
         {backdrops.length > 1 && (
           <div className="pointer-events-auto flex items-center gap-2">
@@ -143,7 +143,7 @@ export function PosterWall({
           </div>
         )}
       </div>
-      {children && <div className="relative pl-(--rail)">{children}</div>}
+      {children && <div className="relative">{children}</div>}
     </section>
   )
 }

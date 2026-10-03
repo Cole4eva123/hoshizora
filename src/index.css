@@ -8,6 +8,8 @@
   --font-heading: "Noto Serif SC", "Songti SC", serif;
   --font-heading--font-feature-settings: "palt";
   --color-tone: var(--tone);
+  --color-night: var(--night);
+  --color-star: var(--star);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -63,15 +65,18 @@
   --apricot: #e2a47c;
   --tone: var(--primary);
 
-  /* left rail width and page gutter, shared by sidebar, hero and rows */
-  --rail: calc(4.5rem + env(safe-area-inset-left));
-  --gutter: 1.25rem;
+  /* the logo's midnight sky, starlight and star glow, for the corner menu */
+  --night: #020a20;
+  --star: #9ec7e7;
+  --glow: #5191cb;
+
+  /* page gutter, shared by the corner menu, hero and rows; clears the notch in landscape */
+  --gutter: max(1.25rem, env(safe-area-inset-left));
 }
 
 @media (width >= 48rem) {
   :root {
-    --rail: calc(12rem + env(safe-area-inset-left));
-    --gutter: 2.5rem;
+    --gutter: max(2.5rem, env(safe-area-inset-left));
   }
 }
 

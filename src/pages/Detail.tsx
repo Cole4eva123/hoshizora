@@ -56,6 +56,7 @@ export default function Detail({ type }: { type: MediaType }) {
 }
 
 // Back to wherever the title was opened from. A link opened directly has no history in the app, so that goes home.
+// Sits beside the corner menu's seal, at its height.
 function BackButton() {
   const navigate = useNavigate()
   const { key } = useLocation()
@@ -63,7 +64,7 @@ function BackButton() {
     <Button
       variant="ghost"
       onClick={() => (key === 'default' ? navigate('/') : navigate(-1))}
-      className="absolute top-[max(1rem,env(safe-area-inset-top))] left-[calc(var(--rail)+var(--gutter)-0.625rem)]"
+      className="absolute top-[max(var(--gutter),env(safe-area-inset-top))] left-[calc(var(--gutter)+3rem)] h-10"
     >
       <ChevronLeft />
       返回

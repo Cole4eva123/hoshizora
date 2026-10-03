@@ -1,51 +1,67 @@
+import { useState } from 'react'
 import { NavLink, Outlet, ScrollRestoration, useLocation } from 'react-router'
-import { Heart, House, LibraryBig, Search, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const nav = [
-  { to: '/', label: '首页', icon: House },
-  { to: '/favorites', label: '收藏', icon: Heart },
-  { to: '/library', label: '媒体库', icon: LibraryBig },
-  { to: '/search', label: '搜索', icon: Search },
-  { to: '/settings', label: '设置', icon: Settings }, // last item, pinned to the bottom
+  { to: '/', label: '首页' },
+  { to: '/favorites', label: '收藏' },
+  { to: '/library', label: '媒体库' },
+  { to: '/search', label: '搜索' },
+  { to: '/settings', label: '设置' },
 ]
 
 export default function App() {
   const { pathname } = useLocation()
   // categories and titles are opened from Home, so Home stays highlighted there
   const underHome = /^\/(category|movie|tv)\//.test(pathname)
+  // Hover and keyboard focus unroll the menu in CSS; `open` is for taps, which have no hover.
+  const [open, setOpen] = useState(false)
 
   return (
     <>
-      {/* Blur only, no tint: Home's poster wall shows through, darkened by its own left scrim. */}
+      {/* The logo in the top-left corner, see-through until used. The pages unroll to its right on the logo's own
+          night sky, which matches the logo's background so the two read as one piece. */}
       <nav
         aria-label="主导航"
-        className="fixed inset-y-0 left-0 z-30 flex w-(--rail) flex-col gap-1 border-r border-white/6 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[env(safe-area-inset-left)] backdrop-blur-2xl backdrop-saturate-150"
+        data-open={open || undefined}
+        onMouseLeave={() => setOpen(false)}
+        className="group fixed top-[max(var(--gutter),env(safe-area-inset-top))] left-(--gutter) z-30 flex rounded-xl bg-night opacity-75 ring-1 ring-star/15 transition-opacity [--ring:var(--star)] hover:opacity-100 has-focus-visible:opacity-100 data-open:opacity-100"
       >
-        <div className="mb-6 flex items-center justify-center gap-2.5 md:justify-start md:px-5">
-          <span className="grid size-9 place-items-center rounded-lg bg-primary font-heading text-xl font-black text-primary-foreground">
-            映
-          </span>
-          <span className="hidden font-heading text-xl font-black md:inline">放映室</span>
+        <button
+          aria-label="菜单"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+          className="size-10 shrink-0 overflow-hidden rounded-xl"
+        >
+          {/* zoomed in on the constellation, whose lines are too fine to read at full frame */}
+          <img src={`${import.meta.env.BASE_URL}午夜星辰播放三角.png`} alt="" className="size-full scale-170" />
+        </button>
+        {/* 0fr→1fr animates the width to fit the links. The clip sits on the grid, not the link row: mid-way the
+            row's track is narrower than the grid, which would leave the glass ahead of the text. */}
+        <div className="grid grid-cols-[0fr] overflow-hidden transition-[grid-template-columns] duration-300 ease-out group-hover:grid-cols-[1fr] group-has-focus-visible:grid-cols-[1fr] group-data-open:grid-cols-[1fr] motion-reduce:transition-none">
+          <div className="flex min-w-0">
+            {nav.map(({ to, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={to === '/'}
+                onClick={() => setOpen(false)}
+                className={({ isActive }) =>
+                  cn(
+                    'rounded-lg px-3 text-[15px] leading-10 whitespace-nowrap text-star/70 -outline-offset-2 transition-colors hover:text-star',
+                    // the current page shines like the logo's bright star
+                    (isActive || (to === '/' && underHome)) &&
+                      'font-medium text-white [text-shadow:0_0_12px_var(--glow)] hover:text-white',
+                  )
+                }
+              >
+                {label}
+              </NavLink>
+            ))}
+          </div>
         </div>
-        {nav.map(({ to, label, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === '/'}
-            className={({ isActive }) =>
-              cn(
-                'mx-2 flex flex-col items-center gap-1 rounded-xl py-2 text-[11px] text-muted-foreground transition-colors last:mt-auto hover:bg-white/4 hover:text-foreground md:mx-3 md:flex-row md:gap-3 md:px-3 md:text-[15px]',
-                (isActive || (to === '/' && underHome)) && 'bg-white/7 text-foreground [&>svg]:text-primary',
-              )
-            }
-          >
-            <Icon className="size-5" />
-            {label}
-          </NavLink>
-        ))}
       </nav>
-      <main className="pl-(--rail)">
+      <main>
         <Outlet />
       </main>
       <ScrollRestoration />
