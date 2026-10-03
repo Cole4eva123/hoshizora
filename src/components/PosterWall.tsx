@@ -98,10 +98,12 @@ export function PosterWall({
           className="pointer-events-none fixed inset-0 -z-10 size-full scale-110 animate-in object-cover opacity-30 blur-3xl duration-1000 fade-in"
         />
       )}
+      {/* In landscape the backdrops keep their own 16:9 frame at full width, so none of the still is cropped; the
+          wall below them shows the blurred copy. In portrait they cover the whole wall, as a 16:9 strip would be tiny. */}
       <div
         ref={track}
         onScroll={(e) => setIndex(Math.round(e.currentTarget.scrollLeft / e.currentTarget.clientWidth))}
-        className="no-scrollbar absolute inset-0 flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain scroll-smooth mask-b-from-45% motion-reduce:scroll-auto"
+        className="no-scrollbar absolute inset-0 flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain scroll-smooth mask-b-from-45% motion-reduce:scroll-auto landscape:bottom-auto landscape:aspect-video landscape:max-h-full landscape:mask-b-from-75%"
       >
         {backdrops.map((path, i) => (
           <img
@@ -113,8 +115,9 @@ export function PosterWall({
           />
         ))}
       </div>
-      {/* Fades out at the bottom so the page below doesn't start at a visible edge. */}
-      <div className="pointer-events-none absolute inset-0 bg-linear-to-r from-background/90 via-background/30 to-transparent mask-b-from-75%" />
+      {/* Darkest under the title in the lower left, clear toward the upper right; fades out at the bottom so the
+          page below doesn't start at a visible edge. */}
+      <div className="pointer-events-none absolute inset-0 bg-linear-to-tr from-background/90 via-background/30 to-transparent mask-b-from-75%" />
 
       <div className="pointer-events-none relative mb-8 flex flex-wrap items-end justify-between gap-6 px-(--gutter)">
         {info(index)}
