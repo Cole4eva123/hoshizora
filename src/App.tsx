@@ -19,26 +19,30 @@ export default function App() {
 
   return (
     <>
-      {/* The logo in the top-left corner, see-through until used. The pages unroll to its right on the logo's own
-          night sky, which matches the logo's background so the two read as one piece. */}
+      {/* The logo floats in the top-left corner with nothing around it, see-through until used. The pages unroll
+          to its right on a bar of the logo's night sky. */}
       <nav
         aria-label="主导航"
         data-open={open || undefined}
         onMouseLeave={() => setOpen(false)}
-        className="group fixed top-[max(var(--gutter),env(safe-area-inset-top))] left-(--gutter) z-30 flex rounded-xl bg-night opacity-75 ring-1 ring-star/15 transition-opacity [--ring:var(--star)] hover:opacity-100 has-focus-visible:opacity-100 data-open:opacity-100"
+        className="group fixed top-[max(var(--gutter),env(safe-area-inset-top))] left-(--gutter) z-30 flex items-center gap-1.5 [--ring:var(--star)]"
       >
         <button
           aria-label="菜单"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
-          className="size-10 shrink-0 overflow-hidden rounded-xl"
+          className="size-10 shrink-0 rounded-xl"
         >
-          {/* zoomed in on the constellation, whose lines are too fine to read at full frame */}
-          <img src={`${import.meta.env.BASE_URL}午夜星辰播放三角.png`} alt="" className="size-full scale-170" />
+          {/* 午夜星辰播放三角.png cropped to the constellation, with its navy background made transparent */}
+          <img
+            src={`${import.meta.env.BASE_URL}logo.png`}
+            alt=""
+            className="size-full opacity-75 transition-opacity group-hover:opacity-100 group-has-focus-visible:opacity-100 group-data-open:opacity-100"
+          />
         </button>
-        {/* 0fr→1fr animates the width to fit the links. The clip sits on the grid, not the link row: mid-way the
-            row's track is narrower than the grid, which would leave the glass ahead of the text. */}
-        <div className="grid grid-cols-[0fr] overflow-hidden transition-[grid-template-columns] duration-300 ease-out group-hover:grid-cols-[1fr] group-has-focus-visible:grid-cols-[1fr] group-data-open:grid-cols-[1fr] motion-reduce:transition-none">
+        {/* The bar. 0fr→1fr animates its width to fit the links. The glass and the clip sit on the grid, not the
+            link row: mid-way the row's track is narrower than the grid, which would leave the text ahead of the glass. */}
+        <div className="grid grid-cols-[0fr] overflow-hidden rounded-xl bg-night/80 inset-ring inset-ring-star/15 backdrop-blur-xl backdrop-saturate-150 transition-[grid-template-columns] duration-300 ease-out group-hover:grid-cols-[1fr] group-has-focus-visible:grid-cols-[1fr] group-data-open:grid-cols-[1fr] motion-reduce:transition-none">
           <div className="flex min-w-0">
             {nav.map(({ to, label }) => (
               <NavLink
