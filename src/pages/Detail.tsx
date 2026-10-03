@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router'
 import { ChevronDown, ChevronLeft } from 'lucide-react'
 import { Page } from '@/components/Page'
-import { Row } from '@/components/PosterRow'
+import { Frame, Row } from '@/components/PosterRow'
 import { PosterWall, Title } from '@/components/PosterWall'
 import { Ratings } from '@/components/Ratings'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,7 @@ import {
   nextEpisodeText,
   relativeDays,
   releaseOf,
+  useDetails,
   useLogo,
   useTmdb,
 } from '@/lib/tmdb'
@@ -24,11 +25,7 @@ import { cn } from '@/lib/utils'
 
 export default function Detail({ type }: { type: MediaType }) {
   const { id } = useParams()
-  // include_image_language=null keeps only textless backdrops, which suit the wall. For shows, credits is the
-  // current cast; aggregate_credits covers every season but runs to megabytes for long-running ones.
-  const { data, error } = useTmdb<Details>(`/${type}/${id}?append_to_response=images,credits&include_image_language=null`)
-  // Details leave out media_type, which the ratings lookup needs. Memoized: Ratings refetches whenever `m` changes.
-  const m = useMemo(() => data && { ...data, media_type: type }, [data, type])
+  const { details: m, error } = useDetails(type, id!)
 
   if (error)
     return (
@@ -188,13 +185,9 @@ function EpisodeCard({ e }: { e: Episode }) {
   const days = e.air_date ? daysUntil(e.air_date) : -1
   return (
     <div className="snap-start">
-      <div className="grid aspect-video place-items-center overflow-hidden rounded-lg bg-muted font-heading text-3xl text-muted-foreground outline -outline-offset-1 outline-white/8">
-        {e.still_path ? (
-          <img src={img(e.still_path, 'w500')} alt="" loading="lazy" decoding="async" className="size-full object-cover" />
-        ) : (
-          e.episode_number
-        )}
-      </div>
+      <Frame src={img(e.still_path, 'w500')} className="aspect-video text-3xl">
+        {e.episode_number}
+      </Frame>
       <h3 className="mt-2 truncate text-sm font-medium">
         <span className={cn(name && 'mr-1.5 text-muted-foreground')}>第 {e.episode_number} 集</span>
         {name}
@@ -216,13 +209,9 @@ function Cast({ cast }: { cast: Details['credits']['cast'] }) {
       {cast.slice(0, 20).map((p) => (
         <div key={p.credit_id} className="snap-start">
           {/* TMDB headshots are 2:3, so a 2:3 frame shows the whole photo */}
-          <div className="grid aspect-2/3 place-items-center overflow-hidden rounded-lg bg-muted font-heading text-2xl text-muted-foreground outline -outline-offset-1 outline-white/8">
-            {p.profile_path ? (
-              <img src={img(p.profile_path, 'w300')} alt="" loading="lazy" decoding="async" className="size-full object-cover" />
-            ) : (
-              p.name.slice(0, 1)
-            )}
-          </div>
+          <Frame src={img(p.profile_path, 'w300')} className="aspect-2/3 text-2xl">
+            {p.name.slice(0, 1)}
+          </Frame>
           <p className="mt-2 truncate text-sm">{p.name}</p>
           {p.character && <p className="mt-0.5 truncate text-xs text-muted-foreground">饰 {p.character}</p>}
         </div>

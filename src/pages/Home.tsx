@@ -5,7 +5,7 @@ import { PosterRow } from '@/components/PosterRow'
 import { PosterWall, Title } from '@/components/PosterWall'
 import { Ratings } from '@/components/Ratings'
 import { Button } from '@/components/ui/button'
-import { type Media, type MediaList, categories, hasToken, releaseOf, useLogo, useTmdb } from '@/lib/tmdb'
+import { type Media, categories, hasToken, releaseOf, useLogo, useTitles } from '@/lib/tmdb'
 
 const shuffled = <T,>(list: T[]) =>
   list
@@ -33,11 +33,8 @@ export default function Home() {
 
 // The first screen: today's trending titles on the poster wall, with the first row sitting on its lower edge.
 function TrendingWall({ children }: { children: ReactNode }) {
-  const { data, error } = useTmdb<MediaList>('/trending/all/day')
-  const slides = useMemo(
-    () => shuffled(data?.results.filter((m) => m.backdrop_path && m.media_type !== 'person') ?? []).slice(0, 8),
-    [data],
-  )
+  const { titles, error } = useTitles('/trending/all/day')
+  const slides = useMemo(() => shuffled(titles?.filter((m) => m.backdrop_path) ?? []).slice(0, 8), [titles])
   return (
     <PosterWall
       label="热门推荐"

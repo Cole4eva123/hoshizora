@@ -3,26 +3,26 @@ import { Link } from 'react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import {
-  type Category,
-  type Media,
-  type MediaList,
-  type MediaType,
-  img,
-  titleOf,
-  typeOf,
-  useTmdb,
-  yearOf,
-} from '@/lib/tmdb'
+import { type Category, type Media, img, titleOf, useTitles, yearOf } from '@/lib/tmdb'
 
-export function PosterCard({ m, type }: { m: Media; type: MediaType }) {
+// A picture in the cards' rounded frame. Without one, `children` (an episode number, an initial) fill the frame.
+export function Frame({ src, className, children }: { src?: string; className: string; children?: ReactNode }) {
   return (
-    <Link to={`/${type}/${m.id}`} className="group snap-start">
-      <div className="aspect-2/3 overflow-hidden rounded-lg bg-muted outline -outline-offset-1 outline-white/8 transition-colors group-hover:outline-star/60">
-        {m.poster_path && (
-          <img src={img(m.poster_path, 'w342')} alt="" loading="lazy" decoding="async" className="size-full object-cover" />
-        )}
-      </div>
+    <div
+      className={cn(
+        'grid place-items-center overflow-hidden rounded-lg bg-muted font-heading text-muted-foreground outline -outline-offset-1 outline-white/8',
+        className,
+      )}
+    >
+      {src ? <img src={src} alt="" loading="lazy" decoding="async" className="size-full object-cover" /> : children}
+    </div>
+  )
+}
+
+export function PosterCard({ m }: { m: Media }) {
+  return (
+    <Link to={`/${m.media_type}/${m.id}`} className="group snap-start">
+      <Frame src={img(m.poster_path, 'w342')} className="aspect-2/3 transition-colors group-hover:outline-star/60" />
       <p className="mt-2 truncate text-sm">{titleOf(m)}</p>
       <p className="mt-0.5 text-xs text-muted-foreground">{yearOf(m)}</p>
     </Link>
@@ -98,7 +98,7 @@ export function Row({
 }
 
 export function PosterRow({ category }: { category: Category }) {
-  const { data, error } = useTmdb<MediaList>(category.path)
+  const { titles, error } = useTitles(category.path)
   return (
     <Row
       title={
@@ -109,8 +109,8 @@ export function PosterRow({ category }: { category: Category }) {
       }
       track="auto-cols-[calc((100%-2*0.75rem)/3)] sm:auto-cols-[calc((100%-3*1rem)/4)] lg:auto-cols-[calc((100%-4*1rem)/5)] xl:auto-cols-[calc((100%-5*1rem)/6)]"
     >
-      {data
-        ? data.results.map((m) => <PosterCard key={m.id} m={m} type={typeOf(category)} />)
+      {titles
+        ? titles.map((m) => <PosterCard key={m.id} m={m} />)
         : Array.from({ length: 6 }, (_, i) => <PosterSkeleton key={i} pulse={!error} />)}
     </Row>
   )

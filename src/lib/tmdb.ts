@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 const token: string | undefined = import.meta.env.VITE_TMDB_TOKEN
 export const hasToken = Boolean(token)
@@ -10,9 +10,12 @@ const api = axios.create({
   params: { language: 'zh-CN' },
 })
 
+export type MediaType = 'movie' | 'tv'
+
+// A 作品 as the hooks below hand it out: it always knows its own type.
 export type Media = {
   id: number
-  media_type?: 'movie' | 'tv' | 'person'
+  media_type: MediaType
   title?: string
   name?: string
   original_title?: string
@@ -26,8 +29,6 @@ export type Media = {
   first_air_date?: string
 }
 
-export type MediaList = { results: Media[] }
-
 // Home rows. A row shows the first page of its request (20 titles), so its length is fixed.
 export const categories = [
   { key: 'movie', title: '热门电影', path: '/trending/movie/week' },
@@ -40,10 +41,6 @@ export const categories = [
 ]
 
 export type Category = (typeof categories)[number]
-export type MediaType = 'movie' | 'tv'
-
-// Discover results carry no media_type, so a row's type comes from its endpoint.
-export const typeOf = (c: Category): MediaType => (c.path.includes('/tv') ? 'tv' : 'movie')
 
 export const titleOf = (m: Media) => m.title ?? m.name ?? ''
 export const originalTitleOf = (m: Media) => m.original_title ?? m.original_name ?? ''
@@ -169,4 +166,30 @@ export function useTmdb<T>(path: string) {
     }
   }, [path])
   return state
+}
+
+// A list result as TMDB sends it: /discover and /trending/{movie,tv} leave out media_type, /trending/all mixes in people.
+type Listed = Omit<Media, 'media_type'> & { media_type?: MediaType | 'person' }
+
+// The 作品 in a list, each with its type: its own when TMDB sends one, else the one in the endpoint path.
+export const toTitles = (path: string, results: Listed[]): Media[] => {
+  const type = path.includes('/tv') ? 'tv' : 'movie'
+  return results.flatMap((m) => (m.media_type === 'person' ? [] : [{ ...m, media_type: m.media_type ?? type }]))
+}
+
+export function useTitles(path: string) {
+  const { data, error } = useTmdb<{ results: Listed[] }>(path)
+  const titles = useMemo(() => data && toTitles(path, data.results), [data, path])
+  return { titles, error }
+}
+
+// include_image_language=null keeps only textless backdrops, which suit the wall. For shows, credits is the current
+// cast; aggregate_credits covers every season but runs to megabytes for long-running ones.
+export function useDetails(type: MediaType, id: string) {
+  const { data, error } = useTmdb<Omit<Details, 'media_type'>>(
+    `/${type}/${id}?append_to_response=images,credits&include_image_language=null`,
+  )
+  // details leave out media_type; memoized because ratings refetch whenever the title object changes
+  const details = useMemo(() => data && { ...data, media_type: type }, [data, type])
+  return { details, error }
 }

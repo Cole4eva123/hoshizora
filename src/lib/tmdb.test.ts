@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { type Details, type Episode, type Logo, type Media, daysUntil, isDarkInk, nextEpisodeText, pickLogo, releaseOf } from './tmdb'
+import { type Details, type Episode, type Logo, type Media, daysUntil, isDarkInk, nextEpisodeText, pickLogo, releaseOf, toTitles } from './tmdb'
 
 const now = new Date('2026-10-02T21:30')
 const ep = (season_number: number, episode_number: number, air_date: string | null) =>
@@ -46,4 +46,12 @@ test('release date in full', () => {
   expect(releaseOf({ media_type: 'movie', release_date: '2026-09-28' } as Media)).toBe('2026年9月28日')
   expect(releaseOf({ media_type: 'tv', first_air_date: '2025-03-27' } as Media)).toBe('2025年3月27日')
   expect(releaseOf({ media_type: 'movie', release_date: '' } as Media)).toBe('') // not dated yet
+})
+
+test('lists hand out 作品 that know their type, and no people', () => {
+  const listed = (id: number, media_type?: 'movie' | 'tv' | 'person') => ({ id, media_type }) as Parameters<typeof toTitles>[1][number]
+  const types = (path: string, ...results: ReturnType<typeof listed>[]) => toTitles(path, results).map((m) => `${m.id} ${m.media_type}`)
+  expect(types('/discover/tv?with_genres=16', listed(1))).toEqual(['1 tv'])
+  expect(types('/discover/movie?with_genres=99', listed(1))).toEqual(['1 movie'])
+  expect(types('/trending/all/day', listed(1, 'tv'), listed(2, 'person'), listed(3, 'movie'))).toEqual(['1 tv', '3 movie'])
 })
