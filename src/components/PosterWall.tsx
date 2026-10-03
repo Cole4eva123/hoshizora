@@ -90,12 +90,12 @@ export function PosterWall({
       )}
     >
       {current && (
-        // The current backdrop, blurred, stays behind the whole page.
+        // The current backdrop, blurred, tints the whole page faintly; the night sky stays the base.
         <img
           key={current}
           src={img(current, 'w300')}
           alt=""
-          className="pointer-events-none fixed inset-0 -z-10 size-full scale-110 animate-in object-cover opacity-30 blur-3xl duration-1000 fade-in"
+          className="pointer-events-none fixed inset-0 -z-10 size-full scale-110 animate-in object-cover opacity-12 blur-3xl duration-1000 fade-in"
         />
       )}
       {/* In landscape the backdrops keep their own 16:9 frame at full width, so none of the still is cropped; the

@@ -25,7 +25,7 @@ export default function App() {
         aria-label="主导航"
         data-open={open || undefined}
         onMouseLeave={() => setOpen(false)}
-        className="group fixed top-[max(var(--gutter),env(safe-area-inset-top))] left-(--gutter) z-30 flex items-center gap-1.5 [--ring:var(--star)]"
+        className="group fixed top-[max(var(--gutter),env(safe-area-inset-top))] left-(--gutter) z-30 flex items-center gap-1.5"
       >
         <button
           aria-label="菜单"

@@ -18,7 +18,7 @@ import {
 export function PosterCard({ m, type }: { m: Media; type: MediaType }) {
   return (
     <Link to={`/${type}/${m.id}`} className="group snap-start">
-      <div className="aspect-2/3 overflow-hidden rounded-lg bg-muted outline -outline-offset-1 outline-white/8 transition-colors group-hover:outline-white/40">
+      <div className="aspect-2/3 overflow-hidden rounded-lg bg-muted outline -outline-offset-1 outline-white/8 transition-colors group-hover:outline-star/60">
         {m.poster_path && (
           <img src={img(m.poster_path, 'w342')} alt="" loading="lazy" decoding="async" className="size-full object-cover" />
         )}

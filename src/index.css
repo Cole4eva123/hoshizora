@@ -37,38 +37,39 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Dark only. 墨 ink, 黛 surface, 月白 text, 青瓷 celadon accent. */
+/* Dark only, in the logo's palette: its midnight sky behind everything, starlight as the one accent. */
 :root {
   color-scheme: dark;
-  --background: #0e1619;
-  --foreground: #d8e2df;
-  --card: #142024;
-  --card-foreground: var(--foreground);
-  --popover: #142024;
-  --popover-foreground: var(--foreground);
-  --primary: #8fcaab;
-  --primary-foreground: #0e1619;
-  --secondary: #1c2b30;
-  --secondary-foreground: var(--foreground);
-  --muted: #1c2b30;
-  --muted-foreground: #8c9d9b;
-  --accent: #1c2b30;
-  --accent-foreground: var(--foreground);
-  --destructive: #e5857a;
-  --border: #22343a;
-  --input: #2a3e45;
-  --ring: #8fcaab;
-  --radius: 0.75rem;
-
-  /* search scopes: all servers / TMDB / one server */
-  --tmdb: #63b8dc;
-  --apricot: #e2a47c;
-  --tone: var(--primary);
-
-  /* the logo's midnight sky, starlight and star glow, for the corner menu */
+  /* sampled from 午夜星辰播放三角.png: the sky, the starlight, the glow around the stars */
   --night: #020a20;
   --star: #9ec7e7;
   --glow: #5191cb;
+
+  --background: var(--night);
+  --foreground: #dfe8f5;
+  /* surfaces: the sky's hue, stepped up in lightness (oklch 19%, 23%, 28%, 32%) */
+  --card: #081328;
+  --card-foreground: var(--foreground);
+  --popover: var(--card);
+  --popover-foreground: var(--foreground);
+  --primary: var(--star);
+  --primary-foreground: var(--night);
+  --secondary: #101d32;
+  --secondary-foreground: var(--foreground);
+  --muted: var(--secondary);
+  --muted-foreground: #8b9ab8;
+  --accent: var(--secondary);
+  --accent-foreground: var(--foreground);
+  --destructive: #e5857a;
+  --border: #1c293f;
+  --input: #26334a;
+  --ring: var(--star);
+  --radius: 0.75rem;
+
+  /* search scopes: all servers / TMDB / one server. TMDB takes its own brand green, as its blue is close to starlight. */
+  --tmdb: #90cea1;
+  --apricot: #e2a47c;
+  --tone: var(--primary);
 
   /* page gutter, shared by the corner menu, hero and rows; clears the notch in landscape */
   --gutter: max(1.25rem, env(safe-area-inset-left));
@@ -89,6 +90,9 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
+    /* the night sky: small stars that stay put while the page scrolls past */
+    background-image: url(/stars.svg);
+    background-attachment: fixed;
   }
   :focus-visible {
     outline: 2px solid var(--ring);
