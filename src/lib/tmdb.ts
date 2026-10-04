@@ -39,7 +39,8 @@ export const categories: Category[] = [
   { key: 'us', title: '美剧', path: '/discover/tv?with_origin_country=US&with_genres=18&without_genres=16', votes: 200 },
   { key: 'cdrama', title: '国产剧', path: '/discover/tv?with_origin_country=CN&with_genres=18&without_genres=16', votes: 50 },
   { key: 'jdrama', title: '日剧', path: '/discover/tv?with_original_language=ja&with_genres=18&without_genres=16', votes: 50 },
-  { key: 'anime', title: '动画剧集', path: '/discover/tv?with_genres=16', votes: 200 },
+  { key: 'janime', title: '日本动漫', path: '/discover/tv?with_genres=16&with_original_language=ja', votes: 200 },
+  { key: 'canime', title: '国漫', path: '/discover/tv?with_genres=16&with_origin_country=CN', votes: 20 },
   { key: 'doc', title: '纪录片', path: '/discover/movie?with_genres=99', votes: 200 },
 ]
 
