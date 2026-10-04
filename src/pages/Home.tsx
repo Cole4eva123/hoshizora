@@ -4,7 +4,7 @@ import { History } from 'lucide-react'
 import { PosterRow } from '@/components/PosterRow'
 import { PosterWall, TitleInfo } from '@/components/PosterWall'
 import { Button } from '@/components/ui/button'
-import { categories, hasToken, trendingToday, useTitles } from '@/lib/tmdb'
+import { categories, hasToken, titleOf, trendingToday, useTitles } from '@/lib/tmdb'
 
 const shuffled = <T,>(list: T[]) =>
   list
@@ -38,6 +38,7 @@ function TrendingWall({ children }: { children: ReactNode }) {
     <PosterWall
       label="热门推荐"
       backdrops={slides.map((m) => m.backdrop_path!)}
+      link={(i) => ({ to: `/${slides[i].media_type}/${slides[i].id}`, label: titleOf(slides[i]) })}
       info={(i) =>
         slides[i] ? (
           <TitleInfo m={slides[i]}>

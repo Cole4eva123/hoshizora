@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router'
 import { Pause, Play } from 'lucide-react'
 import { Ratings } from '@/components/Ratings'
 import { Button } from '@/components/ui/button'
@@ -90,16 +91,19 @@ export function TitleInfo({
 
 // A full-screen, swipeable wall of backdrops. `info` describes the current slide over its lower left,
 // and `children` sit on its lower edge, with the wall running past the fold so only about their top half
-// shows on the first screen (posters grow with the screen width, hence vw).
+// shows on the first screen (posters grow with the screen width, hence vw). With `link`, each slide is a link: where
+// it leads, and its name for screen readers. `info` lets clicks through, so a click on the title opens it too.
 export function PosterWall({
   label,
   backdrops,
   info,
+  link,
   children,
 }: {
   label: string
   backdrops: string[]
   info: (index: number) => ReactNode
+  link?: (index: number) => { to: string; label: string }
   children?: ReactNode
 }) {
   const track = useRef<HTMLDivElement>(null)
@@ -138,15 +142,27 @@ export function PosterWall({
         onScroll={(e) => setIndex(Math.round(e.currentTarget.scrollLeft / e.currentTarget.clientWidth))}
         className="no-scrollbar absolute inset-0 flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain scroll-smooth mask-b-from-45% motion-reduce:scroll-auto landscape:bottom-auto landscape:aspect-video landscape:max-h-full landscape:mask-b-from-75%"
       >
-        {backdrops.map((path, i) => (
-          <img
-            key={path}
-            src={img(path, 'w1280')}
-            alt=""
-            loading={i ? 'lazy' : 'eager'}
-            className="size-full shrink-0 snap-start object-cover"
-          />
-        ))}
+        {backdrops.map((path, i) => {
+          const still = (
+            <img src={img(path, 'w1280')} alt="" loading={i ? 'lazy' : 'eager'} className="size-full object-cover" />
+          )
+          const to = link?.(i)
+          // inset focus ring: the track's overflow would clip one drawn outside the slide
+          return to ? (
+            <Link
+              key={path}
+              to={to.to}
+              aria-label={to.label}
+              className="size-full shrink-0 snap-start -outline-offset-2"
+            >
+              {still}
+            </Link>
+          ) : (
+            <div key={path} className="size-full shrink-0 snap-start">
+              {still}
+            </div>
+          )
+        })}
       </div>
       {/* Darkest under the title in the lower left, clear toward the upper right; fades out at the bottom so the
           page below doesn't start at a visible edge. */}
