@@ -48,6 +48,9 @@ export type Category = { key: string; title: string; path: string; votes?: numbe
 // Today's trending titles, movies and shows mixed (with people, which useTitles drops).
 export const trendingToday = '/trending/all/day'
 
+// TMDB's search over titles of both types and people; useTitles keeps the 作品.
+export const searchPath = (query: string) => `/search/multi?query=${encodeURIComponent(query)}`
+
 // A list endpoint's type is in its path: /discover/tv, /trending/tv, …
 const typeIn = (path: string): MediaType => (path.includes('/tv') ? 'tv' : 'movie')
 const withQuery = (path: string, query: string) => `${path}${path.includes('?') ? '&' : '?'}${query}`
