@@ -1,29 +1,45 @@
-import { Children, type ReactNode, isValidElement, useEffect, useLayoutEffect, useRef } from 'react'
+import { Children, type ReactNode, isValidElement, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { cn, reveal } from '@/lib/utils'
 import { type Category, type Media, img, titleOf, useTitles, yearOf } from '@/lib/tmdb'
 
-// A picture in the cards' rounded frame. Without one, `children` (an episode number, an initial) fill the frame.
+// A picture in the cards' rounded frame. `children` (an episode number, an initial) sit under it, in the same grid
+// cell: they show while it loads, if it fails, and when there's none.
 export function Frame({ src, className, children }: { src?: string; className: string; children?: ReactNode }) {
   return (
     <div
       className={cn(
-        'grid place-items-center overflow-hidden rounded-lg bg-muted font-heading text-muted-foreground outline -outline-offset-1 outline-white/8',
+        'grid place-items-center overflow-hidden rounded-lg bg-muted font-heading text-muted-foreground outline -outline-offset-1 outline-white/8 *:[grid-area:1/1]',
         className,
       )}
     >
-      {src ? <img src={src} alt="" loading="lazy" decoding="async" className="size-full object-cover" /> : children}
+      <span>{children}</span>
+      {src && (
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          ref={reveal}
+          onLoad={(e) => reveal(e.currentTarget)}
+          className="size-full object-cover opacity-0 transition-opacity duration-500 data-loaded:opacity-100"
+        />
+      )}
     </div>
   )
 }
 
+// Pointing at a card catches starlight on its frame and name; pressing it gives a little.
 export function PosterCard({ m }: { m: Media }) {
   return (
-    <Link to={`/${m.media_type}/${m.id}`} className="group snap-start">
-      <Frame src={img(m.poster_path, 'w342')} className="aspect-2/3 transition-colors group-hover:outline-star/60" />
-      <p className="mt-2 truncate text-sm">{titleOf(m)}</p>
+    <Link to={`/${m.media_type}/${m.id}`} viewTransition className="group snap-start">
+      <Frame
+        src={img(m.poster_path, 'w342')}
+        className="aspect-2/3 transition group-hover:outline-star/60 group-active:scale-[.97]"
+      />
+      <p className="mt-2.5 truncate text-sm transition-colors group-hover:text-star">{titleOf(m)}</p>
       <p className="mt-0.5 text-xs text-muted-foreground">{yearOf(m)}</p>
     </Link>
   )
@@ -34,7 +50,7 @@ export function PosterSkeletons({ n, pulse }: { n: number; pulse: boolean }) {
   return Array.from({ length: n }, (_, i) => (
     <div key={i} className={cn(pulse && 'animate-pulse')}>
       <div className="aspect-2/3 rounded-lg bg-muted/70" />
-      <div className="mt-2 h-4 w-3/4 rounded bg-muted/70" />
+      <div className="mt-2.5 h-4 w-3/4 rounded bg-muted/70" />
     </div>
   ))
 }
@@ -56,14 +72,29 @@ export function Row({
   const ref = useRef<HTMLDivElement>(null)
   // the items' keys: a new list, like another season's episodes, has other keys
   const items = Children.map(children, (c) => (isValidElement(c) ? c.key : null))?.join(' ')
+  // Whether the row is scrolled to its start and to its end, where the paging buttons have nowhere to go. Booleans, so
+  // the scroll events that change neither don't render the row again.
+  const [atStart, setAtStart] = useState(true)
+  const [atEnd, setAtEnd] = useState(true)
+  const measure = () => {
+    const el = ref.current!
+    setAtStart(el.scrollLeft < 1)
+    setAtEnd(el.scrollLeft + el.clientWidth > el.scrollWidth - 1)
+  }
 
   // Jump to item `start` whenever a new list arrives, e.g. the latest aired episode of the season just picked.
   useLayoutEffect(() => {
-    if (start === undefined) return
     const el = ref.current!
-    const item = el.children[start] as HTMLElement | undefined
+    const item = start === undefined ? undefined : (el.children[start] as HTMLElement | undefined)
     if (item) el.scrollTo({ left: item.offsetLeft - parseFloat(getComputedStyle(el).paddingLeft), behavior: 'instant' })
+    measure() // a new list changes how far the row scrolls, without firing onScroll or the ResizeObserver
   }, [start, items])
+  // a row made wider or narrower can lose or gain its overflow
+  useEffect(() => {
+    const ro = new ResizeObserver(measure)
+    ro.observe(ref.current!)
+    return () => ro.disconnect()
+  }, [])
 
   // One click moves exactly one screenful of items.
   const page = (dir: 1 | -1) => {
@@ -76,22 +107,24 @@ export function Row({
     <section>
       <div className="flex items-end justify-between gap-4 px-(--gutter)">
         <div className="min-w-0">
-          <h2 className="text-lg font-semibold">{title}</h2>
+          <h2 className="font-heading text-xl font-black md:text-2xl">{title}</h2>
           {extra}
         </div>
-        <div className="hidden shrink-0 gap-1 pointer-fine:flex">
-          <Button variant="ghost" size="icon" aria-label="上一页" onClick={() => page(-1)}>
+        {/* aria-disabled, not disabled, which would drop keyboard focus at the row's end; a click there scrolls nowhere */}
+        <div className="hidden shrink-0 gap-1 pointer-fine:flex *:aria-disabled:pointer-events-none *:aria-disabled:opacity-50">
+          <Button variant="ghost" size="icon" aria-label="上一页" aria-disabled={atStart} onClick={() => page(-1)}>
             <ChevronLeft />
           </Button>
-          <Button variant="ghost" size="icon" aria-label="下一页" onClick={() => page(1)}>
+          <Button variant="ghost" size="icon" aria-label="下一页" aria-disabled={atEnd} onClick={() => page(1)}>
             <ChevronRight />
           </Button>
         </div>
       </div>
       <div
         ref={ref}
+        onScroll={measure}
         className={cn(
-          'no-scrollbar relative mt-3 grid snap-x snap-mandatory scroll-px-(--gutter) grid-flow-col gap-3 overflow-x-auto overscroll-x-contain scroll-smooth px-(--gutter) motion-reduce:scroll-auto sm:gap-4',
+          'no-scrollbar relative mt-4 grid snap-x snap-mandatory scroll-px-(--gutter) grid-flow-col gap-3 overflow-x-auto overscroll-x-contain scroll-smooth px-(--gutter) motion-reduce:scroll-auto sm:gap-4',
           track,
         )}
       >
@@ -106,9 +139,13 @@ export function PosterRow({ category }: { category: Category }) {
   return (
     <Row
       title={
-        <Link to={`/category/${category.key}`} className="group inline-flex items-center gap-0.5">
+        <Link
+          to={`/category/${category.key}`}
+          viewTransition
+          className="group inline-flex items-center gap-1 transition-colors hover:text-star"
+        >
           {category.title}
-          <ChevronRight className="size-5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          <ChevronRight className="size-5 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-star" />
         </Link>
       }
       track="auto-cols-[calc((100%-2*0.75rem)/3)] sm:auto-cols-[calc((100%-3*1rem)/4)] lg:auto-cols-[calc((100%-4*1rem)/5)] xl:auto-cols-[calc((100%-5*1rem)/6)]"
@@ -147,7 +184,8 @@ export function PosterGrid({ path }: { path: string }) {
   // the grid by rows (TanStack Virtual) if lists ever run to thousands.
   return (
     <>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-x-4 gap-y-7">
+      {/* as many to a line as the home rows show on a screen */}
+      <div className="grid grid-cols-3 gap-x-3 gap-y-6 sm:grid-cols-4 sm:gap-x-4 sm:gap-y-8 lg:grid-cols-5 xl:grid-cols-6">
         {titles?.map((m) => <PosterCard key={m.id} m={m} />)}
         {loading && <PosterSkeletons n={titles ? 6 : 12} pulse={!error} />}
       </div>

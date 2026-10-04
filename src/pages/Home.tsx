@@ -1,9 +1,7 @@
 import { type ReactNode, useMemo } from 'react'
-import { Link } from 'react-router'
-import { History } from 'lucide-react'
+import { EmptyState, ToLibrary } from '@/components/Page'
 import { PosterRow } from '@/components/PosterRow'
 import { PosterWall, TitleInfo } from '@/components/PosterWall'
-import { Button } from '@/components/ui/button'
 import { categories, hasToken, titleOf, trendingToday, useTitles } from '@/lib/tmdb'
 
 const shuffled = <T,>(list: T[]) =>
@@ -20,7 +18,7 @@ export default function Home() {
       <TrendingWall>
         <PosterRow category={first} />
       </TrendingWall>
-      <div className="space-y-10 pt-4 pb-(--page-bottom)">
+      <div className="space-y-12 pt-6 pb-(--page-bottom) md:space-y-14">
         <ContinueWatching />
         {rest.map((c) => (
           <PosterRow key={c.key} category={c} />
@@ -80,14 +78,11 @@ function Fallback({ error }: { error?: string }) {
 function ContinueWatching() {
   return (
     <section className="px-(--gutter)">
-      <h2 className="text-lg font-semibold">继续观看</h2>
-      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border border-dashed px-5 py-5 text-sm text-muted-foreground">
-        <History className="size-5 shrink-0" />
-        <p className="min-w-48 flex-1">连接 Emby 服务器后，没看完的作品会排在这里，点一下就能接着看。</p>
-        <Button asChild variant="secondary" size="sm">
-          <Link to="/library">去媒体库</Link>
-        </Button>
-      </div>
+      <EmptyState title="继续观看">
+        连接 Emby 服务器后，没看完的作品会排在这里，点一下就能接着看。先去
+        <ToLibrary />
+        连接服务器。
+      </EmptyState>
     </section>
   )
 }

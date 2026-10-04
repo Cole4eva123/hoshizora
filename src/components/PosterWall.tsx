@@ -1,10 +1,10 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { Fragment, type ReactNode, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { Pause, Play } from 'lucide-react'
 import { Ratings } from '@/components/Ratings'
 import { Button } from '@/components/ui/button'
 import { type Logo, type Media, img, isDarkInk, originalTitleOf, releaseOf, titleOf, useLogo } from '@/lib/tmdb'
-import { cn } from '@/lib/utils'
+import { cn, reveal } from '@/lib/utils'
 
 const scrollToSlide = (el: HTMLElement | null, i: number) => el?.scrollTo({ left: i * el.clientWidth })
 
@@ -111,13 +111,6 @@ export function PosterWall({
   const [paused, setPaused] = useState(false)
   const current = backdrops[index]
 
-  // Swiping changes `index`, which restarts the timer.
-  useEffect(() => {
-    if (paused || backdrops.length < 2 || matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    const t = setTimeout(() => scrollToSlide(track.current, (index + 1) % backdrops.length), 8000)
-    return () => clearTimeout(t)
-  }, [index, paused, backdrops.length])
-
   return (
     <section
       aria-label={label}
@@ -140,11 +133,18 @@ export function PosterWall({
       <div
         ref={track}
         onScroll={(e) => setIndex(Math.round(e.currentTarget.scrollLeft / e.currentTarget.clientWidth))}
-        className="no-scrollbar absolute inset-0 flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain scroll-smooth mask-b-from-45% motion-reduce:scroll-auto landscape:bottom-auto landscape:aspect-video landscape:max-h-full landscape:mask-b-from-75%"
+        className="no-scrollbar recede absolute inset-0 flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain scroll-smooth mask-b-from-45% motion-reduce:scroll-auto landscape:bottom-auto landscape:aspect-video landscape:max-h-full landscape:mask-b-from-75%"
       >
         {backdrops.map((path, i) => {
           const still = (
-            <img src={img(path, 'w1280')} alt="" loading={i ? 'lazy' : 'eager'} className="size-full object-cover" />
+            <img
+              src={img(path, 'w1280')}
+              alt=""
+              loading={i ? 'lazy' : 'eager'}
+              ref={reveal}
+              onLoad={(e) => reveal(e.currentTarget)}
+              className="size-full object-cover opacity-0 transition-opacity duration-700 data-loaded:opacity-100"
+            />
           )
           const to = link?.(i)
           // inset focus ring: the track's overflow would clip one drawn outside the slide
@@ -152,6 +152,7 @@ export function PosterWall({
             <Link
               key={path}
               to={to.to}
+              viewTransition
               aria-label={to.label}
               className="size-full shrink-0 snap-start -outline-offset-2"
             >
@@ -165,31 +166,59 @@ export function PosterWall({
         })}
       </div>
       {/* Darkest under the title in the lower left, clear toward the upper right; fades out at the bottom so the
-          page below doesn't start at a visible edge. */}
-      <div className="pointer-events-none absolute inset-0 bg-linear-to-tr from-background/90 via-background/30 to-transparent mask-b-from-75%" />
+          page below doesn't start at a visible edge. A shade along the top keeps the corner menu legible on a bright
+          still. */}
+      <div className="pointer-events-none absolute inset-0 bg-linear-to-tr from-background/90 via-background/30 to-transparent mask-b-from-75% before:absolute before:inset-x-0 before:top-0 before:h-36 before:bg-linear-to-b before:from-background/60" />
 
       <div className="pointer-events-none relative mb-8 flex flex-wrap items-end justify-between gap-6 px-(--gutter)">
         {info(index)}
         {backdrops.length > 1 && (
-          // ml-auto: on the right even while the title is held back and they are the row's only item
-          <div className="pointer-events-auto ml-auto flex items-center gap-2">
+          // The slides as a constellation, like the logo: a star each, the current one lit, the lines up to it drawn.
+          // The line after it draws itself (animate-draw, the slide's time on screen) and on reaching the next star
+          // brings that slide in; the last one's runs to the pause button. It loops, so if the slide doesn't change (a
+          // finger was dragging the wall) the next round tries again. Pausing holds the line where it is. With
+          // reduced motion there's no line, and so no autoplay. A blurred patch of night behind keeps it visible on a
+          // bright still; it reaches out less than the narrowest gutter, or the page would scroll sideways on phones.
+          // ml-auto keeps it on the right while the title is held back and it's the row's only item.
+          <div className="pointer-events-auto relative isolate ml-auto flex items-center before:absolute before:-inset-x-4 before:-inset-y-4 before:-z-10 before:rounded-full before:bg-night/50 before:blur-xl">
             {backdrops.map((path, i) => (
-              <button
-                key={path}
-                aria-label={`第 ${i + 1} 张`}
-                aria-current={i === index}
-                onClick={() => scrollToSlide(track.current, i)}
-                className={cn(
-                  'h-1.5 rounded-full transition-all',
-                  i === index ? 'w-6 bg-primary' : 'w-1.5 bg-foreground/30 hover:bg-foreground/60',
-                )}
-              />
+              <Fragment key={path}>
+                <button
+                  aria-label={`第 ${i + 1} 张`}
+                  aria-current={i === index}
+                  onClick={() => scrollToSlide(track.current, i)}
+                  className={cn(
+                    'grid size-5 place-items-center rounded-full after:size-1.5 after:rounded-full after:transition',
+                    i === index
+                      ? 'after:scale-125 after:bg-star after:shadow-[0_0_8px_2px_var(--glow)]'
+                      : 'after:bg-foreground/50 hover:after:bg-foreground/90',
+                  )}
+                />
+                {/* with reduced motion the last line, which leads to the hidden pause button, goes too */}
+                <span
+                  className={cn(
+                    'h-px w-3 motion-reduce:last-of-type:hidden sm:w-5',
+                    i < index ? 'bg-star/60' : 'bg-foreground/25',
+                  )}
+                >
+                  {i === index && (
+                    <span
+                      onAnimationIteration={() => scrollToSlide(track.current, (i + 1) % backdrops.length)}
+                      className={cn(
+                        'block h-full origin-left animate-draw bg-star motion-reduce:hidden',
+                        paused && '[animation-play-state:paused]',
+                      )}
+                    />
+                  )}
+                </span>
+              </Fragment>
             ))}
             <Button
               variant="ghost"
               size="icon-sm"
               aria-label={paused ? '继续轮播' : '暂停轮播'}
               onClick={() => setPaused(!paused)}
+              className="motion-reduce:hidden"
             >
               {paused ? <Play /> : <Pause />}
             </Button>

@@ -1,11 +1,10 @@
-import { useState } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router'
-import { ChevronDown, ChevronLeft } from 'lucide-react'
-import { Page } from '@/components/Page'
-import { Pills } from '@/components/Pills'
+import { Fragment, useState } from 'react'
+import { useParams } from 'react-router'
+import { ChevronDown } from 'lucide-react'
+import { Choices } from '@/components/Choices'
+import { BackButton, Page } from '@/components/Page'
 import { Frame, Row } from '@/components/PosterRow'
 import { PosterWall, TitleInfo } from '@/components/PosterWall'
-import { Button } from '@/components/ui/button'
 import {
   type Details,
   type Episode,
@@ -18,7 +17,7 @@ import {
   useDetails,
   useSeason,
 } from '@/lib/tmdb'
-import { cn, pill } from '@/lib/utils'
+import { choice, cn } from '@/lib/utils'
 
 export default function Detail({ type }: { type: MediaType }) {
   const { id } = useParams()
@@ -30,11 +29,12 @@ export default function Detail({ type }: { type: MediaType }) {
         <p className="text-sm text-muted-foreground">{error}</p>
       </Page>
     )
-  if (!m) return null
+  if (!m) return <BackButton /> // the way back is there before the title arrives
 
   const facts = [...m.genres.slice(0, 3).map((g) => g.name), m.runtime ? `${m.runtime} 分钟` : '']
   return (
-    <>
+    // keyed by the title, so another one starts over: its wall at the first slide, its 选集 at its own season
+    <Fragment key={`${type}/${id}`}>
       <PosterWall
         label="剧照"
         backdrops={backdrops}
@@ -47,28 +47,11 @@ export default function Detail({ type }: { type: MediaType }) {
         )}
       />
       <BackButton />
-      <div className="space-y-12 pt-4 pb-(--page-bottom)">
+      <div className="space-y-12 pt-6 pb-(--page-bottom) md:space-y-14">
         {!!m.seasons?.length && <Episodes tv={m} />}
         <Cast cast={m.credits.cast} />
       </div>
-    </>
-  )
-}
-
-// Back to wherever the title was opened from. A link opened directly has no history in the app, so that goes home.
-// Sits beside the corner menu's seal, at its height.
-function BackButton() {
-  const navigate = useNavigate()
-  const { key } = useLocation()
-  return (
-    <Button
-      variant="ghost"
-      onClick={() => (key === 'default' ? navigate('/') : navigate(-1))}
-      className="absolute top-(--menu-top) left-[calc(var(--gutter)+3rem)] h-10"
-    >
-      <ChevronLeft />
-      返回
-    </Button>
+    </Fragment>
   )
 }
 
@@ -95,20 +78,21 @@ function Episodes({ tv }: { tv: Details }) {
             {nextEpisodeText(tv)}
           </p>
           {seasons.length > 1 && (
-            <Pills
+            <Choices
               legend="选择一季"
               options={latest.map((s) => ({ key: s.season_number, label: s.name }))}
               value={season}
               onChange={setSeason}
-              className="mt-4"
+              className="mt-5"
             >
               {older.length > 0 && (
-                <div className="relative">
+                // the star and the focus ring go on the wrapper, as a select draws no ::after
+                <div className={choice(olderPicked)}>
                   <select
                     aria-label="更多季"
                     value={olderPicked ? season : ''}
                     onChange={(e) => setSeason(Number(e.target.value))}
-                    className={cn(pill(olderPicked), 'appearance-none pr-9')}
+                    className="cursor-pointer appearance-none bg-transparent pr-5 outline-none"
                   >
                     <option value="" disabled hidden>
                       更多
@@ -119,10 +103,10 @@ function Episodes({ tv }: { tv: Details }) {
                       </option>
                     ))}
                   </select>
-                  <ChevronDown className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2" />
+                  <ChevronDown className="pointer-events-none absolute top-1/2 right-0 size-4 -translate-y-1/2" />
                 </div>
               )}
-            </Pills>
+            </Choices>
           )}
           {error && <p className="mt-4 text-sm text-muted-foreground">{error}</p>}
           {episodes?.length === 0 && <p className="mt-4 text-sm text-muted-foreground">这一季还没有分集信息。</p>}

@@ -1,6 +1,6 @@
 import { Navigate, useParams, useSearchParams } from 'react-router'
+import { Choices } from '@/components/Choices'
 import { Page } from '@/components/Page'
-import { Pills } from '@/components/Pills'
 import { PosterGrid } from '@/components/PosterRow'
 import { categories, sortsOf } from '@/lib/tmdb'
 
@@ -17,10 +17,10 @@ export default function Category() {
   return (
     <Page title={category.title} back>
       {sort && (
-        <div className="mb-8">
+        <div className="mb-10">
           {/* a new sort starts over from its first page, at the top */}
-          <Pills legend="排序" options={sorts} value={sort.key} onChange={(s) => setParams({ sort: s }, { replace: true })} />
-          <p className="mt-3 text-sm text-muted-foreground">{sort.hint}</p>
+          <Choices legend="排序" options={sorts} value={sort.key} onChange={(s) => setParams({ sort: s }, { replace: true })} />
+          <p className="mt-4 text-sm text-muted-foreground">{sort.hint}</p>
         </div>
       )}
       <PosterGrid path={path} />

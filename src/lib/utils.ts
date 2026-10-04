@@ -2,9 +2,17 @@ import { cn } from "cn"
 
 export { cn }
 
-// One pill of a Pills row, picked or not. Also dresses a control that sits in the row, like the menu of older seasons.
-export const pill = (picked: boolean) =>
+// One option of a Choices row, picked or not: a quiet word, and under the picked one a star in --tone, the way the
+// corner menu's current page shines. Also dresses a control that sits in the row, like the menu of older seasons.
+export const choice = (picked: boolean) =>
   cn(
-    'cursor-pointer rounded-full border px-4 py-1.5 text-sm transition-colors hover:bg-card',
-    picked && 'border-primary bg-primary/10 text-primary',
+    'relative cursor-pointer rounded-sm py-1 text-[15px] text-muted-foreground transition-colors hover:text-foreground has-focus-visible:outline-2 has-focus-visible:outline-offset-4 has-focus-visible:outline-tone',
+    'after:absolute after:-bottom-1 after:left-1/2 after:size-1 after:-translate-x-1/2 after:rounded-full after:bg-tone after:opacity-0 after:shadow-[0_0_6px_1px_var(--tone)] after:transition-opacity',
+    picked && 'text-foreground after:opacity-100',
   )
+
+// A picture fades in once it has loaded instead of painting in strips (with `opacity-0 data-loaded:opacity-100`). Use
+// it as the img's ref and onLoad: the ref catches one that is already in, as when a page is drawn again from cache.
+export const reveal = (img: HTMLImageElement | null) => {
+  if (img?.complete && img.naturalWidth) img.dataset.loaded = ''
+}

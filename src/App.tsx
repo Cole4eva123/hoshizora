@@ -49,6 +49,7 @@ export default function App() {
                 key={to}
                 to={to}
                 end={to === '/'}
+                viewTransition
                 onClick={() => setOpen(false)}
                 className={({ isActive }) =>
                   cn(

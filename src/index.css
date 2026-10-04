@@ -35,6 +35,13 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  /* the poster wall's timer: the line to the next star draws itself, over and over, while a slide is up */
+  --animate-draw: draw 8s linear infinite;
+  @keyframes draw {
+    from {
+      scale: 0 1;
+    }
+  }
 }
 
 /* Dark only, in the logo's palette: its midnight sky behind everything, starlight as the one accent. */
@@ -75,6 +82,8 @@
   --gutter: max(1.25rem, env(safe-area-inset-left));
   /* the corner menu's top, which the back button and page titles line up under; clears the notch in portrait */
   --menu-top: max(var(--gutter), env(safe-area-inset-top));
+  /* where a page without a poster wall starts, its title or the search field clear of the corner menu */
+  --page-top: calc(var(--menu-top) + 5rem);
   /* room below a page's last row, clear of the home indicator */
   --page-bottom: max(4rem, env(safe-area-inset-bottom));
 }
@@ -101,6 +110,35 @@
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
+  }
+  ::selection {
+    background-color: color-mix(in oklab, var(--star) 35%, transparent);
+  }
+}
+
+/* Links cross-fade between pages (React Router's viewTransition), except with reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none;
+  }
+}
+
+/* The poster wall's stills dim as the page scrolls past them, like house lights going down, so the rows take over.
+   Only where scroll timelines are supported: elsewhere the animation would end at once and leave the wall dim. */
+@utility recede {
+  @supports (animation-timeline: scroll()) {
+    @media (prefers-reduced-motion: no-preference) {
+      animation: recede auto linear both;
+      animation-timeline: scroll();
+      animation-range: 0 80svh;
+    }
+  }
+}
+@keyframes recede {
+  to {
+    opacity: 0.35;
   }
 }
 
