@@ -10,6 +10,7 @@ import Detail from '@/pages/Detail'
 import Favorites from '@/pages/Favorites'
 import Home from '@/pages/Home'
 import Library from '@/pages/Library'
+import Person from '@/pages/Person'
 import Search from '@/pages/Search'
 import Settings from '@/pages/Settings'
 
@@ -22,6 +23,7 @@ const router = createBrowserRouter(
         { path: 'category/:key', element: <Category /> },
         { path: 'movie/:id', element: <Detail type="movie" /> },
         { path: 'tv/:id', element: <Detail type="tv" /> },
+        { path: 'person/:id', element: <Person /> },
         { path: 'favorites', element: <Favorites /> },
         { path: 'library', element: <Library /> },
         { path: 'search', element: <Search /> },

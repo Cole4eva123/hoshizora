@@ -42,11 +42,14 @@ export function ToLibrary() {
   )
 }
 
+// A section's serif heading: a row's, an empty state's, an actor's 作品.
+export const sectionTitle = 'font-heading text-xl font-black md:text-2xl'
+
 // What an empty page or section says, and where to go to fill it.
 export function EmptyState({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="max-w-md">
-      <h2 className="font-heading text-xl font-black md:text-2xl">{title}</h2>
+      <h2 className={sectionTitle}>{title}</h2>
       <p className="mt-3 text-[15px] leading-7 text-muted-foreground">{children}</p>
     </div>
   )

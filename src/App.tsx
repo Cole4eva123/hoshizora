@@ -12,8 +12,8 @@ const nav = [
 
 export default function App() {
   const { pathname } = useLocation()
-  // categories and titles are opened from Home, so Home stays highlighted there
-  const underHome = /^\/(category|movie|tv)\//.test(pathname)
+  // categories, titles and their actors are opened from Home, so Home stays highlighted there
+  const underHome = /^\/(category|movie|tv|person)\//.test(pathname)
   // Hover and keyboard focus unroll the menu in CSS; `open` is for taps, which have no hover.
   const [open, setOpen] = useState(false)
 

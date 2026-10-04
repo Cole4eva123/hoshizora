@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { type Category, type Details, type Episode, type Logo, type Media, daysUntil, isDarkInk, nextEpisodeText, pickLogo, releaseOf, sortsOf, toTitles } from './tmdb'
+import { type Category, type Credit, type Details, type Episode, type Logo, type Media, type Person, daysUntil, isDarkInk, lifeOf, nextEpisodeText, pickLogo, releaseOf, sortsOf, toTitles, worksOf } from './tmdb'
 
 const now = new Date('2026-10-02T21:30')
 const ep = (season_number: number, episode_number: number, air_date: string | null) =>
@@ -70,4 +70,50 @@ test('sorting: TMDB sorts, 最新 skips the unreleased, 高分 needs the 分类 
   })
   expect(paths({ ...show, path: '/discover/movie?with_genres=99' }).latest).toContain('primary_release_date.lte=2026-10-02')
   expect(sortsOf({ key: 'm', title: '热门电影', path: '/trending/movie/week' })).toEqual([])
+})
+
+test("an actor's 作品: parts only, each 作品 once with its parts joined, the best known first", () => {
+  const credit = (media_type: 'movie' | 'tv', id: number, character: string, vote_count: number) =>
+    ({ media_type, id, character, vote_count }) as Credit
+  const works = worksOf({ name: '胡歌', also_known_as: ['Hu Ge'] }, [
+    credit('movie', 1, 'Zhou Zenong', 384),
+    credit('tv', 2, 'Self - Guest', 900), // a talk show
+    credit('tv', 3, 'Mei Changsu', 77),
+    credit('tv', 3, 'Lin Shu', 77), // the same show, a second part
+    credit('movie', 3, 'Narrator', 10), // a movie with the show's id is another 作品
+    credit('movie', 4, 'Herself (archive footage)', 50),
+    credit('tv', 5, '胡歌', 40), // playing himself, by name
+    credit('movie', 6, 'Beskod (voice)', 66),
+    credit('tv', 7, '', 5), // listed twice, the first part blank
+    credit('tv', 7, 'Tian Han', 5),
+    credit('tv', 3, 'Mei Changsu', 77), // a part listed again
+    credit('movie', 8, 'Future Self', 3), // a part, though it says Self
+    credit('tv', 9, 'Themselves', 30), // a band as itself
+    credit('movie', 10, 'Narrator / Self', 20),
+  ])
+  expect(works.map((w) => `${w.media_type}${w.id} ${w.character}`)).toEqual([
+    'movie1 Zhou Zenong',
+    'tv3 Mei Changsu / Lin Shu',
+    'movie6 Beskod (voice)',
+    'movie3 Narrator',
+    'tv7 Tian Han',
+    'movie8 Future Self',
+  ])
+})
+
+test('a person: born, age, birthplace; or died and the age reached', () => {
+  const p = (fields: Partial<Person>) => ({ birthday: null, deathday: null, place_of_birth: null, ...fields }) as Person
+  expect(lifeOf(p({ birthday: '1963-12-18', place_of_birth: 'Shawnee, Oklahoma, USA' }), now)).toEqual([
+    '1963年12月18日生',
+    '62 岁',
+    'Shawnee, Oklahoma, USA',
+  ])
+  expect(lifeOf(p({ birthday: '1972-10-02' }), now)[1]).toBe('54 岁') // a birthday today counts
+  expect(lifeOf(p({ birthday: '1940-10-03' }), now)[1]).toBe('85 岁') // tomorrow's doesn't yet
+  expect(lifeOf(p({ birthday: '1925-01-26', deathday: '2008-09-26' }), now)).toEqual([
+    '1925年1月26日生',
+    '2008年9月26日逝世',
+    '享年 83 岁',
+  ])
+  expect(lifeOf(p({}), now)).toEqual([])
 })

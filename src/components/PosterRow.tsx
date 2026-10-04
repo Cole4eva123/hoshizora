@@ -1,6 +1,7 @@
 import { Children, type ReactNode, isValidElement, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { sectionTitle } from '@/components/Page'
 import { Button } from '@/components/ui/button'
 import { cn, reveal } from '@/lib/utils'
 import { type Category, type Media, img, titleOf, useTitles, yearOf } from '@/lib/tmdb'
@@ -31,8 +32,9 @@ export function Frame({ src, className, children }: { src?: string; className: s
   )
 }
 
-// Pointing at a card catches starlight on its frame and name; pressing it gives a little.
-export function PosterCard({ m }: { m: Media }) {
+// Pointing at a card catches starlight on its frame and name; pressing it gives a little. `role`, on an actor's page,
+// is the part they played in it.
+export function PosterCard({ m, role }: { m: Media; role?: string }) {
   return (
     <Link to={`/${m.media_type}/${m.id}`} viewTransition className="group snap-start">
       <Frame
@@ -40,10 +42,16 @@ export function PosterCard({ m }: { m: Media }) {
         className="aspect-2/3 transition group-hover:outline-star/60 group-active:scale-[.97]"
       />
       <p className="mt-2.5 truncate text-sm transition-colors group-hover:text-star">{titleOf(m)}</p>
-      <p className="mt-0.5 text-xs text-muted-foreground">{yearOf(m)}</p>
+      <p className="mt-0.5 flex gap-x-2 text-xs text-muted-foreground">
+        {yearOf(m)}
+        {role && <span className="truncate">饰 {role}</span>}
+      </p>
     </Link>
   )
 }
+
+// A grid of posters, as many to a line as the home rows show on a screen.
+export const posterGrid = 'grid grid-cols-3 gap-x-3 gap-y-6 sm:grid-cols-4 sm:gap-x-4 sm:gap-y-8 lg:grid-cols-5 xl:grid-cols-6'
 
 // `n` placeholder cards while titles load; they stop pulsing once loading has failed.
 export function PosterSkeletons({ n, pulse }: { n: number; pulse: boolean }) {
@@ -107,7 +115,7 @@ export function Row({
     <section>
       <div className="flex items-end justify-between gap-4 px-(--gutter)">
         <div className="min-w-0">
-          <h2 className="font-heading text-xl font-black md:text-2xl">{title}</h2>
+          <h2 className={sectionTitle}>{title}</h2>
           {extra}
         </div>
         {/* aria-disabled, not disabled, which would drop keyboard focus at the row's end; a click there scrolls nowhere */}
@@ -184,8 +192,7 @@ export function PosterGrid({ path }: { path: string }) {
   // the grid by rows (TanStack Virtual) if lists ever run to thousands.
   return (
     <>
-      {/* as many to a line as the home rows show on a screen */}
-      <div className="grid grid-cols-3 gap-x-3 gap-y-6 sm:grid-cols-4 sm:gap-x-4 sm:gap-y-8 lg:grid-cols-5 xl:grid-cols-6">
+      <div className={posterGrid}>
         {titles?.map((m) => <PosterCard key={m.id} m={m} />)}
         {loading && <PosterSkeletons n={titles ? 6 : 12} pulse={!error} />}
       </div>

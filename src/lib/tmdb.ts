@@ -109,7 +109,8 @@ export type Details = Media & {
   next_episode_to_air?: Episode | null
   last_episode_to_air?: Episode | null
   images: { backdrops: { file_path: string }[] }
-  credits: { cast: { credit_id: string; name: string; character: string; profile_path: string | null }[] }
+  // a cast member's id is the person's, for their page
+  credits: { cast: { id: number; credit_id: string; name: string; character: string; profile_path: string | null }[] }
 }
 
 export type Logo = { file_path: string; iso_639_1: string | null; iso_3166_1: string | null }
@@ -172,6 +173,64 @@ export function nextEpisodeText(tv: Details, now = new Date()) {
   const done = ({ Ended: '已完结', Canceled: '已停播' } as Record<string, string>)[tv.status]
   if (!done) return '下一集的播出时间还没公布'
   return `${done}，共 ${seasons > 1 ? `${seasons} 季 ` : ''}${tv.number_of_episodes} 集`
+}
+
+// A person as /person/{id} describes them: names and biography in Chinese when TMDB has them, the birthplace as TMDB
+// records it, usually in English.
+export type Person = {
+  id: number
+  name: string
+  also_known_as: string[]
+  biography: string
+  birthday: string | null
+  deathday: string | null
+  place_of_birth: string | null
+  profile_path: string | null
+}
+
+// One of a person's acting credits: a 作品, which carries its own type here, and the part they played.
+export type Credit = Media & { character: string; vote_count: number }
+
+// One entry per key, its parts joined. TMDB lists a person in a cast, and a 作品 in a person's credits, once per part
+// played, and a part can come blank or twice.
+const joinParts = <T extends { character: string }>(list: T[], key: (x: T) => string) => {
+  const once = new Map<string, T>()
+  for (const x of list) {
+    const seen = once.get(key(x))
+    const parts = [...(seen ? seen.character.split(' / ') : []), x.character].filter(Boolean)
+    once.set(key(x), { ...(seen ?? x), character: [...new Set(parts)].join(' / ') })
+  }
+  return [...once.values()]
+}
+
+// A part that is the person themselves (Self, Self - Guest, Himself…, also after a slash): not a part.
+const asThemselves = /(^|\/\s*)(self|himself|herself|themselves)\b/i
+
+// The 作品 a person acted in, each once, best known (most rated) first. Talk shows, making-ofs and award nights, where
+// they appear as themselves, under that name or their own, are left out.
+export function worksOf(person: Pick<Person, 'name' | 'also_known_as'>, cast: Credit[]) {
+  const names = new Set([person.name, ...person.also_known_as])
+  const parts = cast.filter((c) => !asThemselves.test(c.character) && !names.has(c.character))
+  return joinParts(parts, (c) => c.media_type + c.id).sort((a, b) => b.vote_count - a.vote_count)
+}
+
+// Whole years from a birthday to a day; the birthday itself counts.
+const yearsTo = (birthday: string, day: Date) => {
+  const born = dayOf(birthday)
+  const birthdayThatYear = new Date(day.getFullYear(), born.getMonth(), born.getDate())
+  return day.getFullYear() - born.getFullYear() - (day < birthdayThatYear ? 1 : 0)
+}
+
+// What a person's page says under their name: born, died, age, birthplace; what TMDB doesn't know is left out.
+export function lifeOf(p: Person, now = new Date()) {
+  const date = (day: string) => fullDate.format(dayOf(day))
+  const age = p.birthday ? yearsTo(p.birthday, p.deathday ? dayOf(p.deathday) : now) : undefined
+  return [
+    p.birthday && `${date(p.birthday)}生`,
+    p.deathday && `${date(p.deathday)}逝世`,
+    age !== undefined && (p.deathday ? `享年 ${age} 岁` : `${age} 岁`),
+    p.place_of_birth,
+  ].filter((fact): fact is string => !!fact)
 }
 
 const errorText = (e: unknown) => {
@@ -283,7 +342,12 @@ export function useDetails(type: MediaType, id: string) {
   )
   const backdrops = data ? data.images.backdrops.slice(0, 8).map((b) => b.file_path) : []
   if (!backdrops.length && data?.backdrop_path) backdrops.push(data.backdrop_path)
-  return { details: data && { ...data, media_type: type }, backdrops, error } // details leave out media_type
+  // details leave out media_type; someone in two parts gets one place in the cast, so one headshot opens their page
+  const details = useMemo(
+    () => data && { ...data, media_type: type, credits: { cast: joinParts(data.credits.cast, (p) => `${p.id}`) } },
+    [data, type],
+  )
+  return { details, backdrops, error }
 }
 
 // A season's episodes. TMDB names an untranslated episode "第 N 集"; that name is dropped, as the number shows anyway.
@@ -294,4 +358,22 @@ export function useSeason(tvId: number, season: number) {
     [data],
   )
   return { episodes, error }
+}
+
+// A person with the 作品 they acted in, movies and shows: one request.
+const personPath = (id: number | string) => `/person/${id}?append_to_response=combined_credits`
+
+export function usePerson(id: string) {
+  const { data, error } = useTmdb<Person & { combined_credits: { cast: Credit[] } }>(personPath(id))
+  // TMDB biographies indent their paragraphs with ideographic spaces and space them with blank lines; neither is
+  // kept, so a folded biography shows five lines of text
+  const person = useMemo(() => data && { ...data, biography: data.biography.replace(/^\s+/gm, '').trim() }, [data])
+  const works = useMemo(() => data && worksOf(data, data.combined_credits.cast), [data])
+  return { person, works, error }
+}
+
+// Asks for a person ahead of a click (the pointer is on their headshot), so their page is complete in its first frame
+// and the headshot can grow into its portrait.
+export const prefetchPerson = (id: number) => {
+  getTmdb(personPath(id)) // a failure is dropped from the cache; the page asks again
 }

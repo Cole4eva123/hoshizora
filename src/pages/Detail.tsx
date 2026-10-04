@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import { useParams } from 'react-router'
+import { Link, useParams, useViewTransitionState } from 'react-router'
 import { ChevronDown } from 'lucide-react'
 import { Choices } from '@/components/Choices'
 import { BackButton, Page } from '@/components/Page'
@@ -13,6 +13,7 @@ import {
   daysUntil,
   img,
   nextEpisodeText,
+  prefetchPerson,
   relativeDays,
   useDetails,
   useSeason,
@@ -149,15 +150,38 @@ function Cast({ cast }: { cast: Details['credits']['cast'] }) {
   return (
     <Row title="演员" track="auto-cols-[6rem] sm:auto-cols-[7.5rem]">
       {cast.slice(0, 20).map((p) => (
-        <div key={p.credit_id} className="snap-start">
-          {/* TMDB headshots are 2:3, so a 2:3 frame shows the whole photo */}
-          <Frame src={img(p.profile_path, 'w300')} className="aspect-2/3 text-2xl">
-            {p.name.slice(0, 1)}
-          </Frame>
-          <p className="mt-2 truncate text-sm">{p.name}</p>
-          {p.character && <p className="mt-0.5 truncate text-xs text-muted-foreground">饰 {p.character}</p>}
-        </div>
+        <CastCard key={p.credit_id} p={p} />
       ))}
     </Row>
+  )
+}
+
+// One of the cast, opening their page. Pointing at them asks for it ahead, so it's complete in its first frame and
+// the headshot can grow into the page's portrait: both are named portrait for the view transition, this one only
+// while it's the one being opened, as the browser skips a transition when two elements share a name.
+function CastCard({ p }: { p: Details['credits']['cast'][number] }) {
+  const to = `/person/${p.id}`
+  const opening = useViewTransitionState(to)
+  return (
+    <Link
+      to={to}
+      viewTransition
+      onPointerEnter={() => prefetchPerson(p.id)}
+      onFocus={() => prefetchPerson(p.id)}
+      className="group snap-start"
+    >
+      {/* TMDB headshots are 2:3, so a 2:3 frame shows the whole photo */}
+      <Frame
+        src={img(p.profile_path, 'w300')}
+        className={cn(
+          'aspect-2/3 text-2xl transition group-hover:outline-star/60 group-active:scale-[.97]',
+          opening && '[view-transition-name:portrait]',
+        )}
+      >
+        {p.name.slice(0, 1)}
+      </Frame>
+      <p className="mt-2 truncate text-sm transition-colors group-hover:text-star">{p.name}</p>
+      {p.character && <p className="mt-0.5 truncate text-xs text-muted-foreground">饰 {p.character}</p>}
+    </Link>
   )
 }
