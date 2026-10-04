@@ -2,13 +2,12 @@ import type { ReactNode } from 'react'
 import { Page } from '@/components/Page'
 import { hasMdblistKey } from '@/lib/ratings'
 import { hasToken } from '@/lib/tmdb'
-import { cn } from '@/lib/utils'
 
 function Status({ label, ok, value = ok ? '已配置' : '未配置' }: { label: string; ok: boolean; value?: string }) {
   return (
     <div className="flex items-center justify-between gap-4 px-4 py-3.5">
       <span>{label}</span>
-      <span className={cn('shrink-0', ok ? 'text-primary' : 'text-muted-foreground')}>{value}</span>
+      <span className={`shrink-0 ${ok ? 'text-primary' : 'text-muted-foreground'}`}>{value}</span>
     </div>
   )
 }
