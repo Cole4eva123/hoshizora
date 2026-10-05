@@ -56,24 +56,38 @@ export const searchPath = (query: string) => `/search/multi?query=${encodeURICom
 const typeIn = (path: string): MediaType => (path.includes('/tv') ? 'tv' : 'movie')
 const withQuery = (path: string, query: string) => `${path}${path.includes('?') ? '&' : '?'}${query}`
 
-// The orders a 分类 offers. TMDB does the sorting, as the list arrives a page at a time: sorting in the browser
-// would only reorder the pages loaded so far. Each `hint` says which titles the order leaves out.
-export function sortsOf(c: Category, t: Translate, today = new Date()) {
+// The orders a 分类 offers, as its row of sorts shows them with `picked` (its ?sort= key) picked. TMDB does the
+// sorting, as the list arrives a page at a time: sorting in the browser would only reorder the pages loaded so far.
+// Each `hint` says which titles the order leaves out. 最新 and 最早 are one order run either way: they share a place
+// in the row, which holds the picked one, and pressing it again turns to the other, its `flip`.
+export function sortsOf(c: Category, t: Translate, picked?: string | null, today = new Date()) {
   if (!c.votes) return []
   const tv = typeIn(c.path) === 'tv'
   const date = tv ? 'first_air_date' : 'primary_release_date'
   const day = today.toLocaleDateString('en-CA') // YYYY-MM-DD in local time
+  const byDate = (order: 'desc' | 'asc') => withQuery(c.path, `sort_by=${date}.${order}&${date}.lte=${day}`)
   return [
     // discover's default order
     { key: 'popular', label: t('热门', 'Popular'), hint: t('最近关注的人最多', 'Getting the most attention lately'), path: c.path },
-    {
-      key: 'latest',
-      label: t('最新', 'Latest'),
-      hint: tv
-        ? t('最近开播的在前，还没开播的不算', 'Latest premieres first, not counting upcoming ones')
-        : t('最近上映的在前，还没上映的不算', 'Latest releases first, not counting upcoming ones'),
-      path: withQuery(c.path, `sort_by=${date}.desc&${date}.lte=${day}`),
-    },
+    picked === 'oldest'
+      ? {
+          key: 'oldest',
+          flip: 'latest',
+          label: t('最早', 'Oldest'),
+          hint: tv
+            ? t('最早开播的在前，还没开播的不算', 'Earliest premieres first, not counting upcoming ones')
+            : t('最早上映的在前，还没上映的不算', 'Earliest releases first, not counting upcoming ones'),
+          path: byDate('asc'),
+        }
+      : {
+          key: 'latest',
+          flip: 'oldest',
+          label: t('最新', 'Latest'),
+          hint: tv
+            ? t('最近开播的在前，还没开播的不算', 'Latest premieres first, not counting upcoming ones')
+            : t('最近上映的在前，还没上映的不算', 'Latest releases first, not counting upcoming ones'),
+          path: byDate('desc'),
+        },
     {
       key: 'rating',
       label: t('高分', 'Top Rated'),

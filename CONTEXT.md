@@ -73,8 +73,8 @@ _English_: category
 _Avoid_: 频道、栏目
 
 **排序**:
-分类里作品的先后：热门、最新（已播出或上映的，新的在前）、高分（评分人数过线的，分高的在前）、口碑（评分人数多的在前）。「热门电影」只按热门。
-_English_: sort (Popular, Latest, Top Rated, Most Rated)
+分类里作品的先后：热门、最新（已播出或上映的，新的在前）、最早（最新倒过来，旧的在前）、高分（评分人数过线的，分高的在前）、口碑（评分人数多的在前）。「热门电影」只按热门。
+_English_: sort (Popular, Latest, Oldest, Top Rated, Most Rated)
 _Avoid_: 排行
 
 **类型**:

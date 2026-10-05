@@ -72,7 +72,7 @@ test('lists hand out 作品 that know their type, once each, and no people', () 
 
 test('sorting: TMDB sorts, 最新 skips the unreleased, 高分 needs the 分类 vote floor, trending has none', () => {
   const day = new Date('2026-10-02T23:30') // late evening is still the 2nd locally
-  const paths = (c: Category) => Object.fromEntries(sortsOf(c, zh, day).map((s) => [s.key, s.path]))
+  const paths = (c: Category) => Object.fromEntries(sortsOf(c, zh, null, day).map((s) => [s.key, s.path]))
   const show: Category = { key: 'k', title: ['韩剧', 'K-Dramas'], path: '/discover/tv?with_genres=18', votes: 100 }
   expect(paths(show)).toEqual({
     popular: '/discover/tv?with_genres=18', // the home row's request, so the two share a cache
@@ -82,7 +82,18 @@ test('sorting: TMDB sorts, 最新 skips the unreleased, 高分 needs the 分类 
   })
   expect(paths({ ...show, path: '/discover/movie?with_genres=99' }).latest).toContain('primary_release_date.lte=2026-10-02')
   expect(sortsOf({ key: 'm', title: ['热门电影', 'Trending Movies'], path: '/trending/movie/week' }, zh)).toEqual([])
-  expect(sortsOf(show, en, day).map((s) => s.label)).toEqual(['Popular', 'Latest', 'Top Rated', 'Most Rated'])
+  expect(sortsOf(show, en, null, day).map((s) => s.label)).toEqual(['Popular', 'Latest', 'Top Rated', 'Most Rated'])
+})
+
+test('sorting: 最新 pressed again is 最早, oldest first, in its place in the row, and back', () => {
+  const day = new Date('2026-10-02T23:30')
+  const show: Category = { key: 'k', title: ['韩剧', 'K-Dramas'], path: '/discover/tv?with_genres=18', votes: 100 }
+  const oldest = sortsOf(show, zh, 'oldest', day)
+  expect(oldest.map((s) => s.label)).toEqual(['热门', '最早', '高分', '口碑'])
+  expect(oldest[1].path).toBe('/discover/tv?with_genres=18&sort_by=first_air_date.asc&first_air_date.lte=2026-10-02')
+  expect(oldest[1].flip).toBe('latest')
+  expect(sortsOf(show, zh, 'rating', day)[1].flip).toBe('oldest') // 最新 holds the place unless 最早 is picked
+  expect(sortsOf(show, zh, 'rating', day)[2].flip).toBeUndefined()
 })
 
 test("类型: a 分类 offers its type's less its own, and picks join its request as one with_genres", () => {

@@ -20,7 +20,7 @@ export default function Category() {
   const genres = useGenres(category)
   if (!category) return <Navigate to="/" replace />
 
-  const sorts = sortsOf(category, t)
+  const sorts = sortsOf(category, t, params.get('sort'))
   const sort = sorts.find((s) => s.key === params.get('sort')) ?? sorts[0]
   // The 类型 picked, by id: the URL's at once, so the list is asked for without waiting for TMDB's names, then, once
   // they're in, only those the 分类 offers, so an old or edited link can't leave a pick that can't be unpicked.
