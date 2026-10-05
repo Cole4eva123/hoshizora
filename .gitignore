@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# notes for Claude Code, kept on this machine
+CLAUDE.md
