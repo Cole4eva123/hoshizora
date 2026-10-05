@@ -5,10 +5,10 @@ import { Choices } from '@/components/Choices'
 import { Page } from '@/components/Page'
 import { PosterGrid } from '@/components/PosterRow'
 import { useT } from '@/lib/i18n'
-import { categories, genresOf, sortsOf, withGenres } from '@/lib/tmdb'
+import { categories, sortsOf, useGenres, withGenres } from '@/lib/tmdb'
 import { choice, cn } from '@/lib/utils'
 
-type Genre = ReturnType<typeof genresOf>[number]
+type Genre = ReturnType<typeof useGenres>[number]
 
 // The sort and the 类型 live in the URL, like the pages PosterGrid has shown, so coming back from a title brings back
 // the same list.
@@ -17,13 +17,16 @@ export default function Category() {
   const { key } = useParams()
   const [params, setParams] = useSearchParams()
   const category = categories.find((c) => c.key === key)
+  const genres = useGenres(category)
   if (!category) return <Navigate to="/" replace />
 
   const sorts = sortsOf(category, t)
   const sort = sorts.find((s) => s.key === params.get('sort')) ?? sorts[0]
-  const genres = genresOf(category, t)
-  const picked = genres.filter((g) => params.getAll('genre').includes(`${g.key}`))
-  const path = withGenres(sort?.path ?? category.path, picked.map((g) => g.key))
+  // The 类型 picked, by id: the URL's at once, so the list is asked for without waiting for TMDB's names, then, once
+  // they're in, only those the 分类 offers, so an old or edited link can't leave a pick that can't be unpicked.
+  const asked = sort ? params.getAll('genre').map(Number) : []
+  const ids = genres.length ? genres.filter((g) => asked.includes(g.key)).map((g) => g.key) : asked.filter(Boolean)
+  const path = withGenres(sort?.path ?? category.path, ids)
   // a new sort or new 类型 start the list over from its first page, at the top, and keep the other. Each 类型 is a
   // ?genre= of its own, as a comma would show in the address bar as %2C.
   const choose = (name: 'sort' | 'genre', values: (string | number)[]) =>
@@ -49,7 +52,8 @@ export default function Category() {
               value={sort.key}
               onChange={(s) => choose('sort', [s])}
             />
-            <Genres options={genres} picked={picked} onChange={(ids) => choose('genre', ids)} />
+            {/* once TMDB's list is in, so the word comes already naming the picks and never unrolls an empty panel */}
+            {genres.length > 0 && <Genres options={genres} ids={ids} onChange={(next) => choose('genre', next)} />}
           </div>
           <p className="mt-4 text-sm text-muted-foreground">{sort.hint}</p>
         </div>
@@ -62,18 +66,10 @@ export default function Category() {
 // All the 类型 don't fit in the row, so they sit behind one word at its end. Pointing at it unrolls them in CSS, like
 // the corner menu; a tap or Enter opens them (`open`), as a phone has no hover, and a keyboard then tabs through them
 // only when asked to. The word names the 类型 picked, starred like a picked sort.
-function Genres({
-  options,
-  picked,
-  onChange,
-}: {
-  options: Genre[]
-  picked: Genre[]
-  onChange: (ids: number[]) => void
-}) {
+function Genres({ options, ids, onChange }: { options: Genre[]; ids: number[]; onChange: (ids: number[]) => void }) {
   const t = useT()
   const [open, setOpen] = useState(false)
-  const ids = picked.map((g) => g.key)
+  const names = options.filter((g) => ids.includes(g.key)).map((g) => g.label)
   return (
     <div
       data-open={open || undefined}
@@ -88,12 +84,12 @@ function Genres({
       <button
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className={cn(choice(picked.length > 0), 'flex items-center gap-1')}
+        className={cn(choice(ids.length > 0), 'flex items-center gap-1')}
       >
-        {picked.length ? (
+        {names.length ? (
           <>
             <span className="sr-only">{t('类型：', 'Genre: ')}</span>
-            {picked.map((g) => g.label).join(t('、', ', '))}
+            {names.join(t('、', ', '))}
           </>
         ) : (
           t('类型', 'Genre')

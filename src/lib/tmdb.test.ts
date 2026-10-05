@@ -87,12 +87,11 @@ test('sorting: TMDB sorts, 最新 skips the unreleased, 高分 needs the 分类 
 
 test("类型: a 分类 offers its type's less its own, and picks join its request as one with_genres", () => {
   const show: Category = { key: 'k', title: ['韩剧', 'K-Dramas'], path: '/discover/tv?with_genres=18&without_genres=16', votes: 100 }
-  const ids = genresOf(show, zh).map((g) => g.key)
-  expect(ids).toContain(9648)
-  expect(ids).not.toContain(18) // already the 分类's own
-  expect(ids).not.toContain(16) // kept out of it
-  expect(genresOf({ ...show, path: '/discover/movie?with_genres=99' }, en).find((g) => g.key === 10749)?.label).toBe('Romance')
-  expect(genresOf({ key: 'm', title: ['热门电影', 'Trending Movies'], path: '/trending/movie/week' }, zh)).toEqual([])
+  const list = (...genres: [number, string][]) => genres.map(([id, name]) => ({ id, name }))
+  const offered = (genres: ReturnType<typeof list>, t = zh) => genresOf(show, genres, t).map((g) => g.label)
+  // 剧情 is already the 分类's own and 动画 is kept out of it; pinyin order; TMDB leaves 科幻奇幻 in English
+  expect(offered(list([16, '动画'], [35, '喜剧'], [18, '剧情'], [9648, '悬疑'], [10765, 'Sci-Fi & Fantasy']))).toEqual(['科幻奇幻', '喜剧', '悬疑'])
+  expect(offered(list([10765, 'Sci-Fi & Fantasy'], [35, 'Comedy']), en)).toEqual(['Comedy', 'Sci-Fi & Fantasy'])
 
   const query = (path: string) => new URLSearchParams(path.split('?')[1])
   expect(withGenres(show.path, [])).toBe(show.path) // the home row's request, so the two share a cache
