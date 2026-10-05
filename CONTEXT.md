@@ -77,6 +77,11 @@ _Avoid_: 频道、栏目
 _English_: sort (Popular, Latest, Top Rated, Most Rated)
 _Avoid_: 排行
 
+**类型**:
+作品按内容划分的种类，如爱情、悬疑、喜剧，取自 TMDB；一部作品往往属于好几个类型。在分类里勾选几个类型，留下的是这几个类型都有的作品。
+_English_: genre
+_Avoid_: 类别（和分类太像）、题材、标签
+
 **评分来源**:
 给作品打分的网站：TMDB、IMDb、烂番茄、豆瓣，以及只用于日本动画的 MyAnimeList。
 _English_: rating sources

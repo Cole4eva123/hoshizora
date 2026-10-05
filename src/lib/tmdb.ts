@@ -89,6 +89,48 @@ export function sortsOf(c: Category, t: Translate, today = new Date()) {
   ]
 }
 
+// TMDB's 类型, written out rather than fetched: its Chinese list leaves two in English, and a 分类 page then draws them
+// in its first frame. Story genres first, formats (talk shows, news) last.
+// ponytail: TMDB's lists as of Oct 2026; fetch /genre/{type}/list if TMDB ever adds one.
+const genres: Record<MediaType, [id: number, zh: string, en: string][]> = {
+  movie: [
+    [28, '动作', 'Action'], [12, '冒险', 'Adventure'], [35, '喜剧', 'Comedy'], [10749, '爱情', 'Romance'],
+    [9648, '悬疑', 'Mystery'], [53, '惊悚', 'Thriller'], [80, '犯罪', 'Crime'], [27, '恐怖', 'Horror'],
+    [878, '科幻', 'Science Fiction'], [14, '奇幻', 'Fantasy'], [18, '剧情', 'Drama'], [36, '历史', 'History'],
+    [10752, '战争', 'War'], [37, '西部', 'Western'], [10402, '音乐', 'Music'], [10751, '家庭', 'Family'],
+    [16, '动画', 'Animation'], [99, '纪录片', 'Documentary'], [10770, '电视电影', 'TV Movie'],
+  ],
+  tv: [
+    [35, '喜剧', 'Comedy'], [9648, '悬疑', 'Mystery'], [80, '犯罪', 'Crime'], [10759, '动作冒险', 'Action & Adventure'],
+    [10765, '科幻奇幻', 'Sci-Fi & Fantasy'], [18, '剧情', 'Drama'], [10768, '战争政治', 'War & Politics'],
+    [37, '西部', 'Western'], [10751, '家庭', 'Family'], [10762, '儿童', 'Kids'], [16, '动画', 'Animation'],
+    [99, '纪录片', 'Documentary'], [10766, '肥皂剧', 'Soap'], [10764, '真人秀', 'Reality'], [10767, '脱口秀', 'Talk'],
+    [10763, '新闻', 'News'],
+  ],
+}
+
+// The 类型 a 分类 can be narrowed by: all of its type's, less those its own request names (剧情 for a drama, 动画 kept
+// out of one). Only a 分类 with sorts (the /discover ones) has them, as they sit in the sorts' row.
+export function genresOf(c: Category, t: Translate) {
+  if (!c.votes) return []
+  const own = new URLSearchParams(c.path.split('?')[1])
+  const named = [own.get('with_genres'), own.get('without_genres')].join(',').split(',').map(Number)
+  return genres[typeIn(c.path)]
+    .filter(([id]) => !named.includes(id))
+    .map(([id, ...copy]) => ({ key: id, label: t(...copy) }))
+}
+
+// Picked 类型 narrow a list to the 作品 that have every one (TMDB's comma means and). They join the 分类's own
+// with_genres, as TMDB fails a request that names it twice, in one order whichever was picked first, so a set of 类型
+// is one request in the cache. None picked, no change: the 分类 page shares its home row's request.
+export function withGenres(path: string, ids: number[]) {
+  if (!ids.length) return path
+  const [base, query] = path.split('?')
+  const params = new URLSearchParams(query)
+  params.set('with_genres', [params.get('with_genres'), ...ids.toSorted((a, b) => a - b)].filter(Boolean).join(','))
+  return `${base}?${params}`
+}
+
 export const titleOf = (m: Media) => m.title ?? m.name ?? ''
 // The 作品 of the list a card was opened from, in the order shown, so the title page can step to the ones before and
 // after. It rides along in the history entry, so it keeps only what that needs.

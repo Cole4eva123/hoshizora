@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { en, zh } from './i18n'
-import { type Category, type Credit, type Details, type Episode, type Logo, type Media, type Person, daysUntil, isDarkInk, lifeOf, nextEpisodeText, pickLogo, releaseOf, sortsOf, toTitles, worksOf } from './tmdb'
+import { type Category, type Credit, type Details, type Episode, type Logo, type Media, type Person, daysUntil, genresOf, isDarkInk, lifeOf, nextEpisodeText, pickLogo, releaseOf, sortsOf, toTitles, withGenres, worksOf } from './tmdb'
 
 const now = new Date('2026-10-02T21:30')
 const ep = (season_number: number, episode_number: number, air_date: string | null) =>
@@ -83,6 +83,23 @@ test('sorting: TMDB sorts, 最新 skips the unreleased, 高分 needs the 分类 
   expect(paths({ ...show, path: '/discover/movie?with_genres=99' }).latest).toContain('primary_release_date.lte=2026-10-02')
   expect(sortsOf({ key: 'm', title: ['热门电影', 'Trending Movies'], path: '/trending/movie/week' }, zh)).toEqual([])
   expect(sortsOf(show, en, day).map((s) => s.label)).toEqual(['Popular', 'Latest', 'Top Rated', 'Most Rated'])
+})
+
+test("类型: a 分类 offers its type's less its own, and picks join its request as one with_genres", () => {
+  const show: Category = { key: 'k', title: ['韩剧', 'K-Dramas'], path: '/discover/tv?with_genres=18&without_genres=16', votes: 100 }
+  const ids = genresOf(show, zh).map((g) => g.key)
+  expect(ids).toContain(9648)
+  expect(ids).not.toContain(18) // already the 分类's own
+  expect(ids).not.toContain(16) // kept out of it
+  expect(genresOf({ ...show, path: '/discover/movie?with_genres=99' }, en).find((g) => g.key === 10749)?.label).toBe('Romance')
+  expect(genresOf({ key: 'm', title: ['热门电影', 'Trending Movies'], path: '/trending/movie/week' }, zh)).toEqual([])
+
+  const query = (path: string) => new URLSearchParams(path.split('?')[1])
+  expect(withGenres(show.path, [])).toBe(show.path) // the home row's request, so the two share a cache
+  expect(query(withGenres(show.path, [9648, 35])).get('with_genres')).toBe('18,35,9648') // TMDB fails it named twice
+  expect(query(withGenres(show.path, [9648, 35])).get('without_genres')).toBe('16')
+  expect(withGenres(show.path, [9648, 35])).toBe(withGenres(show.path, [35, 9648])) // one request whichever came first
+  expect(query(withGenres('/discover/tv?sort_by=vote_count.desc', [35])).get('with_genres')).toBe('35')
 })
 
 test("an actor's 作品: parts only, each 作品 once with its parts joined, the best known first", () => {
