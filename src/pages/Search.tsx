@@ -4,30 +4,39 @@ import { SearchIcon } from 'lucide-react'
 import { Choices } from '@/components/Choices'
 import { ToLibrary } from '@/components/Page'
 import { PosterGrid } from '@/components/PosterRow'
+import { type Translate, useT } from '@/lib/i18n'
 import { searchPath } from '@/lib/tmdb'
 import { cn } from '@/lib/utils'
 
 // Each 搜索范围 has its own colour (--tone): its star when picked, and the field's icon, caret and ring.
-const scopes = [
+const scopesIn = (t: Translate) => [
   {
     key: 'all',
-    label: '全部服务器',
+    label: t('全部服务器', 'All servers'),
     tone: '[--tone:var(--primary)]',
-    placeholder: '在所有服务器里找作品',
-    empty: <>还没有可搜索的服务器。先去<ToLibrary />连接 Emby 服务器，这里会一次搜遍所有服务器。</>,
+    placeholder: t('在所有服务器里找作品', 'Search all your servers'),
+    empty: t(
+      <>还没有可搜索的服务器。先去<ToLibrary />连接 Emby 服务器，这里会一次搜遍所有服务器。</>,
+      <>No servers to search yet. Connect an Emby server in <ToLibrary />, and this searches all of them at once.</>,
+    ),
   },
-  { key: 'tmdb', label: 'TMDB', tone: '[--tone:var(--tmdb)]', placeholder: '在 TMDB 上找作品' },
+  { key: 'tmdb', label: 'TMDB', tone: '[--tone:var(--tmdb)]', placeholder: t('在 TMDB 上找作品', 'Search TMDB') },
   {
     key: 'server',
-    label: '指定服务器',
+    label: t('指定服务器', 'One server'),
     tone: '[--tone:var(--apricot)]',
-    placeholder: '在这台服务器里找作品',
-    empty: <>还没有可选的服务器。先去<ToLibrary />连接 Emby 服务器，再挑一台单独搜索。</>,
+    placeholder: t('在这台服务器里找作品', 'Search this server'),
+    empty: t(
+      <>还没有可选的服务器。先去<ToLibrary />连接 Emby 服务器，再挑一台单独搜索。</>,
+      <>No servers to pick yet. Connect an Emby server in <ToLibrary />, then pick one to search.</>,
+    ),
   },
 ]
 
 // The scope and the query live in the URL, so coming back from a title brings back the same results.
 export default function Search() {
+  const t = useT()
+  const scopes = scopesIn(t)
   const [params, setParams] = useSearchParams()
   // ponytail: TMDB is the default while no Emby server can be connected; make it 全部服务器 once one can
   const scope = scopes.find((s) => s.key === params.get('scope')) ?? scopes[1]
@@ -38,14 +47,14 @@ export default function Search() {
   useEffect(() => {
     const text = typed.trim()
     if (text === q) return
-    const t = setTimeout(() => setParams({ scope: scope.key, q: text }, { replace: true }), 300)
-    return () => clearTimeout(t)
+    const timer = setTimeout(() => setParams({ scope: scope.key, q: text }, { replace: true }), 300)
+    return () => clearTimeout(timer)
   }, [typed, q, scope.key, setParams])
 
   return (
     // starts where other pages' titles do, clear of the corner menu
     <div className={cn('px-(--gutter) pt-(--page-top) pb-(--page-bottom)', scope.tone)}>
-      <h1 className="sr-only">搜索</h1>
+      <h1 className="sr-only">{t('搜索', 'Search')}</h1>
       {/* Enter, or the keyboard's 搜索 key, puts the keyboard away so the results show */}
       <form
         role="search"
@@ -57,7 +66,7 @@ export default function Search() {
       >
         {/* Quiet words over the field, nothing to compete with it; the picked one's star takes the scope's colour */}
         <Choices
-          legend="搜索范围"
+          legend={t('搜索范围', 'Search in')}
           options={scopes}
           value={scope.key}
           onChange={(key) => setParams({ scope: key, q: typed.trim() }, { replace: true })}

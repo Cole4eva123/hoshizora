@@ -2,17 +2,19 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router'
 import { BackButton, Page, sectionTitle } from '@/components/Page'
 import { Frame, PosterCard, posterGrid } from '@/components/PosterRow'
+import { useT } from '@/lib/i18n'
 import { img, lifeOf, usePerson } from '@/lib/tmdb'
 import { cn } from '@/lib/utils'
 
 // An actor's page, opened from the cast of a title: who they are, then the 作品 they acted in.
 export default function Person() {
+  const t = useT()
   const { id } = useParams()
   const { person, works, error } = usePerson(id!)
 
   if (error)
     return (
-      <Page title="打不开这位演员" back>
+      <Page title={t('打不开这位演员', "Can't load this actor")} back>
         <p className="text-sm text-muted-foreground">{error}</p>
       </Page>
     )
@@ -31,7 +33,7 @@ export default function Person() {
           {person.name.slice(0, 1)}
         </Frame>
         <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-          {lifeOf(person).map((fact) => (
+          {lifeOf(person, t).map((fact) => (
             <span key={fact}>{fact}</span>
           ))}
         </p>
@@ -39,7 +41,7 @@ export default function Person() {
       </div>
 
       <section className="mt-14 md:mt-16">
-        <h2 className={sectionTitle}>作品</h2>
+        <h2 className={sectionTitle}>{t('作品', 'Filmography')}</h2>
         {/* ponytail: every 作品 mounts at once, a few hundred cards for the busiest actors; show a first batch and a
             更多 button if that ever feels slow */}
         {works.length ? (
@@ -49,7 +51,9 @@ export default function Person() {
             ))}
           </div>
         ) : (
-          <p className="mt-3 text-sm text-muted-foreground">TMDB 上还没有这位演员的作品。</p>
+          <p className="mt-3 text-sm text-muted-foreground">
+            {t('TMDB 上还没有这位演员的作品。', 'TMDB has no roles listed for this actor yet.')}
+          </p>
         )}
       </section>
     </Page>
@@ -58,16 +62,18 @@ export default function Person() {
 
 // Folded to five lines when it runs longer, with a button that unfolds the rest.
 function Biography({ text }: { text: string }) {
+  const t = useT()
   const ref = useRef<HTMLParagraphElement>(null)
   const [folds, setFolds] = useState(false)
   const [open, setOpen] = useState(false)
-  // measured again when its width changes (a phone turned upright, a narrower window), which changes its line count
+  // measured again when its width changes (a phone turned upright, a narrower window), which changes its line count,
+  // and when the text does (the other language)
   useLayoutEffect(() => {
     const el = ref.current!
     const ro = new ResizeObserver(() => setFolds(el.scrollHeight > el.clientHeight))
     ro.observe(el)
     return () => ro.disconnect()
-  }, [])
+  }, [text])
   return (
     <div className="col-span-2 max-w-2xl md:col-span-1">
       <p
@@ -78,7 +84,7 @@ function Biography({ text }: { text: string }) {
       </p>
       {folds && !open && (
         <button onClick={() => setOpen(true)} className="mt-2 rounded-sm text-sm text-primary hover:underline">
-          展开
+          {t('展开', 'Read more')}
         </button>
       )}
     </div>

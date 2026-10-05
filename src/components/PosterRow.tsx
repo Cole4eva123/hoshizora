@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { sectionTitle } from '@/components/Page'
 import { Button } from '@/components/ui/button'
+import { useT } from '@/lib/i18n'
 import { cn, reveal } from '@/lib/utils'
 import { type Category, type Media, img, titleOf, useTitles, yearOf } from '@/lib/tmdb'
 
@@ -35,6 +36,7 @@ export function Frame({ src, className, children }: { src?: string; className: s
 // Pointing at a card catches starlight on its frame and name; pressing it gives a little. `role`, on an actor's page,
 // is the part they played in it.
 export function PosterCard({ m, role }: { m: Media; role?: string }) {
+  const t = useT()
   return (
     <Link to={`/${m.media_type}/${m.id}`} viewTransition className="group snap-start">
       <Frame
@@ -44,7 +46,7 @@ export function PosterCard({ m, role }: { m: Media; role?: string }) {
       <p className="mt-2.5 truncate text-sm transition-colors group-hover:text-star">{titleOf(m)}</p>
       <p className="mt-0.5 flex gap-x-2 text-xs text-muted-foreground">
         {yearOf(m)}
-        {role && <span className="truncate">饰 {role}</span>}
+        {role && <span className="truncate">{t(`饰 ${role}`, `as ${role}`)}</span>}
       </p>
     </Link>
   )
@@ -77,6 +79,7 @@ export function Row({
   start?: number
   children: ReactNode
 }) {
+  const t = useT()
   const ref = useRef<HTMLDivElement>(null)
   // the items' keys: a new list, like another season's episodes, has other keys
   const items = Children.map(children, (c) => (isValidElement(c) ? c.key : null))?.join(' ')
@@ -120,10 +123,10 @@ export function Row({
         </div>
         {/* aria-disabled, not disabled, which would drop keyboard focus at the row's end; a click there scrolls nowhere */}
         <div className="hidden shrink-0 gap-1 pointer-fine:flex *:aria-disabled:pointer-events-none *:aria-disabled:opacity-50">
-          <Button variant="ghost" size="icon" aria-label="上一页" aria-disabled={atStart} onClick={() => page(-1)}>
+          <Button variant="ghost" size="icon" aria-label={t('上一页', 'Previous')} aria-disabled={atStart} onClick={() => page(-1)}>
             <ChevronLeft />
           </Button>
-          <Button variant="ghost" size="icon" aria-label="下一页" aria-disabled={atEnd} onClick={() => page(1)}>
+          <Button variant="ghost" size="icon" aria-label={t('下一页', 'Next')} aria-disabled={atEnd} onClick={() => page(1)}>
             <ChevronRight />
           </Button>
         </div>
@@ -143,6 +146,7 @@ export function Row({
 }
 
 export function PosterRow({ category }: { category: Category }) {
+  const t = useT()
   const { titles, error } = useTitles(category.path)
   return (
     <Row
@@ -152,7 +156,7 @@ export function PosterRow({ category }: { category: Category }) {
           viewTransition
           className="group inline-flex items-center gap-1 transition-colors hover:text-star"
         >
-          {category.title}
+          {t(...category.title)}
           <ChevronRight className="size-5 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-star" />
         </Link>
       }
@@ -166,6 +170,7 @@ export function PosterRow({ category }: { category: Category }) {
 // A list's 作品 as a grid that loads on as you scroll, for a 分类 or a search. The pages shown live in the URL
 // (?pages=N), so coming back from a title brings back as many as there were, and the scroll position with them.
 export function PosterGrid({ path }: { path: string }) {
+  const t = useT()
   const [params, setParams] = useSearchParams()
   const pages = Math.max(1, Math.floor(Number(params.get('pages'))) || 1)
   const { titles, loading, more, error, retry } = useTitles(path, pages)
@@ -198,20 +203,22 @@ export function PosterGrid({ path }: { path: string }) {
       </div>
       <div ref={end} />
       <p className="sr-only" aria-live="polite">
-        {titles && `已加载 ${titles.length} 部`}
+        {titles && t(`已加载 ${titles.length} 部`, `${titles.length} title${titles.length === 1 ? '' : 's'} loaded`)}
       </p>
       {error ? (
         <p className="mt-8 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
           {error}
           <Button variant="secondary" size="sm" onClick={retry}>
-            重试
+            {t('重试', 'Retry')}
           </Button>
         </p>
       ) : (
         titles &&
         !loading &&
         !more && (
-          <p className="mt-10 text-center text-sm text-muted-foreground">{titles.length ? '没有更多了' : '没有找到作品'}</p>
+          <p className="mt-10 text-center text-sm text-muted-foreground">
+            {titles.length ? t('没有更多了', 'No more titles') : t('没有找到作品', 'No titles found')}
+          </p>
         )
       )}
     </>

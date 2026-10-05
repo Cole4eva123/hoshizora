@@ -19,7 +19,7 @@ const router = createBrowserRouter(
     {
       element: <App />,
       children: [
-        { index: true, element: <Home /> },
+        { index: true, element: <Home /> }, //默认的主页面，App.tsx 是框，Home 是框里的一幅画。
         { path: 'category/:key', element: <Category /> },
         { path: 'movie/:id', element: <Detail type="movie" /> },
         { path: 'tv/:id', element: <Detail type="tv" /> },
@@ -28,7 +28,7 @@ const router = createBrowserRouter(
         { path: 'library', element: <Library /> },
         { path: 'search', element: <Search /> },
         { path: 'settings', element: <Settings /> },
-        { path: '*', element: <Navigate to="/" replace /> },
+        { path: '*', element: <Navigate to="/" replace /> }, //如果不匹配直接跳会主页面
       ],
     },
   ],

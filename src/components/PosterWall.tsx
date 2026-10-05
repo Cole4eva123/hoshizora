@@ -3,6 +3,7 @@ import { Link } from 'react-router'
 import { Pause, Play } from 'lucide-react'
 import { Ratings } from '@/components/Ratings'
 import { Button } from '@/components/ui/button'
+import { useT } from '@/lib/i18n'
 import { type Logo, type Media, img, isDarkInk, originalTitleOf, releaseOf, titleOf, useLogo } from '@/lib/tmdb'
 import { cn, reveal } from '@/lib/utils'
 
@@ -21,8 +22,9 @@ const isDark = (logo: HTMLImageElement) => {
 }
 
 // The title in its 片名艺术字 when TMDB has some, else in our serif. Under lettering in another language goes the
-// Chinese name; otherwise the original name goes there, as with the text title.
+// name in the language shown; otherwise the original name goes there, as with the text title.
 function Title({ m, logo, as: Heading = 'h2' }: { m: Media; logo?: Logo; as?: 'h1' | 'h2' }) {
+  const t = useT()
   const [tone, setTone] = useState<'light' | 'dark' | 'broken'>()
   const title = titleOf(m)
   const original = originalTitleOf(m)
@@ -51,7 +53,7 @@ function Title({ m, logo, as: Heading = 'h2' }: { m: Media; logo?: Logo; as?: 'h
         </Heading>
       )}
       {original !== title && (
-        <p className="mt-2 text-sm text-foreground/60">{art && art.iso_639_1 !== 'zh' ? title : original}</p>
+        <p className="mt-2 text-sm text-foreground/60">{art && art.iso_639_1 !== t('zh', 'en') ? title : original}</p>
       )}
     </>
   )
@@ -71,6 +73,7 @@ export function TitleInfo({
   facts?: string[]
   children?: ReactNode
 }) {
+  const t = useT()
   const { ready, logo } = useLogo(m)
   if (!ready) return null
   return (
@@ -78,11 +81,14 @@ export function TitleInfo({
       key={`${m.media_type}/${m.id}`}
       className="max-w-2xl animate-in duration-700 fade-in slide-in-from-bottom-2 motion-reduce:animate-none"
     >
-      <Title m={m} logo={logo} as={as} />
+      {/* keyed by its lettering: the other language's starts afresh, not with this one's tone */}
+      <Title key={logo?.file_path} m={m} logo={logo} as={as} />
       <Ratings m={m}>
-        {[m.media_type === 'tv' ? '剧集' : '电影', releaseOf(m), ...facts].filter(Boolean).map((fact) => (
-          <span key={fact}>{fact}</span>
-        ))}
+        {[m.media_type === 'tv' ? t('剧集', 'Series') : t('电影', 'Movie'), releaseOf(m, t), ...facts]
+          .filter(Boolean)
+          .map((fact) => (
+            <span key={fact}>{fact}</span>
+          ))}
       </Ratings>
       {children}
     </div>
@@ -106,6 +112,7 @@ export function PosterWall({
   link?: (index: number) => { to: string; label: string }
   children?: ReactNode
 }) {
+  const t = useT()
   const track = useRef<HTMLDivElement>(null)
   const [index, setIndex] = useState(0)
   const [paused, setPaused] = useState(false)
@@ -184,7 +191,7 @@ export function PosterWall({
             {backdrops.map((path, i) => (
               <Fragment key={path}>
                 <button
-                  aria-label={`第 ${i + 1} 张`}
+                  aria-label={t(`第 ${i + 1} 张`, `Slide ${i + 1}`)}
                   aria-current={i === index}
                   onClick={() => scrollToSlide(track.current, i)}
                   className={cn(
@@ -216,7 +223,7 @@ export function PosterWall({
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label={paused ? '继续轮播' : '暂停轮播'}
+              aria-label={paused ? t('继续轮播', 'Resume slideshow') : t('暂停轮播', 'Pause slideshow')}
               onClick={() => setPaused(!paused)}
               className="motion-reduce:hidden"
             >

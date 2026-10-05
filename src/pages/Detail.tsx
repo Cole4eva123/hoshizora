@@ -5,6 +5,7 @@ import { Choices } from '@/components/Choices'
 import { BackButton, Page } from '@/components/Page'
 import { Frame, Row } from '@/components/PosterRow'
 import { PosterWall, TitleInfo } from '@/components/PosterWall'
+import { useT } from '@/lib/i18n'
 import {
   type Details,
   type Episode,
@@ -21,28 +22,29 @@ import {
 import { choice, cn } from '@/lib/utils'
 
 export default function Detail({ type }: { type: MediaType }) {
+  const t = useT()
   const { id } = useParams()
   const { details: m, backdrops, error } = useDetails(type, id!)
 
   if (error)
     return (
-      <Page title="打不开这部作品" back>
+      <Page title={t('打不开这部作品', "Can't load this title")} back>
         <p className="text-sm text-muted-foreground">{error}</p>
       </Page>
     )
   if (!m) return <BackButton /> // the way back is there before the title arrives
 
-  const facts = [...m.genres.slice(0, 3).map((g) => g.name), m.runtime ? `${m.runtime} 分钟` : '']
+  const facts = [...m.genres.slice(0, 3).map((g) => g.name), m.runtime ? t(`${m.runtime} 分钟`, `${m.runtime} min`) : '']
   return (
     // keyed by the title, so another one starts over: its wall at the first slide, its 选集 at its own season
     <Fragment key={`${type}/${id}`}>
       <PosterWall
-        label="剧照"
+        label={t('剧照', 'Stills')}
         backdrops={backdrops}
         info={() => (
           <TitleInfo m={m} as="h1" facts={facts}>
             <p className="mt-4 max-w-xl text-[15px] leading-7 text-foreground/80">
-              {m.overview || 'TMDB 上还没有这部作品的中文简介。'}
+              {m.overview || t('TMDB 上还没有这部作品的中文简介。', 'TMDB has no English overview of this title yet.')}
             </p>
           </TitleInfo>
         )}
@@ -57,6 +59,7 @@ export default function Detail({ type }: { type: MediaType }) {
 }
 
 function Episodes({ tv }: { tv: Details }) {
+  const t = useT()
   const seasons = tv.seasons!
   // open on the season that's airing, else the latest one
   const [season, setSeason] = useState(
@@ -72,15 +75,15 @@ function Episodes({ tv }: { tv: Details }) {
 
   return (
     <Row
-      title="选集"
+      title={t('选集', 'Episodes')}
       extra={
         <>
           <p className={cn('mt-1 text-sm', tv.next_episode_to_air ? 'text-primary' : 'text-muted-foreground')}>
-            {nextEpisodeText(tv)}
+            {nextEpisodeText(tv, t)}
           </p>
           {seasons.length > 1 && (
             <Choices
-              legend="选择一季"
+              legend={t('选择一季', 'Season')}
               options={latest.map((s) => ({ key: s.season_number, label: s.name }))}
               value={season}
               onChange={setSeason}
@@ -90,13 +93,13 @@ function Episodes({ tv }: { tv: Details }) {
                 // the star and the focus ring go on the wrapper, as a select draws no ::after
                 <div className={choice(olderPicked)}>
                   <select
-                    aria-label="更多季"
+                    aria-label={t('更多季', 'More seasons')}
                     value={olderPicked ? season : ''}
                     onChange={(e) => setSeason(Number(e.target.value))}
                     className="cursor-pointer appearance-none bg-transparent pr-5 outline-none"
                   >
                     <option value="" disabled hidden>
-                      更多
+                      {t('更多', 'More')}
                     </option>
                     {older.map((s) => (
                       <option key={s.id} value={s.season_number}>
@@ -110,7 +113,11 @@ function Episodes({ tv }: { tv: Details }) {
             </Choices>
           )}
           {error && <p className="mt-4 text-sm text-muted-foreground">{error}</p>}
-          {episodes?.length === 0 && <p className="mt-4 text-sm text-muted-foreground">这一季还没有分集信息。</p>}
+          {episodes?.length === 0 && (
+            <p className="mt-4 text-sm text-muted-foreground">
+              {t('这一季还没有分集信息。', 'No episode details for this season yet.')}
+            </p>
+          )}
         </>
       }
       track="auto-cols-[85%] sm:auto-cols-[calc((100%-1rem)/2)] lg:auto-cols-[calc((100%-2*1rem)/3)] xl:auto-cols-[calc((100%-3*1rem)/4)]"
@@ -125,6 +132,7 @@ function Episodes({ tv }: { tv: Details }) {
 }
 
 function EpisodeCard({ e }: { e: Episode }) {
+  const t = useT()
   const days = e.air_date ? daysUntil(e.air_date) : -1
   return (
     <div className="snap-start">
@@ -132,13 +140,15 @@ function EpisodeCard({ e }: { e: Episode }) {
         {e.episode_number}
       </Frame>
       <h3 className="mt-2 truncate text-sm font-medium">
-        <span className={cn(e.name && 'mr-1.5 text-muted-foreground')}>第 {e.episode_number} 集</span>
+        <span className={cn(e.name && 'mr-1.5 text-muted-foreground')}>
+          {t(`第 ${e.episode_number} 集`, `Episode ${e.episode_number}`)}
+        </span>
         {e.name}
       </h3>
       <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
-        <span>{e.air_date ? airDateOf(e.air_date) : '播出时间未定'}</span>
-        {days >= 0 && <span className="text-primary">{relativeDays.format(days, 'day')}</span>}
-        {!!e.runtime && <span>{e.runtime} 分钟</span>}
+        <span>{e.air_date ? airDateOf(e.air_date, t) : t('播出时间未定', 'Air date TBA')}</span>
+        {days >= 0 && <span className="text-primary">{relativeDays(days, t)}</span>}
+        {!!e.runtime && <span>{t(`${e.runtime} 分钟`, `${e.runtime} min`)}</span>}
       </p>
       {e.overview && <p className="mt-1.5 line-clamp-2 text-sm leading-6 text-foreground/70">{e.overview}</p>}
     </div>
@@ -146,9 +156,10 @@ function EpisodeCard({ e }: { e: Episode }) {
 }
 
 function Cast({ cast }: { cast: Details['credits']['cast'] }) {
+  const t = useT()
   if (!cast.length) return null
   return (
-    <Row title="演员" track="auto-cols-[6rem] sm:auto-cols-[7.5rem]">
+    <Row title={t('演员', 'Cast')} track="auto-cols-[6rem] sm:auto-cols-[7.5rem]">
       {cast.slice(0, 20).map((p) => (
         <CastCard key={p.credit_id} p={p} />
       ))}
@@ -160,14 +171,15 @@ function Cast({ cast }: { cast: Details['credits']['cast'] }) {
 // the headshot can grow into the page's portrait: both are named portrait for the view transition, this one only
 // while it's the one being opened, as the browser skips a transition when two elements share a name.
 function CastCard({ p }: { p: Details['credits']['cast'][number] }) {
+  const t = useT()
   const to = `/person/${p.id}`
   const opening = useViewTransitionState(to)
   return (
     <Link
       to={to}
       viewTransition
-      onPointerEnter={() => prefetchPerson(p.id)}
-      onFocus={() => prefetchPerson(p.id)}
+      onPointerEnter={() => prefetchPerson(p.id, t)}
+      onFocus={() => prefetchPerson(p.id, t)}
       className="group snap-start"
     >
       {/* TMDB headshots are 2:3, so a 2:3 frame shows the whole photo */}
@@ -181,7 +193,9 @@ function CastCard({ p }: { p: Details['credits']['cast'][number] }) {
         {p.name.slice(0, 1)}
       </Frame>
       <p className="mt-2 truncate text-sm transition-colors group-hover:text-star">{p.name}</p>
-      {p.character && <p className="mt-0.5 truncate text-xs text-muted-foreground">饰 {p.character}</p>}
+      {p.character && (
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">{t(`饰 ${p.character}`, `as ${p.character}`)}</p>
+      )}
     </Link>
   )
 }

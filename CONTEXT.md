@@ -8,39 +8,49 @@
 
 **作品**:
 一部电影或一部剧集，对应 TMDB 上的一个条目。同一部作品在几台服务器上都有，也只算一部。
+_English_: title; an actor's, listed on their page: Filmography
 _Avoid_: 影片、片、影视、条目
 
 **电影**:
 一次看完、不分季和集的作品。
+_English_: movie
 
 **剧集**:
 分季、分集播出的作品，电视剧、动画剧和纪录剧都算。
+_English_: series
 _Avoid_: 电视剧、剧
 
 **季**:
 剧集按播出批次分成的一组集。番外和特辑归在第 0 季，叫特别篇。
+_English_: season
 
 **集**:
 剧集里的一集，在季内编号，写作「第 N 集」。
+_English_: episode, "Episode N"
 
 **选集**:
 一季里所有集的列表，用来挑一集看。
+_English_: Episodes
 _Avoid_: 剧集（那是作品类型）
 
 **下一集**:
 剧集里最近要播出的那一集；没有下一集时，剧集要么已完结，要么播出时间未定。
+_English_: next episode
 
 **演员**:
 出演作品的人，连同所饰演的角色。
+_English_: cast (all of them), actor (one)
 
 ### 图片
 
 **海报**:
 作品的 2:3 竖版封面图。
+_English_: poster
 _Avoid_: 封面
 
 **剧照**:
 作品的 16:9 横版画面，通常不带文字。
+_English_: still
 _Avoid_: 背景图、海报
 
 **片名艺术字**:
@@ -59,30 +69,44 @@ _Avoid_: 海报墙、横幅
 
 **分类**:
 按固定条件从 TMDB 取出的一组作品，如「热门电影」「韩剧」「国漫」。
+_English_: category
 _Avoid_: 频道、栏目
 
 **排序**:
 分类里作品的先后：热门、最新（已播出或上映的，新的在前）、高分（评分人数过线的，分高的在前）、口碑（评分人数多的在前）。「热门电影」只按热门。
+_English_: sort (Popular, Latest, Top Rated, Most Rated)
 _Avoid_: 排行
 
 **评分来源**:
 给作品打分的网站：TMDB、IMDb、烂番茄、豆瓣，以及只用于日本动画的 MyAnimeList。
+_English_: rating sources
 
 ### 自己的服务器
 
 **服务器**:
 用户连接并登录的一台 Emby 服务器；可以同时连好几台。
+_English_: server
 _Avoid_: 片源、站点
 
 **媒体库**:
 一台服务器里按内容分开的库，如「电影」库、「剧集」库，沿用 Emby 的意思。
+_English_: library
 _Avoid_: 片库
 
 **收藏**:
 用户在任一台服务器上收藏的作品。
+_English_: Favorites
 
 **继续观看**:
 在任一台服务器上看了一部分、还没看完的电影或集。
+_English_: Continue Watching
 
 **搜索范围**:
 一次搜索查找的地方：全部服务器、TMDB，或指定的一台服务器。
+_English_: search scope (All servers, TMDB, One server)
+
+### 界面
+
+**界面语言**:
+放映室显示文字用的语言：中文或英文，在右上角切换，记在这台设备上。TMDB 的片名、简介和海报也跟着它。
+_English_: language

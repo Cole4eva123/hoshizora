@@ -142,6 +142,27 @@
   }
 }
 
+/* A row that scrolls sideways fades out at its end while there's more past it, so the cut reads as "more" rather than
+   as the end. The fade shrinks as the row scrolls and is gone at its end; a row that fits, or a browser without scroll
+   timelines, shows no fade. */
+@property --scroll-hint {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@utility scroll-hint {
+  mask-image: linear-gradient(to left, transparent, black var(--scroll-hint));
+  @supports (animation-timeline: scroll()) {
+    animation: scroll-hint linear both;
+    animation-timeline: scroll(self inline);
+  }
+}
+@keyframes scroll-hint {
+  from {
+    --scroll-hint: 2.5rem;
+  }
+}
+
 @utility no-scrollbar {
   scrollbar-width: none;
   &::-webkit-scrollbar {

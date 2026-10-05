@@ -40,8 +40,9 @@ export async function douban(m: Media, get = doubanGet) {
 const cache = new Map<string, Promise<Ratings>[]>()
 
 // A title's lookups, one per source, started the first time the title is asked for.
+// Douban is searched by the title shown, so a title is looked up again in the other language.
 function lookups(m: Media) {
-  const key = `${m.media_type}/${m.id}`
+  const key = `${m.media_type}/${m.id}/${titleOf(m)}`
   let sources = cache.get(key)
   if (!sources) {
     sources = [mdblist(m), douban(m).then((rate) => ({ douban: rate }))]

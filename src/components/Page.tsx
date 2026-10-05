@@ -2,13 +2,15 @@ import type { ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { ChevronLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useT } from '@/lib/i18n'
 
 // The title is set large, like a title card.
 export function Page({ title, back, children }: { title: string; back?: boolean; children: ReactNode }) {
   return (
     <div className="px-(--gutter) pt-(--page-top) pb-(--page-bottom)">
       {back && <BackButton />}
-      <h1 className="font-heading text-5xl font-black md:text-7xl">{title}</h1>
+      {/* a long English word (Documentaries, Schwarzenegger) is hyphenated rather than run off a phone's screen */}
+      <h1 className="font-heading text-5xl font-black wrap-break-word hyphens-auto md:text-7xl">{title}</h1>
       <div className="mt-8 md:mt-10">{children}</div>
     </div>
   )
@@ -20,6 +22,7 @@ export function Page({ title, back, children }: { title: string; back?: boolean;
 // ponytail: idx is React Router's bookkeeping, not its API; if an upgrade drops it, 返回 always goes home. Switch to
 // the Navigation API's navigation.canGoBack then.
 export function BackButton() {
+  const t = useT()
   const navigate = useNavigate()
   return (
     <Button
@@ -28,16 +31,17 @@ export function BackButton() {
       className="absolute top-(--menu-top) left-[calc(var(--gutter)+3rem)] h-10"
     >
       <ChevronLeft />
-      返回
+      {t('返回', 'Back')}
     </Button>
   )
 }
 
 // Where the empty states send people: servers are connected in the 媒体库.
 export function ToLibrary() {
+  const t = useT()
   return (
     <Link to="/library" viewTransition className="text-primary hover:underline">
-      媒体库
+      {t('媒体库', 'Library')}
     </Link>
   )
 }

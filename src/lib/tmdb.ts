@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { type Copy, type Translate, useT } from '@/lib/i18n'
 
 const token: string | undefined = import.meta.env.VITE_TMDB_TOKEN
 export const hasToken = Boolean(token)
@@ -7,7 +8,6 @@ export const hasToken = Boolean(token)
 const api = axios.create({
   baseURL: 'https://api.themoviedb.org/3',
   headers: { Authorization: `Bearer ${token}` },
-  params: { language: 'zh-CN' },
 })
 
 export type MediaType = 'movie' | 'tv'
@@ -34,17 +34,17 @@ export type Media = {
 // list. Set per 分类 since TMDB's audience is uneven: in Oct 2026 a floor of 200 left 国产剧 5 titles and 美剧 904.
 // Only /discover lists can be sorted, so the trending row has none.
 export const categories: Category[] = [
-  { key: 'movie', title: '热门电影', path: '/trending/movie/week' },
-  { key: 'kdrama', title: '韩剧', path: '/discover/tv?with_original_language=ko&with_genres=18&without_genres=16', votes: 100 },
-  { key: 'us', title: '美剧', path: '/discover/tv?with_origin_country=US&with_genres=18&without_genres=16', votes: 200 },
-  { key: 'cdrama', title: '国产剧', path: '/discover/tv?with_origin_country=CN&with_genres=18&without_genres=16', votes: 50 },
-  { key: 'jdrama', title: '日剧', path: '/discover/tv?with_original_language=ja&with_genres=18&without_genres=16', votes: 50 },
-  { key: 'janime', title: '日本动漫', path: '/discover/tv?with_genres=16&with_original_language=ja', votes: 200 },
-  { key: 'canime', title: '国漫', path: '/discover/tv?with_genres=16&with_origin_country=CN', votes: 20 },
-  { key: 'doc', title: '纪录片', path: '/discover/movie?with_genres=99', votes: 200 },
+  { key: 'movie', title: ['热门电影', 'Trending Movies'], path: '/trending/movie/week' },
+  { key: 'kdrama', title: ['韩剧', 'K-Dramas'], path: '/discover/tv?with_original_language=ko&with_genres=18&without_genres=16', votes: 100 },
+  { key: 'us', title: ['美剧', 'US Dramas'], path: '/discover/tv?with_origin_country=US&with_genres=18&without_genres=16', votes: 200 },
+  { key: 'cdrama', title: ['国产剧', 'C-Dramas'], path: '/discover/tv?with_origin_country=CN&with_genres=18&without_genres=16', votes: 50 },
+  { key: 'jdrama', title: ['日剧', 'J-Dramas'], path: '/discover/tv?with_original_language=ja&with_genres=18&without_genres=16', votes: 50 },
+  { key: 'janime', title: ['日本动漫', 'Anime'], path: '/discover/tv?with_genres=16&with_original_language=ja', votes: 200 },
+  { key: 'canime', title: ['国漫', 'Chinese Animation'], path: '/discover/tv?with_genres=16&with_origin_country=CN', votes: 20 },
+  { key: 'doc', title: ['纪录片', 'Documentaries'], path: '/discover/movie?with_genres=99', votes: 200 },
 ]
 
-export type Category = { key: string; title: string; path: string; votes?: number }
+export type Category = { key: string; title: Copy; path: string; votes?: number }
 
 // Today's trending titles, movies and shows mixed (with people, which useTitles drops).
 export const trendingToday = '/trending/all/day'
@@ -58,26 +58,34 @@ const withQuery = (path: string, query: string) => `${path}${path.includes('?') 
 
 // The orders a 分类 offers. TMDB does the sorting, as the list arrives a page at a time: sorting in the browser
 // would only reorder the pages loaded so far. Each `hint` says which titles the order leaves out.
-export function sortsOf(c: Category, today = new Date()) {
+export function sortsOf(c: Category, t: Translate, today = new Date()) {
   if (!c.votes) return []
   const tv = typeIn(c.path) === 'tv'
   const date = tv ? 'first_air_date' : 'primary_release_date'
   const day = today.toLocaleDateString('en-CA') // YYYY-MM-DD in local time
   return [
-    { key: 'popular', label: '热门', hint: '最近关注的人最多', path: c.path }, // discover's default order
+    // discover's default order
+    { key: 'popular', label: t('热门', 'Popular'), hint: t('最近关注的人最多', 'Getting the most attention lately'), path: c.path },
     {
       key: 'latest',
-      label: '最新',
-      hint: tv ? '最近开播的在前，还没开播的不算' : '最近上映的在前，还没上映的不算',
+      label: t('最新', 'Latest'),
+      hint: tv
+        ? t('最近开播的在前，还没开播的不算', 'Latest premieres first, not counting upcoming ones')
+        : t('最近上映的在前，还没上映的不算', 'Latest releases first, not counting upcoming ones'),
       path: withQuery(c.path, `sort_by=${date}.desc&${date}.lte=${day}`),
     },
     {
       key: 'rating',
-      label: '高分',
-      hint: `只算至少 ${c.votes} 人评过分的作品`,
+      label: t('高分', 'Top Rated'),
+      hint: t(`只算至少 ${c.votes} 人评过分的作品`, `Only titles rated by at least ${c.votes} people`),
       path: withQuery(c.path, `sort_by=vote_average.desc&vote_count.gte=${c.votes}`),
     },
-    { key: 'votes', label: '口碑', hint: '评过分的人越多越靠前', path: withQuery(c.path, 'sort_by=vote_count.desc') },
+    {
+      key: 'votes',
+      label: t('口碑', 'Most Rated'),
+      hint: t('评过分的人越多越靠前', 'The more people rated it, the higher it ranks'),
+      path: withQuery(c.path, 'sort_by=vote_count.desc'),
+    },
   ]
 }
 
@@ -115,18 +123,20 @@ export type Details = Media & {
 
 export type Logo = { file_path: string; iso_639_1: string | null; iso_3166_1: string | null }
 
-// A title's own lettering: Simplified Chinese first, then the original language, then English, then any.
-export function pickLogo(logos: Logo[], originalLanguage?: string) {
+// A title's own lettering: in the language shown first (Simplified Chinese, or English), then the original language,
+// then English, then any.
+export function pickLogo(logos: Logo[], t: Translate, originalLanguage?: string) {
   const find = (lang?: string, region?: string) =>
     logos.find((l) => l.iso_639_1 === lang && (!region || l.iso_3166_1 === region))
-  return find('zh', 'CN') ?? find(originalLanguage) ?? find('en') ?? logos[0]
+  return t(find('zh', 'CN'), find('en')) ?? find(originalLanguage) ?? find('en') ?? logos[0]
 }
 
 export function useLogo(m: Media) {
+  const t = useT()
   const { data, error } = useTmdb<{ logos: Logo[] }>(
     `/${m.media_type}/${m.id}/images?include_image_language=zh,${m.original_language},en,null`,
   )
-  return { ready: Boolean(data || error), logo: data && pickLogo(data.logos, m.original_language) }
+  return { ready: Boolean(data || error), logo: data && pickLogo(data.logos, t, m.original_language) }
 }
 
 // Some 片名艺术字 is drawn dark for light posters and vanishes on the dark wall. Takes RGBA pixels; true when the
@@ -151,32 +161,47 @@ export function isDarkInk(px: Uint8ClampedArray) {
 const dayOf = (date: string) => new Date(`${date}T00:00`)
 export const daysUntil = (date: string, now = new Date()) =>
   Math.round((dayOf(date).getTime() - new Date(now).setHours(0, 0, 0, 0)) / 86_400_000)
-const airDate = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })
-export const airDateOf = (date: string) => airDate.format(dayOf(date)) // "2026年10月8日周四"
-export const relativeDays = new Intl.RelativeTimeFormat('zh-CN', { numeric: 'auto' })
-const fullDate = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'long' })
-// release or first air date in full, "2026年9月28日"
-export const releaseOf = (m: Media) => {
+// TMDB's language and the dates' locale
+const locale = (t: Translate) => t('zh-CN', 'en-US')
+// "2026年10月8日周四", "Thu, October 8, 2026"
+export const airDateOf = (date: string, t: Translate) =>
+  dayOf(date).toLocaleDateString(locale(t), { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })
+// "6天后", "in 6 days"
+export const relativeDays = (days: number, t: Translate) =>
+  new Intl.RelativeTimeFormat(locale(t), { numeric: 'auto' }).format(days, 'day')
+// "2026年9月28日", "September 28, 2026"
+const fullDate = (date: string, t: Translate) => dayOf(date).toLocaleDateString(locale(t), { dateStyle: 'long' })
+// release or first air date in full
+export const releaseOf = (m: Media, t: Translate) => {
   const date = m.release_date || m.first_air_date
-  return date ? fullDate.format(dayOf(date)) : ''
+  return date ? fullDate(date, t) : ''
 }
 
 // When the next episode comes out, or why there isn't one.
-export function nextEpisodeText(tv: Details, now = new Date()) {
+export function nextEpisodeText(tv: Details, t: Translate, now = new Date()) {
   const seasons = tv.number_of_seasons ?? 1
   const next = tv.next_episode_to_air
   if (next) {
-    const ep = seasons > 1 ? `第 ${next.season_number} 季第 ${next.episode_number} 集` : `第 ${next.episode_number} 集`
-    if (!next.air_date) return `下一集：${ep}，播出时间还没公布`
-    return `下一集：${ep}，${airDateOf(next.air_date)}播出（${relativeDays.format(daysUntil(next.air_date, now), 'day')}）`
+    const ep =
+      seasons > 1
+        ? t(`第 ${next.season_number} 季第 ${next.episode_number} 集`, `S${next.season_number} E${next.episode_number}`)
+        : t(`第 ${next.episode_number} 集`, `Episode ${next.episode_number}`)
+    if (!next.air_date) return t(`下一集：${ep}，播出时间还没公布`, `Next: ${ep}, air date not announced yet`)
+    const date = airDateOf(next.air_date, t)
+    const days = relativeDays(daysUntil(next.air_date, now), t)
+    return t(`下一集：${ep}，${date}播出（${days}）`, `Next: ${ep} on ${date} (${days})`)
   }
-  const done = ({ Ended: '已完结', Canceled: '已停播' } as Record<string, string>)[tv.status]
-  if (!done) return '下一集的播出时间还没公布'
-  return `${done}，共 ${seasons > 1 ? `${seasons} 季 ` : ''}${tv.number_of_episodes} 集`
+  const done = ({ Ended: t('已完结', 'Ended'), Canceled: t('已停播', 'Canceled') } as Record<string, string>)[tv.status]
+  if (!done) return t('下一集的播出时间还没公布', 'Next episode not announced yet')
+  const episodes = tv.number_of_episodes
+  return t(
+    `${done}，共 ${seasons > 1 ? `${seasons} 季 ` : ''}${episodes} 集`,
+    `${done} after ${seasons > 1 ? `${seasons} seasons and ` : ''}${episodes} episode${episodes === 1 ? '' : 's'}`,
+  )
 }
 
-// A person as /person/{id} describes them: names and biography in Chinese when TMDB has them, the birthplace as TMDB
-// records it, usually in English.
+// A person as /person/{id} describes them: names and biography in the language shown when TMDB has them, the
+// birthplace as TMDB records it, usually in English.
 export type Person = {
   id: number
   name: string
@@ -222,21 +247,25 @@ const yearsTo = (birthday: string, day: Date) => {
 }
 
 // What a person's page says under their name: born, died, age, birthplace; what TMDB doesn't know is left out.
-export function lifeOf(p: Person, now = new Date()) {
-  const date = (day: string) => fullDate.format(dayOf(day))
+export function lifeOf(p: Person, t: Translate, now = new Date()) {
+  const date = (day: string) => fullDate(day, t)
   const age = p.birthday ? yearsTo(p.birthday, p.deathday ? dayOf(p.deathday) : now) : undefined
   return [
-    p.birthday && `${date(p.birthday)}生`,
-    p.deathday && `${date(p.deathday)}逝世`,
-    age !== undefined && (p.deathday ? `享年 ${age} 岁` : `${age} 岁`),
+    p.birthday && t(`${date(p.birthday)}生`, `Born ${date(p.birthday)}`),
+    p.deathday && t(`${date(p.deathday)}逝世`, `Died ${date(p.deathday)}`),
+    age !== undefined &&
+      (p.deathday ? t(`享年 ${age} 岁`, `Aged ${age}`) : t(`${age} 岁`, `${age} year${age === 1 ? '' : 's'} old`)),
     p.place_of_birth,
   ].filter((fact): fact is string => !!fact)
 }
 
-const errorText = (e: unknown) => {
+const errorText = (e: unknown, t: Translate) => {
+  if (!token) return t('还没有配置 TMDB 令牌', 'No TMDB token set up yet')
   if (!axios.isAxiosError(e)) return e instanceof Error ? e.message : String(e)
-  if (e.response?.status === 401) return 'TMDB 令牌无效，检查 VITE_TMDB_TOKEN'
-  return e.response ? `TMDB 返回错误 ${e.response.status}` : '连不上 TMDB，检查一下网络'
+  if (e.response?.status === 401) return t('TMDB 令牌无效，检查 VITE_TMDB_TOKEN', 'TMDB rejected the token, check VITE_TMDB_TOKEN')
+  return e.response
+    ? t(`TMDB 返回错误 ${e.response.status}`, `TMDB answered with error ${e.response.status}`)
+    : t('连不上 TMDB，检查一下网络', "Can't reach TMDB, check your connection")
 }
 
 // ponytail: cached for the whole session, add a TTL if long sessions show stale rows; answers would then change,
@@ -266,12 +295,21 @@ function getTmdb(path: string) {
   return p
 }
 
+// Each request asks for the language shown, so the two languages' answers are cached apart.
+// ponytail: a switch asks again for everything on screen, and pages show their loading state until it's in: Detail and
+// Person drop to their back button, losing the scroll and the picked season, and pages back in history, cached in the
+// other language only, lose their scroll. Let the other language's answer stand in while the new one loads if
+// switching mid-page ever matters.
+const inLanguage = (path: string, t: Translate) => withQuery(path, `language=${locale(t)}`)
+
 // The answers to several requests, in order, each undefined until it arrives, and never another request's answer.
 // The missing ones are asked for; `retry` asks again for the ones that failed.
 function useTmdbAll<T>(paths: string[]) {
-  const key = paths.join('\n')
+  const t = useT()
+  const localized = paths.map((p) => inLanguage(p, t))
+  const key = localized.join('\n')
   // which of these answers are in, like '1101'; it changes, and so re-renders, when one comes in
-  const settled = useSyncExternalStore(subscribe, () => paths.map((p) => (answers.has(p) ? 1 : 0)).join(''))
+  const settled = useSyncExternalStore(subscribe, () => localized.map((p) => (answers.has(p) ? 1 : 0)).join(''))
   const data = useMemo(
     () => key.split('\n').map((p, i) => (settled[i] === '1' ? (answers.get(p) as T) : undefined)),
     [key, settled],
@@ -280,12 +318,12 @@ function useTmdbAll<T>(paths: string[]) {
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     let live = true
-    for (const p of key.split('\n')) getTmdb(p).catch((e) => live && setFailed({ key, error: errorText(e) }))
+    for (const p of key.split('\n')) getTmdb(p).catch((e) => live && setFailed({ key, error: errorText(e, t) }))
     return () => {
       live = false
       setFailed(undefined) // an error goes with its request: other requests, and a retry, start clean
     }
-  }, [key, attempt])
+  }, [key, attempt, t])
   const retry = () => setAttempt((n) => n + 1)
   return { data, error: failed?.key === key ? failed.error : undefined, retry }
 }
@@ -350,12 +388,17 @@ export function useDetails(type: MediaType, id: string) {
   return { details, backdrops, error }
 }
 
-// A season's episodes. TMDB names an untranslated episode "第 N 集"; that name is dropped, as the number shows anyway.
+// A season's episodes. TMDB names an untranslated episode "第 N 集" ("Episode N"); that name is dropped, as the number
+// shows anyway.
 export function useSeason(tvId: number, season: number) {
+  const t = useT()
   const { data, error } = useTmdb<{ episodes: Episode[] }>(`/tv/${tvId}/season/${season}`)
   const episodes = useMemo(
-    () => data?.episodes.map((e) => (e.name === `第 ${e.episode_number} 集` ? { ...e, name: '' } : e)),
-    [data],
+    () =>
+      data?.episodes.map((e) =>
+        e.name === t(`第 ${e.episode_number} 集`, `Episode ${e.episode_number}`) ? { ...e, name: '' } : e,
+      ),
+    [data, t],
   )
   return { episodes, error }
 }
@@ -374,6 +417,6 @@ export function usePerson(id: string) {
 
 // Asks for a person ahead of a click (the pointer is on their headshot), so their page is complete in its first frame
 // and the headshot can grow into its portrait.
-export const prefetchPerson = (id: number) => {
-  getTmdb(personPath(id)) // a failure is dropped from the cache; the page asks again
+export const prefetchPerson = (id: number, t: Translate) => {
+  getTmdb(inLanguage(personPath(id), t)) // a failure is dropped from the cache; the page asks again
 }
