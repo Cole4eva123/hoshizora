@@ -74,7 +74,8 @@ export default function Search() {
         />
         <div className="relative">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-5 size-5 -translate-y-1/2 text-tone" />
-          {/* what's typed is set like a title, in the headings' serif */}
+          {/* what's typed is set like a title, in the headings' serif. While the placeholder shows, the field takes its
+              smaller sans, else the placeholder would sit on the serif's baseline, below the middle */}
           <input
             type="search"
             defaultValue={q}
@@ -85,12 +86,13 @@ export default function Search() {
             onCompositionEnd={(e) => setTyped(e.currentTarget.value)}
             placeholder={scope.placeholder}
             aria-label={scope.placeholder}
-            className="h-14 w-full rounded-2xl bg-card pr-5 pl-14 font-heading text-xl font-black caret-tone outline-none inset-ring inset-ring-star/15 transition-shadow placeholder:font-sans placeholder:text-base placeholder:font-normal placeholder:text-muted-foreground focus-visible:inset-ring-tone/60 md:text-2xl"
+            className="h-14 w-full rounded-2xl bg-card pr-5 pl-14 font-heading text-xl font-black caret-tone outline-none inset-ring inset-ring-star/15 transition-shadow placeholder-shown:font-sans placeholder-shown:text-base placeholder-shown:font-normal placeholder:text-muted-foreground focus-visible:inset-ring-tone/60 md:text-2xl"
           />
         </div>
       </form>
 
-      <div className="mt-12">
+      {/* a scope's note sits close under the field, as part of it; results keep their distance */}
+      <div className={scope.empty ? 'mt-5' : 'mt-12'}>
         {scope.empty ? (
           <p className="mx-auto max-w-sm text-center text-sm leading-6 text-balance text-muted-foreground">{scope.empty}</p>
         ) : (
