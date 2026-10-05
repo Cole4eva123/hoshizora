@@ -3,7 +3,7 @@ import { useParams } from 'react-router'
 import { BackButton, Page, sectionTitle } from '@/components/Page'
 import { Frame, PosterCard, posterGrid } from '@/components/PosterRow'
 import { useT } from '@/lib/i18n'
-import { img, lifeOf, usePerson } from '@/lib/tmdb'
+import { img, lifeOf, lineupOf, usePerson } from '@/lib/tmdb'
 import { cn } from '@/lib/utils'
 
 // An actor's page, opened from the cast of a title: who they are, then the 作品 they acted in.
@@ -19,6 +19,7 @@ export default function Person() {
       </Page>
     )
   if (!person || !works) return <BackButton /> // the way back is there before the person arrives
+  const from = { lineup: lineupOf(works) }
 
   return (
     <Page title={person.name} back>
@@ -47,7 +48,7 @@ export default function Person() {
         {works.length ? (
           <div className={cn(posterGrid, 'mt-5')}>
             {works.map((w) => (
-              <PosterCard key={w.media_type + w.id} m={w} role={w.character} />
+              <PosterCard key={w.media_type + w.id} m={w} role={w.character} from={from} />
             ))}
           </div>
         ) : (

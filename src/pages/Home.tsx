@@ -3,7 +3,7 @@ import { EmptyState, ToLibrary } from '@/components/Page'
 import { PosterRow } from '@/components/PosterRow'
 import { PosterWall, TitleInfo } from '@/components/PosterWall'
 import { useT } from '@/lib/i18n'
-import { categories, hasToken, titleOf, trendingToday, useTitles } from '@/lib/tmdb'
+import { categories, hasToken, hrefOf, lineupOf, titleOf, trendingToday, useTitles } from '@/lib/tmdb'
 
 // 打乱数组顺序，返回新数组，原数组不变（画报墙每次进首页轮播的顺序都不一样）
 // <T,>：泛型，什么类型的数组都能打乱；逗号让 .tsx 不把 <T> 当成 JSX 标签
@@ -40,11 +40,12 @@ function TrendingWall({ children }: { children: ReactNode }) {
   const t = useT()
   const { titles, error } = useTitles(trendingToday)
   const slides = useMemo(() => shuffled(titles?.filter((m) => m.backdrop_path) ?? []).slice(0, 8), [titles])
+  const lineup = lineupOf(slides)
   return (
     <PosterWall
       label={t('热门推荐', 'Trending')}
       backdrops={slides.map((m) => m.backdrop_path!)}
-      link={(i) => ({ to: `/${slides[i].media_type}/${slides[i].id}`, label: titleOf(slides[i]) })}
+      link={(i) => ({ to: hrefOf(slides[i]), label: titleOf(slides[i]), state: { lineup } })}
       info={(i) =>
         slides[i] ? (
           <TitleInfo m={slides[i]}>

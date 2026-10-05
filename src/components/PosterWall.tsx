@@ -109,7 +109,7 @@ export function PosterWall({
   label: string
   backdrops: string[]
   info: (index: number) => ReactNode
-  link?: (index: number) => { to: string; label: string }
+  link?: (index: number) => { to: string; label: string; state?: unknown }
   children?: ReactNode
 }) {
   const t = useT()
@@ -159,6 +159,7 @@ export function PosterWall({
             <Link
               key={path}
               to={to.to}
+              state={to.state}
               viewTransition
               aria-label={to.label}
               className="size-full shrink-0 snap-start -outline-offset-2"

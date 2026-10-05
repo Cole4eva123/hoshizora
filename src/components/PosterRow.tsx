@@ -5,7 +5,7 @@ import { sectionTitle } from '@/components/Page'
 import { Button } from '@/components/ui/button'
 import { useT } from '@/lib/i18n'
 import { cn, reveal } from '@/lib/utils'
-import { type Category, type Media, img, titleOf, useTitles, yearOf } from '@/lib/tmdb'
+import { type Category, type From, type Media, hrefOf, img, lineupOf, titleOf, useTitles, yearOf } from '@/lib/tmdb'
 
 // A picture in the cards' rounded frame. `children` (an episode number, an initial) sit under it, in the same grid
 // cell: they show while it loads, if it fails, and when there's none.
@@ -34,11 +34,11 @@ export function Frame({ src, className, children }: { src?: string; className: s
 }
 
 // Pointing at a card catches starlight on its frame and name; pressing it gives a little. `role`, on an actor's page,
-// is the part they played in it.
-export function PosterCard({ m, role }: { m: Media; role?: string }) {
+// is the part they played in it; `from` is the list it sits in.
+export function PosterCard({ m, role, from }: { m: Media; role?: string; from?: From }) {
   const t = useT()
   return (
-    <Link to={`/${m.media_type}/${m.id}`} viewTransition className="group snap-start">
+    <Link to={hrefOf(m)} state={from} viewTransition className="group snap-start">
       <Frame
         src={img(m.poster_path, 'w342')}
         className="aspect-2/3 transition group-hover:outline-star/60 group-active:scale-[.97]"
@@ -148,6 +148,7 @@ export function Row({
 export function PosterRow({ category }: { category: Category }) {
   const t = useT()
   const { titles, error } = useTitles(category.path)
+  const from = titles && { lineup: lineupOf(titles), list: { path: category.path, pages: 1 } }
   return (
     <Row
       title={
@@ -162,7 +163,7 @@ export function PosterRow({ category }: { category: Category }) {
       }
       track="auto-cols-[calc((100%-2*0.75rem)/3)] sm:auto-cols-[calc((100%-3*1rem)/4)] lg:auto-cols-[calc((100%-4*1rem)/5)] xl:auto-cols-[calc((100%-5*1rem)/6)]"
     >
-      {titles ? titles.map((m) => <PosterCard key={m.id} m={m} />) : <PosterSkeletons n={6} pulse={!error} />}
+      {titles ? titles.map((m) => <PosterCard key={m.id} m={m} from={from} />) : <PosterSkeletons n={6} pulse={!error} />}
     </Row>
   )
 }
@@ -174,6 +175,7 @@ export function PosterGrid({ path }: { path: string }) {
   const [params, setParams] = useSearchParams()
   const pages = Math.max(1, Math.floor(Number(params.get('pages'))) || 1)
   const { titles, loading, more, error, retry } = useTitles(path, pages)
+  const from = titles && { lineup: lineupOf(titles), list: { path, pages } }
   const end = useRef<HTMLDivElement>(null)
 
   // Ask for the next page about two screens before the end shows. Each page gets a fresh observer, which reports at
@@ -198,7 +200,7 @@ export function PosterGrid({ path }: { path: string }) {
   return (
     <>
       <div className={posterGrid}>
-        {titles?.map((m) => <PosterCard key={m.id} m={m} />)}
+        {titles?.map((m) => <PosterCard key={m.id} m={m} from={from} />)}
         {loading && <PosterSkeletons n={titles ? 6 : 12} pulse={!error} />}
       </div>
       <div ref={end} />

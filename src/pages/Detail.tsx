@@ -1,6 +1,6 @@
-import { Fragment, useState } from 'react'
-import { Link, useParams, useViewTransitionState } from 'react-router'
-import { ChevronDown } from 'lucide-react'
+import { Fragment, useMemo, useState } from 'react'
+import { Link, useLocation, useParams, useViewTransitionState } from 'react-router'
+import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Choices } from '@/components/Choices'
 import { BackButton, Page } from '@/components/Page'
 import { Frame, Row } from '@/components/PosterRow'
@@ -9,15 +9,21 @@ import { useT } from '@/lib/i18n'
 import {
   type Details,
   type Episode,
+  type From,
+  type Lineup,
   type MediaType,
   airDateOf,
   daysUntil,
+  hrefOf,
   img,
+  lineupOf,
   nextEpisodeText,
   prefetchPerson,
   relativeDays,
+  titleOf,
   useDetails,
   useSeason,
+  useTitles,
 } from '@/lib/tmdb'
 import { choice, cn } from '@/lib/utils'
 
@@ -25,6 +31,7 @@ export default function Detail({ type }: { type: MediaType }) {
   const t = useT()
   const { id } = useParams()
   const { details: m, backdrops, error } = useDetails(type, id!)
+  const neighbors = useNeighbors(type, id!)
 
   if (error)
     return (
@@ -46,6 +53,7 @@ export default function Detail({ type }: { type: MediaType }) {
             <p className="mt-4 max-w-xl text-[15px] leading-7 text-foreground/80">
               {m.overview || t('TMDB 上还没有这部作品的中文简介。', 'TMDB has no English overview of this title yet.')}
             </p>
+            {neighbors && <Neighbors {...neighbors} />}
           </TitleInfo>
         )}
       />
@@ -55,6 +63,81 @@ export default function Detail({ type }: { type: MediaType }) {
         <Cast cast={m.credits.cast} />
       </div>
     </Fragment>
+  )
+}
+
+const stepping = (from: From) => ({ state: from, replace: true, viewTransition: true })
+
+// The 作品 before and after this one in the list it was opened from (a 分类, a search, a home row or the wall, an
+// actor's 作品). Past the last one loaded from a list that pages on, the next page is asked for and the steps go on
+// into it; a list goes round only at its true end, and before the first one. A step replaces the history entry, so 返回
+// still goes back to the list. A title opened from a link of its own has no list, and so no neighbors.
+// No ← → keys: after a click in the wall or a row, Chrome scrolls that with the arrows, and the page would step too.
+function useNeighbors(type: MediaType, id: string) {
+  const from = useLocation().state as From | null
+  const indexIn = (lineup: Lineup) => lineup.findIndex((x) => x.media_type === type && `${x.id}` === id)
+  const list = from?.list
+  const atEnd = !!from && indexIn(from.lineup) === from.lineup.length - 1
+  const more = useTitles(atEnd ? list?.path : undefined, (list?.pages ?? 0) + 1)
+  // the list with its next page, once that brings 作品 the lineup didn't have
+  const longer = useMemo(
+    () =>
+      from && list && more.titles && more.titles.length > from.lineup.length
+        ? { lineup: lineupOf(more.titles), list: { ...list, pages: list.pages + 1 } }
+        : undefined,
+    [from, list, more.titles],
+  )
+  const all = longer ?? from
+  // found again in the longer list, whose first pages, fetched afresh, may have shifted
+  const i = all ? indexIn(all.lineup) : -1
+  if (!all || i < 0 || all.lineup.length < 2) return
+  // while the next page is on its way, there's no next yet, rather than a step back round to the first (if it fails,
+  // the list goes round)
+  const waiting = more.loading && !more.error
+  return { from: all, prev: all.lineup.at(i - 1)!, next: waiting ? undefined : all.lineup[(i + 1) % all.lineup.length] }
+}
+
+// Under the overview, the one before on the left and the one after on the right; with two in the list, they're the
+// same 作品, so it shows once, as the next.
+function Neighbors({ from, prev, next }: NonNullable<ReturnType<typeof useNeighbors>>) {
+  const t = useT()
+  return (
+    // the wall's info lets clicks through to the stills; these take them
+    <nav
+      aria-label={t('前后作品', 'Previous and next')}
+      className="pointer-events-auto mt-6 flex max-w-xl justify-between gap-6 text-sm text-foreground/60"
+    >
+      {prev !== next && <Neighbor to={prev} from={from} side="prev" />}
+      {next && <Neighbor to={next} from={from} side="next" />}
+    </nav>
+  )
+}
+
+// Asking for its details names the 作品 in the language shown (the lineup keeps the name from when the card was
+// clicked), and has its page complete in the first frame when the step comes.
+function Neighbor({ to, from, side }: { to: Lineup[number]; from: From; side: 'prev' | 'next' }) {
+  const t = useT()
+  const { details } = useDetails(to.media_type, `${to.id}`)
+  const title = details ? titleOf(details) : to.title
+  const Chevron = side === 'prev' ? ChevronLeft : ChevronRight
+  return (
+    <Link
+      to={hrefOf(to)}
+      {...stepping(from)}
+      aria-label={side === 'prev' ? t(`上一部：${title}`, `Previous: ${title}`) : t(`下一部：${title}`, `Next: ${title}`)}
+      className={cn(
+        'group flex min-w-0 items-center gap-1 rounded-sm transition-colors hover:text-star',
+        side === 'next' && 'ml-auto flex-row-reverse',
+      )}
+    >
+      <Chevron
+        className={cn(
+          'size-4 shrink-0 transition',
+          side === 'prev' ? 'group-hover:-translate-x-0.5' : 'group-hover:translate-x-0.5',
+        )}
+      />
+      <span className="truncate">{title}</span>
+    </Link>
   )
 }
 

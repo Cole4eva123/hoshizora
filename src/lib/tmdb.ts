@@ -90,6 +90,16 @@ export function sortsOf(c: Category, t: Translate, today = new Date()) {
 }
 
 export const titleOf = (m: Media) => m.title ?? m.name ?? ''
+// The 作品 of the list a card was opened from, in the order shown, so the title page can step to the ones before and
+// after. It rides along in the history entry, so it keeps only what that needs.
+export type Lineup = { media_type: MediaType; id: number; title: string }[]
+// a 作品's own page
+export const hrefOf = (m: Pick<Media, 'media_type' | 'id'>) => `/${m.media_type}/${m.id}`
+export const lineupOf = (list: Media[]): Lineup =>
+  list.map((m) => ({ media_type: m.media_type, id: m.id, title: titleOf(m) }))
+// Where a title page was opened from: the lineup, and for a list that pages on (a 分类, a search) its request and the
+// pages it showed, so stepping past the last one goes on into the next page.
+export type From = { lineup: Lineup; list?: { path: string; pages: number } }
 export const originalTitleOf = (m: Media) => m.original_title ?? m.original_name ?? ''
 export const yearOf = (m: Media) => (m.release_date ?? m.first_air_date ?? '').slice(0, 4)
 export const img = (path: string | null, size: 'w300' | 'w342' | 'w500' | 'w1280') =>
@@ -302,6 +312,9 @@ function getTmdb(path: string) {
 // switching mid-page ever matters.
 const inLanguage = (path: string, t: Translate) => withQuery(path, `language=${locale(t)}`)
 
+// The requests a key stands for; none for the empty key of a hook asked for nothing.
+const localizedOf = (key: string) => (key ? key.split('\n') : [])
+
 // The answers to several requests, in order, each undefined until it arrives, and never another request's answer.
 // The missing ones are asked for; `retry` asks again for the ones that failed.
 function useTmdbAll<T>(paths: string[]) {
@@ -311,14 +324,14 @@ function useTmdbAll<T>(paths: string[]) {
   // which of these answers are in, like '1101'; it changes, and so re-renders, when one comes in
   const settled = useSyncExternalStore(subscribe, () => localized.map((p) => (answers.has(p) ? 1 : 0)).join(''))
   const data = useMemo(
-    () => key.split('\n').map((p, i) => (settled[i] === '1' ? (answers.get(p) as T) : undefined)),
+    () => localizedOf(key).map((p, i) => (settled[i] === '1' ? (answers.get(p) as T) : undefined)),
     [key, settled],
   )
   const [failed, setFailed] = useState<{ key: string; error: string }>()
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     let live = true
-    for (const p of key.split('\n')) getTmdb(p).catch((e) => live && setFailed({ key, error: errorText(e, t) }))
+    for (const p of localizedOf(key)) getTmdb(p).catch((e) => live && setFailed({ key, error: errorText(e, t) }))
     return () => {
       live = false
       setFailed(undefined) // an error goes with its request: other requests, and a retry, start clean
@@ -353,10 +366,10 @@ export const toTitles = (path: string, results: Listed[]): Media[] => {
 const maxPages = 500
 
 // The first `pages` (≥ 1) pages of a list as one list of 作品. `loading` while pages are on their way, `more` when TMDB has
-// pages after them, `retry` asks again for the ones that failed.
-export function useTitles(path: string, pages = 1) {
+// pages after them, `retry` asks again for the ones that failed. Without a `path` it asks for nothing.
+export function useTitles(path: string | undefined, pages = 1) {
   pages = Math.min(Math.max(1, Math.floor(pages)) || 1, maxPages)
-  const paths = Array.from({ length: pages }, (_, i) => withQuery(path, `page=${i + 1}`))
+  const paths = path ? Array.from({ length: pages }, (_, i) => withQuery(path, `page=${i + 1}`)) : []
   const { data, error, retry } = useTmdbAll<ListPage>(paths)
   // The pages in so far, from the first: their titles stay on screen while the next page loads.
   const arrived = useMemo(() => {
@@ -364,11 +377,11 @@ export function useTitles(path: string, pages = 1) {
     return (gap < 0 ? data : data.slice(0, gap)) as ListPage[]
   }, [data])
   const titles = useMemo(
-    () => (arrived.length ? toTitles(path, arrived.flatMap((p) => p.results)) : undefined),
+    () => (path && arrived.length ? toTitles(path, arrived.flatMap((p) => p.results)) : undefined),
     [arrived, path],
   )
   const more = !!arrived.length && pages < Math.min(arrived[0].total_pages, maxPages)
-  return { titles, loading: arrived.length < pages, more, error, retry }
+  return { titles, loading: arrived.length < paths.length, more, error, retry }
 }
 
 // include_image_language=null keeps only textless backdrops, which suit the wall. For shows, credits is the current
