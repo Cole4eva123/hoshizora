@@ -2,17 +2,28 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { SearchIcon } from 'lucide-react'
 import { Choices } from '@/components/Choices'
+import type { Star } from '@/components/Constellation'
 import { ToLibrary } from '@/components/Page'
 import { PosterGrid } from '@/components/PosterRow'
 import { type Translate, useT } from '@/lib/i18n'
 import { searchPath } from '@/lib/tmdb'
 import { cn } from '@/lib/utils'
 
+// The constellations of the 搜索范围, like the corner menu's: a rack of servers, a bucket of popcorn for TMDB's 作品,
+// one server.
+const rack: Star[][] = [[[3, 3], [21, 3], [21, 21], [3, 21], [3, 3]], [[3, 12], [21, 12]], [[7, 7.5]], [[7, 16.5]]]
+const popcorn: Star[][] = [
+  [[5, 9], [7, 5], [10, 6.5], [12, 3.5], [14, 6.5], [17, 5], [19, 9], [17, 21], [7, 21], [5, 9]],
+  [[5, 9], [19, 9]],
+]
+const server: Star[][] = [[[3, 7], [21, 7], [21, 17], [3, 17], [3, 7]], [[7, 12]]]
+
 // Each 搜索范围 has its own colour (--tone): its star when picked, and the field's icon, caret and ring.
 const scopesIn = (t: Translate) => [
   {
     key: 'all',
     label: t('全部服务器', 'All servers'),
+    icon: rack,
     tone: '[--tone:var(--primary)]',
     placeholder: t('在所有服务器里找作品', 'Search all your servers'),
     empty: t(
@@ -20,10 +31,17 @@ const scopesIn = (t: Translate) => [
       <>No servers to search yet. Connect an Emby server in <ToLibrary />, and this searches all of them at once.</>,
     ),
   },
-  { key: 'tmdb', label: 'TMDB', tone: '[--tone:var(--tmdb)]', placeholder: t('在 TMDB 上找作品', 'Search TMDB') },
+  {
+    key: 'tmdb',
+    label: 'TMDB',
+    icon: popcorn,
+    tone: '[--tone:var(--tmdb)]',
+    placeholder: t('在 TMDB 上找作品', 'Search TMDB'),
+  },
   {
     key: 'server',
     label: t('指定服务器', 'One server'),
+    icon: server,
     tone: '[--tone:var(--apricot)]',
     placeholder: t('在这台服务器里找作品', 'Search this server'),
     empty: t(
@@ -64,7 +82,8 @@ export default function Search() {
         }}
         className="mx-auto max-w-xl"
       >
-        {/* Quiet words over the field, nothing to compete with it; the picked one's star takes the scope's colour */}
+        {/* Quiet words and their constellations over the field, nothing to compete with it; the picked one's star
+            takes the scope's colour */}
         <Choices
           legend={t('搜索范围', 'Search in')}
           options={scopes}

@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { NavLink, Outlet, ScrollRestoration, useLocation } from 'react-router'
+import { Constellation, type Star } from '@/components/Constellation'
 import { type Copy, type Translate, en, setLang, useT, zh } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
-
-type Star = [x: number, y: number, r?: number]
 
 // Each page's icon is a small constellation, drawn like the logo beside them: a house, a star, two frames stacked, a
 // lens and its handle, two sliders.
@@ -37,33 +36,6 @@ const nav: { to: string; label: Copy; icon: Star[][] }[] = [
     ],
   },
 ]
-
-// Stars on a 24-unit grid, joined by faint lines. Each line runs through its stars in order, and a closed shape comes
-// back to its first; an `r` makes a star bigger, as a slider's knob. It takes the link's colour, so it lights up with
-// its words.
-function Constellation({ lines }: { lines: Star[][] }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="size-4.5 shrink-0">
-      {lines.map((stars, i) => (
-        <polyline
-          key={i}
-          points={stars.map(([x, y]) => `${x},${y}`).join(' ')}
-          fill="none"
-          stroke="currentColor"
-          strokeOpacity={0.6}
-          strokeWidth={1.25}
-        />
-      ))}
-      {/* a star a line comes back to is drawn once: the link's see-through colour, laid twice, would make it brighter */}
-      {lines
-        .flat()
-        .filter(([x, y], i, all) => all.findIndex(([a, b]) => a === x && b === y) === i)
-        .map(([x, y, r = 1.7], i) => (
-          <circle key={i} cx={x} cy={y} r={r} fill="currentColor" />
-        ))}
-    </svg>
-  )
-}
 
 export default function App() {
   const t = useT()
