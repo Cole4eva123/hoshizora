@@ -4,13 +4,66 @@ import { NavLink, Outlet, ScrollRestoration, useLocation } from 'react-router'
 import { type Copy, type Translate, en, setLang, useT, zh } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
-const nav: { to: string; label: Copy }[] = [
-  { to: '/', label: ['首页', 'Home'] },
-  { to: '/favorites', label: ['收藏', 'Favorites'] },
-  { to: '/library', label: ['媒体库', 'Library'] },
-  { to: '/search', label: ['搜索', 'Search'] },
-  { to: '/settings', label: ['设置', 'Settings'] },
+type Star = [x: number, y: number, r?: number]
+
+// Each page's icon is a small constellation, drawn like the logo beside them: a house, a star, two frames stacked, a
+// lens and its handle, two sliders.
+const nav: { to: string; label: Copy; icon: Star[][] }[] = [
+  { to: '/', label: ['首页', 'Home'], icon: [[[12, 3], [20, 10], [20, 20], [4, 20], [4, 10], [12, 3]]] },
+  {
+    to: '/favorites',
+    label: ['收藏', 'Favorites'],
+    icon: [[[12, 3.3], [17.6, 20.5], [3, 9.9], [21, 9.9], [6.4, 20.5], [12, 3.3]]],
+  },
+  {
+    to: '/library',
+    label: ['媒体库', 'Library'],
+    icon: [
+      [[3, 9], [16, 9], [16, 21], [3, 21], [3, 9]],
+      [[7, 4], [21, 4], [21, 17]],
+    ],
+  },
+  {
+    to: '/search',
+    label: ['搜索', 'Search'],
+    icon: [[[15.5, 15.5], [8.7, 17.3], [3.7, 12.3], [5.5, 5.5], [12.3, 3.7], [17.3, 8.7], [15.5, 15.5], [21, 21]]],
+  },
+  {
+    to: '/settings',
+    label: ['设置', 'Settings'],
+    icon: [
+      [[3, 8], [15, 8, 2.6], [21, 8]],
+      [[3, 16], [9, 16, 2.6], [21, 16]],
+    ],
+  },
 ]
+
+// Stars on a 24-unit grid, joined by faint lines. Each line runs through its stars in order, and a closed shape comes
+// back to its first; an `r` makes a star bigger, as a slider's knob. It takes the link's colour, so it lights up with
+// its words.
+function Constellation({ lines }: { lines: Star[][] }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="size-4.5 shrink-0">
+      {lines.map((stars, i) => (
+        <polyline
+          key={i}
+          points={stars.map(([x, y]) => `${x},${y}`).join(' ')}
+          fill="none"
+          stroke="currentColor"
+          strokeOpacity={0.6}
+          strokeWidth={1.25}
+        />
+      ))}
+      {/* a star a line comes back to is drawn once: the link's see-through colour, laid twice, would make it brighter */}
+      {lines
+        .flat()
+        .filter(([x, y], i, all) => all.findIndex(([a, b]) => a === x && b === y) === i)
+        .map(([x, y, r = 1.7], i) => (
+          <circle key={i} cx={x} cy={y} r={r} fill="currentColor" />
+        ))}
+    </svg>
+  )
+}
 
 export default function App() {
   const t = useT()
@@ -51,7 +104,7 @@ export default function App() {
         </button>
         {/* The bar. 0fr→1fr animates its width to fit the links. The glass and the clip sit on the grid, not the
             link row: mid-way the row's track is narrower than the grid, which would leave the text ahead of the glass.
-            It stops at the right gutter: on a phone the English links don't all fit, so it scrolls sideways, its end
+            It stops at the right gutter: on a phone the links don't all fit, so it scrolls sideways, its end
             fading while there's more. The grid is the scroller itself, as a mask on a wrapper would stop the glass
             from blurring what's behind it. */}
         <div
@@ -65,7 +118,7 @@ export default function App() {
           // inset-ring inset-ring-star/15：内侧一圈 15% 不透明的星光色细边
           className="no-scrollbar scroll-hint grid max-w-[calc(100vw-2*var(--gutter)-2.875rem)] grid-cols-[0fr] overflow-x-auto overscroll-x-contain rounded-xl bg-night/80 inset-ring inset-ring-star/15 backdrop-blur-xl backdrop-saturate-150 transition-[grid-template-columns] duration-300 ease-out group-hover:grid-cols-[1fr] group-has-focus-visible:grid-cols-[1fr] group-data-open:grid-cols-[1fr] motion-reduce:transition-none">
           <div className="flex min-w-0">
-            {nav.map(({ to, label }) => (
+            {nav.map(({ to, label, icon }) => (
               <NavLink
                 key={to}
                 to={to}
@@ -74,13 +127,14 @@ export default function App() {
                 onClick={() => setOpen(false)}
                 className={({ isActive }) =>
                   cn(
-                    'rounded-lg px-3 text-[15px] leading-10 whitespace-nowrap text-star/70 -outline-offset-2 transition-colors hover:text-star',
-                    // the current page shines like the logo's bright star
+                    'flex items-center gap-2 rounded-lg px-3 text-[15px] leading-10 whitespace-nowrap text-star/70 -outline-offset-2 transition-colors hover:text-star',
+                    // the current page shines like the logo's bright star, its constellation too
                     (isActive || (to === '/' && underHome)) &&
-                      'font-medium text-white [text-shadow:0_0_12px_var(--glow)] hover:text-white',
+                      'font-medium text-white [text-shadow:0_0_12px_var(--glow)] hover:text-white *:drop-shadow-[0_0_6px_var(--glow)]',
                   )
                 }
               >
+                <Constellation lines={icon} />
                 {t(...label)}
               </NavLink>
             ))}
