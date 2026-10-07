@@ -16,17 +16,31 @@ const shuffled = <T,>(list: T[]) =>
     // 扔掉随机数，只留元素：[0.73, x] → x（[, x] 跳过第一个）
     .map(([, x]) => x)
 
+// 首页：最上面是画报墙，下面一行行是各个分类
 export default function Home() {
+  // 有自己的文案（h1），所以自己调 useT，切换语言时重绘
   const t = useT()
+  // 解构：first 是第一个分类（热门电影），rest 是剩下的分类组成的数组
   const [first, ...rest] = categories
   return (
+    // <>…</> 是 Fragment：把几个元素包成一个返回，不多出一层 DOM
     <>
+      {/* sr-only：屏幕上看不见，读屏软件能读到；页面要有一个 h1 说明这是哪页 */}
       <h1 className="sr-only">{t('首页', 'Home')}</h1>
+      {/* 第一个分类当 children 传给画报墙，压在画报墙的下沿上，第一屏就能看到 */}
       <TrendingWall>
         <PosterRow category={first} />
       </TrendingWall>
-      <div className="space-y-12 pt-6 pb-(--page-bottom) md:space-y-14">
+      {/* 画报墙下面的部分。Tailwind 的数字 × 4px 就是实际距离：
+          space-y-8：每两个相邻子元素（继续观看、各分类行）之间隔 32px，加在父元素上，所有行一起变
+          pt-1：上内边距 4px，画报墙底部到"继续观看"的距离
+          pb-(--page-bottom)：下内边距，用 index.css 里的 --page-bottom（至少 64px，iPhone 底部横条更高时取横条高度），
+            最后一行不会贴着屏幕底
+          md:space-y-10：屏幕宽 ≥ 768px 时行间距改为 40px；不带 md: 的值是给手机的 */}
+      <div className="space-y-4 pt-0 pb-(--page-bottom) md:space-y-4">
+        {/* 继续观看：Emby 还没做，现在是占位 */}
         <ContinueWatching />
+        {/* 其余分类每个一行；key 让 React 认出哪行是哪个分类 */}
         {rest.map((c) => (
           <PosterRow key={c.key} category={c} />
         ))}
