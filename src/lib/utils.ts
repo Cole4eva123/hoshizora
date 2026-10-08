@@ -1,4 +1,5 @@
 import { cn } from "cn"
+import { useSearchParams } from "react-router"
 import type { Star } from "@/components/Constellation"
 
 export { cn }
@@ -31,3 +32,7 @@ export const storage = (() => {
 // One server, its light on: the 指定服务器 search scope, and each 服务器 on the 媒体库 page, where the light (7, 12) shows
 // whether it's connected. Kept here as a component file can't share it (fast refresh).
 export const server: Star[][] = [[[3, 7], [21, 7], [21, 17], [3, 17], [3, 7]], [[7, 12]]]
+
+// The pages of a list a PagedGrid shows, from the URL (?pages=N), so coming back from a title brings back as many as
+// there were, and the scroll position with them.
+export const usePages = () => Math.max(1, Math.floor(Number(useSearchParams()[0].get('pages'))) || 1)

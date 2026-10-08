@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { sectionTitle } from '@/components/Page'
 import { Button } from '@/components/ui/button'
 import { useT } from '@/lib/i18n'
-import { cn, reveal } from '@/lib/utils'
+import { cn, reveal, usePages } from '@/lib/utils'
 import { type Category, type From, type Media, hrefOf, img, lineupOf, titleOf, useTitles, yearOf } from '@/lib/tmdb'
 
 // A picture in the cards' rounded frame. `children` (an episode number, an initial) sit under it, in the same grid
@@ -33,22 +33,45 @@ export function Frame({ src, className, children }: { src?: string; className: s
   )
 }
 
-// Pointing at a card catches starlight on its frame and name; pressing it gives a little. `role`, on an actor's page,
-// is the part they played in it; `from` is the list it sits in.
+// A poster and its name, with `children` (a year, a part) under it. Pointing at a card that opens a page (`to`) catches
+// starlight on its frame and name; pressing it gives a little.
+export function Poster({
+  to,
+  state,
+  src,
+  title,
+  children,
+}: {
+  to?: string
+  state?: From
+  src?: string
+  title: string
+  children?: ReactNode
+}) {
+  const card = (
+    <>
+      <Frame src={src} className="aspect-2/3 transition group-hover:outline-star/60 group-active:scale-[.97]" />
+      <p className="mt-2.5 truncate text-sm transition-colors group-hover:text-star">{title}</p>
+      <p className="mt-0.5 flex gap-x-2 text-xs text-muted-foreground">{children}</p>
+    </>
+  )
+  return to ? (
+    <Link to={to} state={state} viewTransition className="group snap-start">
+      {card}
+    </Link>
+  ) : (
+    <div className="snap-start">{card}</div>
+  )
+}
+
+// A TMDB 作品. `role`, on an actor's page, is the part they played in it; `from` is the list it sits in.
 export function PosterCard({ m, role, from }: { m: Media; role?: string; from?: From }) {
   const t = useT()
   return (
-    <Link to={hrefOf(m)} state={from} viewTransition className="group snap-start">
-      <Frame
-        src={img(m.poster_path, 'w342')}
-        className="aspect-2/3 transition group-hover:outline-star/60 group-active:scale-[.97]"
-      />
-      <p className="mt-2.5 truncate text-sm transition-colors group-hover:text-star">{titleOf(m)}</p>
-      <p className="mt-0.5 flex gap-x-2 text-xs text-muted-foreground">
-        {yearOf(m)}
-        {role && <span className="truncate">{t(`饰 ${role}`, `as ${role}`)}</span>}
-      </p>
-    </Link>
+    <Poster to={hrefOf(m)} state={from} src={img(m.poster_path, 'w342')} title={titleOf(m)}>
+      {yearOf(m)}
+      {role && <span className="truncate">{t(`饰 ${role}`, `as ${role}`)}</span>}
+    </Poster>
   )
 }
 
@@ -168,14 +191,51 @@ export function PosterRow({ category }: { category: Category }) {
   )
 }
 
-// A list's 作品 as a grid that loads on as you scroll, for a 分类 or a search. The pages shown live in the URL
-// (?pages=N), so coming back from a title brings back as many as there were, and the scroll position with them.
+// A TMDB list's 作品 as a grid that loads on as you scroll, for a 分类 or a search.
 export function PosterGrid({ path }: { path: string }) {
-  const t = useT()
-  const [params, setParams] = useSearchParams()
-  const pages = Math.max(1, Math.floor(Number(params.get('pages'))) || 1)
+  const pages = usePages()
   const { titles, loading, more, error, retry } = useTitles(path, pages)
   const from = titles && { lineup: lineupOf(titles), list: { path, pages } }
+  return (
+    <PagedGrid count={titles?.length} loading={loading} more={more} error={error} retry={retry}>
+      {titles?.map((m) => <PosterCard key={m.id} m={m} from={from} />)}
+    </PagedGrid>
+  )
+}
+
+// What failed, and a button to ask again.
+export function Failed({ error, retry, className }: { error: string; retry: () => void; className?: string }) {
+  const t = useT()
+  return (
+    <p className={cn('flex flex-wrap items-center gap-3 text-sm text-muted-foreground', className)}>
+      {error}
+      <Button variant="secondary" size="sm" onClick={retry}>
+        {t('重试', 'Retry')}
+      </Button>
+    </p>
+  )
+}
+
+// A list's posters (`children`, `count` of them once the first page is in) as a grid that pages on as you scroll: past
+// the last page shown (usePages), it asks for one more while `more` says there is one.
+export function PagedGrid({
+  count,
+  loading,
+  more,
+  error,
+  retry,
+  children,
+}: {
+  count?: number
+  loading: boolean
+  more: boolean
+  error?: string
+  retry: () => void
+  children: ReactNode
+}) {
+  const t = useT()
+  const [, setParams] = useSearchParams()
+  const pages = usePages()
   const end = useRef<HTMLDivElement>(null)
 
   // Ask for the next page about two screens before the end shows. Each page gets a fresh observer, which reports at
@@ -200,26 +260,21 @@ export function PosterGrid({ path }: { path: string }) {
   return (
     <>
       <div className={posterGrid}>
-        {titles?.map((m) => <PosterCard key={m.id} m={m} from={from} />)}
-        {loading && <PosterSkeletons n={titles ? 6 : 12} pulse={!error} />}
+        {children}
+        {loading && <PosterSkeletons n={count ? 6 : 12} pulse={!error} />}
       </div>
       <div ref={end} />
       <p className="sr-only" aria-live="polite">
-        {titles && t(`已加载 ${titles.length} 部`, `${titles.length} title${titles.length === 1 ? '' : 's'} loaded`)}
+        {count !== undefined && t(`已加载 ${count} 部`, `${count} title${count === 1 ? '' : 's'} loaded`)}
       </p>
       {error ? (
-        <p className="mt-8 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-          {error}
-          <Button variant="secondary" size="sm" onClick={retry}>
-            {t('重试', 'Retry')}
-          </Button>
-        </p>
+        <Failed error={error} retry={retry} className="mt-8" />
       ) : (
-        titles &&
+        count !== undefined &&
         !loading &&
         !more && (
           <p className="mt-10 text-center text-sm text-muted-foreground">
-            {titles.length ? t('没有更多了', 'No more titles') : t('没有找到作品', 'No titles found')}
+            {count ? t('没有更多了', 'No more titles') : t('没有找到作品', 'No titles found')}
           </p>
         )
       )}

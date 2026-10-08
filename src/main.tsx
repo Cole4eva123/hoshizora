@@ -12,6 +12,7 @@ import Home from '@/pages/Home'
 import Library from '@/pages/Library'
 import Person from '@/pages/Person'
 import Search from '@/pages/Search'
+import ServerPage from '@/pages/Server'
 import Settings from '@/pages/Settings'
 
 const router = createBrowserRouter(
@@ -26,6 +27,7 @@ const router = createBrowserRouter(
         { path: 'person/:id', element: <Person /> },
         { path: 'favorites', element: <Favorites /> },
         { path: 'library', element: <Library /> },
+        { path: 'library/:server/:user', element: <ServerPage /> },
         { path: 'search', element: <Search /> },
         { path: 'settings', element: <Settings /> },
         { path: '*', element: <Navigate to="/" replace /> }, //如果不匹配直接跳会主页面

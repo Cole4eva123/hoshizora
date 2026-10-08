@@ -1,5 +1,6 @@
 import axios from 'axios'
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useMemo } from 'react'
+import { arrivedOf, ask, useAnswers } from '@/lib/cache'
 import { type Copy, type Translate, useT } from '@/lib/i18n'
 
 const token: string | undefined = import.meta.env.VITE_TMDB_TOKEN
@@ -327,32 +328,9 @@ const errorText = (e: unknown, t: Translate) => {
     : t('连不上 TMDB，检查一下网络', "Can't reach TMDB, check your connection")
 }
 
-// ponytail: cached for the whole session, add a TTL if long sessions show stale rows; answers would then change,
-// which useTmdbAll's memo assumes they don't
-const cache = new Map<string, Promise<void>>()
-// What the settled requests answered; an answer never changes once in. Hooks read it during render, so a page that
-// mounts again (back from a title) is drawn full height in its first frame, when the router restores its scroll.
-const answers = new Map<string, unknown>()
-const listeners = new Set<() => void>()
-const subscribe = (listener: () => void) => {
-  listeners.add(listener)
-  return () => listeners.delete(listener)
-}
-
-function getTmdb(path: string) {
-  let p = cache.get(path)
-  if (!p) {
-    p = token
-      ? api.get(path).then((r) => {
-          answers.set(path, r.data)
-          listeners.forEach((l) => l())
-        })
-      : Promise.reject(new Error('还没有配置 TMDB 令牌'))
-    p.catch(() => cache.delete(path)) // failed requests are asked again on retry or the next mount
-    cache.set(path, p)
-  }
-  return p
-}
+// TMDB's answer to a path; without a token, there's none to ask for.
+const getTmdb = (path: string) =>
+  token ? api.get(path).then((r) => r.data) : Promise.reject(new Error('还没有配置 TMDB 令牌'))
 
 // Each request asks for the language shown, so the two languages' answers are cached apart.
 // ponytail: a switch asks again for everything on screen, and pages show their loading state until it's in: Detail and
@@ -361,33 +339,12 @@ function getTmdb(path: string) {
 // switching mid-page ever matters.
 const inLanguage = (path: string, t: Translate) => withQuery(path, `language=${locale(t)}`)
 
-// The requests a key stands for; none for the empty key of a hook asked for nothing.
-const localizedOf = (key: string) => (key ? key.split('\n') : [])
-
 // The answers to several requests, in order, each undefined until it arrives, and never another request's answer.
 // The missing ones are asked for; `retry` asks again for the ones that failed.
 function useTmdbAll<T>(paths: string[]) {
   const t = useT()
-  const localized = paths.map((p) => inLanguage(p, t))
-  const key = localized.join('\n')
-  // which of these answers are in, like '1101'; it changes, and so re-renders, when one comes in
-  const settled = useSyncExternalStore(subscribe, () => localized.map((p) => (answers.has(p) ? 1 : 0)).join(''))
-  const data = useMemo(
-    () => localizedOf(key).map((p, i) => (settled[i] === '1' ? (answers.get(p) as T) : undefined)),
-    [key, settled],
-  )
-  const [failed, setFailed] = useState<{ key: string; error: string }>()
-  const [attempt, setAttempt] = useState(0)
-  useEffect(() => {
-    let live = true
-    for (const p of localizedOf(key)) getTmdb(p).catch((e) => live && setFailed({ key, error: errorText(e, t) }))
-    return () => {
-      live = false
-      setFailed(undefined) // an error goes with its request: other requests, and a retry, start clean
-    }
-  }, [key, attempt, t])
-  const retry = () => setAttempt((n) => n + 1)
-  return { data, error: failed?.key === key ? failed.error : undefined, retry }
+  const { data, failed, retry } = useAnswers<T>(paths.map((p) => inLanguage(p, t)), getTmdb)
+  return { data, error: failed && errorText(failed.error, t), retry }
 }
 
 function useTmdb<T>(path: string) {
@@ -420,11 +377,7 @@ export function useTitles(path: string | undefined, pages = 1) {
   pages = Math.min(Math.max(1, Math.floor(pages)) || 1, maxPages)
   const paths = path ? Array.from({ length: pages }, (_, i) => withQuery(path, `page=${i + 1}`)) : []
   const { data, error, retry } = useTmdbAll<ListPage>(paths)
-  // The pages in so far, from the first: their titles stay on screen while the next page loads.
-  const arrived = useMemo(() => {
-    const gap = data.indexOf(undefined)
-    return (gap < 0 ? data : data.slice(0, gap)) as ListPage[]
-  }, [data])
+  const arrived = useMemo(() => arrivedOf(data), [data])
   const titles = useMemo(
     () => (path && arrived.length ? toTitles(path, arrived.flatMap((p) => p.results)) : undefined),
     [arrived, path],
@@ -480,5 +433,5 @@ export function usePerson(id: string) {
 // Asks for a person ahead of a click (the pointer is on their headshot), so their page is complete in its first frame
 // and the headshot can grow into its portrait.
 export const prefetchPerson = (id: number, t: Translate) => {
-  getTmdb(inLanguage(personPath(id), t)) // a failure is dropped from the cache; the page asks again
+  ask(inLanguage(personPath(id), t), getTmdb) // a failure is dropped from the cache; the page asks again
 }

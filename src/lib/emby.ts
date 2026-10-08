@@ -1,5 +1,8 @@
 import axios, { isAxiosError } from 'axios'
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { arrivedOf, forget, useAnswers } from '@/lib/cache'
+import { type Translate, useT } from '@/lib/i18n'
+import type { Lineup, MediaType } from '@/lib/tmdb'
 import { storage } from '@/lib/utils'
 
 // A 服务器 as kept on this device: where it is, who signed in, the token that sign-in gave, and its 备注 if the user
@@ -59,6 +62,8 @@ const client = {
   'X-Emby-Device-Id': deviceId,
   'X-Emby-Client-Version': '1.0.0',
 }
+// what a signed-in request sends
+const as = (token: string) => ({ ...client, 'X-Emby-Token': token })
 
 // The saved servers, read during render like the 界面语言, so a page draws them in its first frame. This module loads
 // with every page, so a list it can't read counts as none. Another tab's change is taken in, so that saving here
@@ -95,7 +100,7 @@ const same = (a: Server) => (b: Server) => a.id === b.id && a.userId === b.userI
 // Ends a sign-in on the server, so its token stops working there; a server that doesn't answer keeps it until it ends
 // the session itself.
 const signOut = (s: Server) =>
-  axios.post(`${s.address}/Sessions/Logout`, null, { params: { ...client, 'X-Emby-Token': s.token } }).catch(() => {})
+  axios.post(`${s.address}/Sessions/Logout`, null, { params: as(s.token) }).catch(() => {})
 
 export function removeServer(s: Server) {
   signOut(s)
@@ -207,7 +212,7 @@ export function useStatus({ address, token }: Server) {
       if (document.hidden) return
       const n = ++asked
       axios
-        .get(`${address}/System/Info`, { params: { ...client, 'X-Emby-Token': token }, timeout: 5000 })
+        .get(`${address}/System/Info`, { params: as(token), timeout: 5000 })
         .then(
           (): Status => 'online',
           (e): Status => (isAxiosError(e) && e.response?.status === 401 ? 'signedOut' : 'offline'),
@@ -232,4 +237,126 @@ export function useStatus({ address, token }: Server) {
     }
   }, [address, token])
   return answer?.token === token ? answer.status : 'checking'
+}
+
+// A server's pictures come sized down to `width`, and `tag` changes when one is replaced, so a new one isn't served
+// from the browser's cache. Pictures need no token.
+const imageOf = (s: Pick<Server, 'address'>, id: string, tag: string | undefined, width: number) =>
+  tag && `${s.address}/Items/${id}/Images/Primary?tag=${tag}&maxWidth=${width}&quality=90`
+
+// A 服务器's answer to a URL, asked as its signed-in user. The URL is the cache's key, so the token, which can change
+// when a server is signed in again, stays out of it.
+const keyOf = (s: Server) => `${s.address}/Users/${s.userId}/`
+const getAs = (token: string) => (url: string) =>
+  axios.get(url, { params: as(token), timeout: 15000 }).then((r) => r.data)
+
+const errorText = (e: unknown, t: Translate) => {
+  const status = isAxiosError(e) ? e.response?.status : undefined
+  if (status === 401)
+    return t('登录已失效。在媒体库里移除这台服务器，再添加一次。', 'Signed out. Remove this server in Library and add it again.')
+  return status
+    ? t(`服务器返回错误 ${status}`, `The server answered with error ${status}`)
+    : t('连不上这台服务器，检查一下网络', "Can't reach this server, check your connection")
+}
+
+// A 媒体库 as the server page shows it: its name and the 16:9 cover the server draws for it.
+export type Library = { id: string; name: string; cover?: string }
+type View = { Id: string; Name: string; CollectionType?: string; ImageTags?: { Primary?: string } }
+
+// The 媒体库 a server shows its user, in the order set on the server. Only those of movies, series or both: music,
+// photos and the like can't be played here.
+export const librariesOf = (s: Pick<Server, 'address'>, views: View[]): Library[] =>
+  views
+    .filter((v) => !v.CollectionType || ['movies', 'tvshows', 'mixed'].includes(v.CollectionType))
+    .map((v) => ({ id: v.Id, name: v.Name, cover: imageOf(s, v.Id, v.ImageTags?.Primary, 480) }))
+
+// Drops what was kept of a server's answers, so its page asks again: entered from the 媒体库 page, it shows what was
+// added or removed meanwhile, while back from a 作品 it's drawn at once from what's kept, where it was scrolled to.
+export const refresh = (s: Server) => forget(keyOf(s))
+
+export function useLibraries(s: Server) {
+  const t = useT()
+  const get = useMemo(() => getAs(s.token), [s.token])
+  const { data, failed, retry } = useAnswers<{ Items: View[] }>([`${keyOf(s)}Views`], get)
+  const libraries = useMemo(() => data[0] && librariesOf(s, data[0].Items), [s, data])
+  return { libraries, error: failed && errorText(failed.error, t), retry }
+}
+
+// A 作品 as a server keeps it: its name and poster there, and the TMDB entry it is, for its page, when the server
+// knows it.
+type Item = { id: string; name: string; year?: number; poster?: string; tmdb?: { media_type: MediaType; id: number } }
+type Listed = {
+  Id: string
+  Name: string
+  Type: string
+  ProductionYear?: number
+  ImageTags?: { Primary?: string }
+  ProviderIds?: { Tmdb?: string }
+}
+
+// Each once: the newest come first and are counted by offset, so one added while the list pages on pushes the last
+// of a page onto the next.
+export const itemsOf = (s: Pick<Server, 'address'>, listed: Listed[]): Item[] =>
+  [...new Map(listed.map((i) => [i.Id, i])).values()].map((i) => {
+    const tmdb = Number(i.ProviderIds?.Tmdb)
+    return {
+      id: i.Id,
+      name: i.Name,
+      year: i.ProductionYear,
+      poster: imageOf(s, i.Id, i.ImageTags?.Primary, 342),
+      tmdb: tmdb ? { media_type: i.Type === 'Series' ? 'tv' : 'movie', id: tmdb } : undefined,
+    }
+  })
+
+// The 作品 a 作品 page steps through: those the server knows the TMDB entry of, each once, as a 作品 kept twice (a 4K
+// and a 1080p copy) would have 下一部 open itself.
+export const lineupOfItems = (items: Item[]): Lineup => [
+  ...new Map(
+    items.flatMap((i) => (i.tmdb ? [[`${i.tmdb.media_type}/${i.tmdb.id}`, { ...i.tmdb, title: i.name }] as const] : [])),
+  ).values(),
+]
+
+// as many as the poster grid's 3, 4, 5 or 6 columns fill
+const pageSize = 60
+// ponytail: a cap, like TMDB's, so an edited ?pages= can't ask for thousands at once; 30,000 作品 in one 媒体库. Ask
+// for the first page alone and cap by its total if a library ever runs past it.
+const maxPages = 500
+
+// The first `pages` pages of a 媒体库's 作品, newest added first, as one list; like useTitles, with `total`, the
+// 作品 the 媒体库 has, and their `lineup`. Without a `library` it asks for nothing.
+export function useItems(s: Server, library: string | undefined, pages: number) {
+  const t = useT()
+  const pageOf = (i: number) =>
+    `${keyOf(s)}Items?${new URLSearchParams({
+      ParentId: library!,
+      Recursive: 'true',
+      IncludeItemTypes: 'Movie,Series',
+      SortBy: 'DateCreated,SortName',
+      // Emby takes an order for each: the newest first, and a batch added at once (a library scan) A to Z
+      SortOrder: 'Descending,Ascending',
+      Fields: 'ProviderIds,ProductionYear',
+      EnableImageTypes: 'Primary',
+      ImageTypeLimit: '1',
+      EnableUserData: 'false',
+      StartIndex: `${i * pageSize}`,
+      Limit: `${pageSize}`,
+      // only the first page's count is read, and counting a large 媒体库 is work for the server
+      EnableTotalRecordCount: `${i === 0}`,
+    })}`
+  const urls = library ? Array.from({ length: Math.min(pages, maxPages) }, (_, i) => pageOf(i)) : []
+  const get = useMemo(() => getAs(s.token), [s.token])
+  const { data, failed, retry } = useAnswers<{ Items: Listed[]; TotalRecordCount: number }>(urls, get)
+  const arrived = useMemo(() => arrivedOf(data), [data])
+  const items = useMemo(() => (arrived.length ? itemsOf(s, arrived.flatMap((p) => p.Items)) : undefined), [s, arrived])
+  const lineup = useMemo(() => items && lineupOfItems(items), [items])
+  const total = arrived[0]?.TotalRecordCount
+  return {
+    items,
+    total,
+    lineup,
+    loading: arrived.length < urls.length,
+    more: total !== undefined && urls.length * pageSize < total,
+    error: failed && errorText(failed.error, t),
+    retry,
+  }
 }

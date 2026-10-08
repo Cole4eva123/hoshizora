@@ -102,6 +102,10 @@ _English_: nickname
 _English_: library
 _Avoid_: 片库
 
+**媒体库封面**:
+服务器给每个媒体库画的 16:9 封面图，在服务器页上用来挑媒体库。
+_English_: library cover
+
 **收藏**:
 用户在任一台服务器上收藏的作品。
 _English_: Favorites

@@ -1,10 +1,22 @@
 import { type ComponentProps, type RefObject, type SubmitEvent, useId, useRef, useState } from 'react'
+import { Link } from 'react-router'
 import { Plus } from 'lucide-react'
 import { Constellation } from '@/components/Constellation'
 import { EmptyState, Page } from '@/components/Page'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { type Server, type Status, addServer, dismiss, nameOf, removeServer, useAdding, useServers, useStatus } from '@/lib/emby'
+import {
+  type Server,
+  type Status,
+  addServer,
+  dismiss,
+  nameOf,
+  refresh,
+  removeServer,
+  useAdding,
+  useServers,
+  useStatus,
+} from '@/lib/emby'
 import { useT } from '@/lib/i18n'
 import { cn, server as serverIcon } from '@/lib/utils'
 
@@ -58,22 +70,34 @@ export default function Library() {
   )
 }
 
-// A kept server, as it answers now. 移除 signs it out.
+// A kept server, as it answers now. It opens its 媒体库; 移除 signs it out.
 function ServerTile({ server }: { server: Server }) {
   const status = useStatus(server)
-  return <Tile {...server} name={nameOf(server)} status={status} onRemove={() => removeServer(server)} />
+  return (
+    <Tile
+      {...server}
+      name={nameOf(server)}
+      status={status}
+      to={`/library/${server.id}/${server.userId}`}
+      onOpen={() => refresh(server)}
+      onRemove={() => removeServer(server)}
+    />
+  )
 }
 
 // A server's light is its icon's own star: green when connected, red when not, grey while it's being asked. The word
 // under the name says the same for anyone who can't tell red from green, and for screen readers. An add's tile
 // (`adding`) is read out as it changes, as it may fail after the dialog has closed, and goes in one press, having
-// nothing to sign out of.
+// nothing to sign out of. A tile with somewhere to go (`to`) is a link all over, but for its 移除, and `onOpen` runs as
+// it's followed.
 function Tile({
   name,
   userName,
   address,
   status,
   adding,
+  to,
+  onOpen,
   onRemove,
 }: {
   name: string
@@ -81,6 +105,8 @@ function Tile({
   address: string
   status: Status
   adding?: boolean
+  to?: string
+  onOpen?: () => void
   onRemove?: () => void
 }) {
   const t = useT()
@@ -101,6 +127,9 @@ function Tile({
         'group relative bg-card inset-ring inset-ring-star/15 [--tone:var(--destructive)]',
         status === 'online' && '[--tone:var(--online)]',
         status === 'checking' && '[--tone:var(--muted-foreground)]',
+        // the link's focus, not 移除's, which shows its own
+        to &&
+          'transition-shadow hover:inset-ring-star/40 has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-2 has-[a:focus-visible]:outline-ring',
       )}
     >
       <div className="relative size-12 text-star/70">
@@ -113,7 +142,16 @@ function Tile({
           )}
         />
       </div>
-      <h2 className="mt-4 truncate font-heading text-lg font-black">{name}</h2>
+      <h2 className="mt-4 truncate font-heading text-lg font-black">
+        {to ? (
+          // its box is the tile's, so the whole tile takes the click; the tile shows the focus
+          <Link to={to} onClick={onOpen} viewTransition className="outline-none after:absolute after:inset-0 after:rounded-2xl">
+            {name}
+          </Link>
+        ) : (
+          name
+        )}
+      </h2>
       <p role={adding ? 'status' : undefined} className="mt-1 text-sm text-tone">
         {word}
       </p>
