@@ -1,4 +1,5 @@
-import { cn } from '@/lib/utils'
+import type { Status } from '@/lib/emby'
+import { cn, server, toneOf } from '@/lib/utils'
 
 export type Star = [x: number, y: number, r?: number]
 
@@ -29,5 +30,23 @@ export function Constellation({ lines, className }: { lines: Star[][]; className
           <circle key={i} cx={x} cy={y} r={r} fill="currentColor" />
         ))}
     </svg>
+  )
+}
+
+// A 服务器: the `server` constellation, its star the light, in the server's tone; it glows once there's an answer. On
+// its tile on the 媒体库 page, and by its name on its own page. Sized by `className`.
+export function ServerMark({ status, className }: { status: Status; className: string }) {
+  return (
+    // a span, as it also goes in a heading
+    <span className={cn('relative block shrink-0 text-star/70', toneOf(status), className)}>
+      <Constellation lines={server} className="size-full" />
+      {/* over the icon's light, at (7, 12) of its 24 */}
+      <span
+        className={cn(
+          'absolute top-1/2 left-[29.17%] size-1/6 -translate-1/2 rounded-full bg-tone shadow-[0_0_8px_2px_var(--tone)] transition duration-500',
+          status === 'checking' && 'shadow-none',
+        )}
+      />
+    </span>
   )
 }

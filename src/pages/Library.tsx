@@ -1,7 +1,7 @@
 import { type ComponentProps, type RefObject, type SubmitEvent, useId, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { Plus } from 'lucide-react'
-import { Constellation } from '@/components/Constellation'
+import { ServerMark } from '@/components/Constellation'
 import { EmptyState, Page } from '@/components/Page'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,12 +13,13 @@ import {
   nameOf,
   refresh,
   removeServer,
+  statusText,
   useAdding,
   useServers,
   useStatus,
 } from '@/lib/emby'
 import { useT } from '@/lib/i18n'
-import { cn, server as serverIcon } from '@/lib/utils'
+import { cn, toneOf } from '@/lib/utils'
 
 // The servers and the tile that adds one, as many to a row as fit: two on a phone.
 const tile = 'min-h-44 rounded-2xl p-5'
@@ -112,36 +113,18 @@ function Tile({
   const t = useT()
   // 移除 asks once more, and forgets it was asked after a moment
   const [sure, setSure] = useState(false)
-  const word = {
-    checking: t('正在连接', 'Connecting'),
-    online: t('已连接', 'Connected'),
-    offline: t('连不上', 'Unreachable'),
-    signedOut: t('登录已失效', 'Signed out'),
-    signIn: t('登录没成功', "Couldn't sign in"),
-    insecure: t('网页版只能连 https', 'The web version needs https'),
-  }[status]
   return (
     <li
       className={cn(
         tile,
-        'group relative bg-card inset-ring inset-ring-star/15 [--tone:var(--destructive)]',
-        status === 'online' && '[--tone:var(--online)]',
-        status === 'checking' && '[--tone:var(--muted-foreground)]',
+        'group relative bg-card inset-ring inset-ring-star/15',
+        toneOf(status),
         // the link's focus, not 移除's, which shows its own
         to &&
           'transition-shadow hover:inset-ring-star/40 has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-2 has-[a:focus-visible]:outline-ring',
       )}
     >
-      <div className="relative size-12 text-star/70">
-        <Constellation lines={serverIcon} className="size-full" />
-        {/* over the icon's light, at (7, 12) of its 24; it glows once there's an answer */}
-        <span
-          className={cn(
-            'absolute top-1/2 left-[29.17%] size-2 -translate-1/2 rounded-full bg-tone shadow-[0_0_8px_2px_var(--tone)] transition duration-500',
-            status === 'checking' && 'shadow-none',
-          )}
-        />
-      </div>
+      <ServerMark status={status} className="size-12" />
       <h2 className="mt-4 truncate font-heading text-lg font-black">
         {to ? (
           // its box is the tile's, so the whole tile takes the click; the tile shows the focus
@@ -153,7 +136,7 @@ function Tile({
         )}
       </h2>
       <p role={adding ? 'status' : undefined} className="mt-1 text-sm text-tone">
-        {word}
+        {statusText(status, t)}
       </p>
       <p className="mt-1 flex gap-x-2 text-xs text-muted-foreground">
         <span className="shrink-0">{userName}</span>

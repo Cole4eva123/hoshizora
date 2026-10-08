@@ -113,6 +113,17 @@ export function removeServer(s: Server) {
 // Pages) can't call an http server.
 export type Status = 'checking' | 'online' | 'offline' | 'signedOut' | 'signIn' | 'insecure'
 
+// A Status in words, beside its light for anyone who can't tell red from green, and for screen readers.
+export const statusText = (status: Status, t: Translate) =>
+  ({
+    checking: t('正在连接', 'Connecting'),
+    online: t('已连接', 'Connected'),
+    offline: t('连不上', 'Unreachable'),
+    signedOut: t('登录已失效', 'Signed out'),
+    signIn: t('登录没成功', "Couldn't sign in"),
+    insecure: t('网页版只能连 https', 'The web version needs https'),
+  })[status]
+
 // The adds under way, shown at once as tiles of their own: one that signs in turns into its server, one that fails stays
 // with why until it's dismissed. Kept in this tab only, as a failed add has no token to keep.
 export type Adding = Pick<Server, 'name' | 'userName' | 'address'> & { id: number; status: Status }
@@ -203,7 +214,9 @@ async function signIn(addresses: string[], username: string, password: string): 
 // network comes or goes, as other Emby players do, rather than on a timer; a network that has just come back is given
 // a moment, as its first requests can fail before it's really up. Only the latest check's answer counts, as a
 // slow one can land after it. Keyed by the token, so a server signed in again starts at `checking` rather than showing
-// the old sign-in's answer.
+// the old sign-in's answer. Until its own first answer, a check starts from the last one for that sign-in, so the
+// server's page opens with the light its tile had.
+const answered = new Map<string, Status>()
 export function useStatus({ address, token }: Server) {
   const [answer, setAnswer] = useState<{ token: string; status: Status }>()
   useEffect(() => {
@@ -217,7 +230,11 @@ export function useStatus({ address, token }: Server) {
           (): Status => 'online',
           (e): Status => (isAxiosError(e) && e.response?.status === 401 ? 'signedOut' : 'offline'),
         )
-        .then((status) => n === asked && setAnswer({ token, status }))
+        .then((status) => {
+          if (n !== asked) return
+          answered.set(`${address} ${token}`, status)
+          setAnswer({ token, status })
+        })
     }
     let settle: ReturnType<typeof setTimeout>
     const back = () => {
@@ -236,7 +253,7 @@ export function useStatus({ address, token }: Server) {
       window.removeEventListener('offline', check)
     }
   }, [address, token])
-  return answer?.token === token ? answer.status : 'checking'
+  return answer?.token === token ? answer.status : (answered.get(`${address} ${token}`) ?? 'checking')
 }
 
 // A server's pictures come sized down to `width`, and `tag` changes when one is replaced, so a new one isn't served

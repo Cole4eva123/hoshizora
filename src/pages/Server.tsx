@@ -1,8 +1,18 @@
 import { useState } from 'react'
 import { Navigate, useParams, useSearchParams } from 'react-router'
+import { ServerMark } from '@/components/Constellation'
 import { EmptyState, Page } from '@/components/Page'
 import { Failed, Frame, PagedGrid, Poster, Row } from '@/components/PosterRow'
-import { type Library, type Server, nameOf, useItems, useLibraries, useServers } from '@/lib/emby'
+import {
+  type Library,
+  type Server,
+  nameOf,
+  statusText,
+  useItems,
+  useLibraries,
+  useServers,
+  useStatus,
+} from '@/lib/emby'
 import { useT } from '@/lib/i18n'
 import { hrefOf } from '@/lib/tmdb'
 import { choice, cn, usePages } from '@/lib/utils'
@@ -26,6 +36,7 @@ function Browse({ server }: { server: Server }) {
   const t = useT()
   const [params, setParams] = useSearchParams()
   const { libraries, error, retry } = useLibraries(server)
+  const status = useStatus(server)
   const library = libraries?.find((l) => l.id === params.get('lib')) ?? libraries?.[0]
   const { items, total, lineup, ...list } = useItems(server, library?.id, usePages())
   const from = lineup && { lineup }
@@ -68,8 +79,20 @@ function Browse({ server }: { server: Server }) {
       {/* the row runs to the screen's edges, past the page's gutter */}
       <div className="-mx-(--gutter)">
         <Row
-          // the server's name, small, over its covers, rather than as the page's large title
-          title={nameOf(server)}
+          // the server's name, small, over its covers, rather than as the page's large title; its mark and light
+          // before it, as on its tile, so the page reads as the tile opened
+          title={
+            <span className="inline-flex items-center gap-2">
+              <ServerMark status={status} className="size-[1.7em]" />
+              {nameOf(server)}
+            </span>
+          }
+          // the light in words, for screen readers, outside the heading so it isn't read as part of the name
+          extra={
+            <p role="status" className="sr-only">
+              {statusText(status, t)}
+            </p>
+          }
           start={start}
           track="auto-cols-[42%] sm:auto-cols-[calc((100%-2*1rem)/3)] lg:auto-cols-[calc((100%-3*1rem)/4)] xl:auto-cols-[calc((100%-4*1rem)/5)]"
         >
