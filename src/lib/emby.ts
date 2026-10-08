@@ -2,11 +2,22 @@ import axios, { isAxiosError } from 'axios'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { storage } from '@/lib/utils'
 
-// A 服务器 as kept on this device: where it is, who signed in, and the token that sign-in gave. The password is never
-// kept. One server signed in as two users is two entries.
+// A 服务器 as kept on this device: where it is, who signed in, the token that sign-in gave, and its 备注 if the user
+// gave one. The password is never kept. One server signed in as two users is two entries.
 // ponytail: tokens sit in localStorage, readable by any script on the origin, which on GitHub Pages is every Pages site
 // of the account; move them to the Keychain with Tauri.
-export type Server = { id: string; name: string; address: string; userId: string; userName: string; token: string }
+export type Server = {
+  id: string
+  name: string
+  nickname?: string
+  address: string
+  userId: string
+  userName: string
+  token: string
+}
+
+// What a 服务器 is called: its 备注, or else the name it gives itself.
+export const nameOf = (s: Server) => s.nickname || s.name
 
 // The address every request goes under, from what was typed: http:// when no scheme is given, and Emby's 8096 when no
 // port either, as most servers are reached by IP at home; a typed scheme is kept as is. The web client's page goes, as
@@ -88,7 +99,7 @@ export class AddError extends Error {
 }
 
 // Checks the address, signs in, and keeps the server, in place of an earlier sign-in as the same user.
-export async function addServer(typed: string, username: string, password: string) {
+export async function addServer(typed: string, username: string, password: string, nickname: string) {
   let address: string
   let info: { Id: string; ServerName: string }
   try {
@@ -108,11 +119,21 @@ export async function addServer(typed: string, username: string, password: strin
       { params: client, timeout: 10000 },
     )
     // read in here, as a proxy's login page can answer 200 in place of Emby
-    server = { id: info.Id, name: info.ServerName, address, userId: data.User.Id, userName: data.User.Name, token: data.AccessToken }
+    server = {
+      id: info.Id,
+      name: info.ServerName,
+      nickname: nickname.trim() || undefined,
+      address,
+      userId: data.User.Id,
+      userName: data.User.Name,
+      token: data.AccessToken,
+    }
   } catch (e) {
     // a server that answered at all turned the sign-in down (a wrong password, or a disabled user)
     throw new AddError(isAxiosError(e) && e.response ? 'signIn' : 'unreachable')
   }
+  // signing in again, as after 登录已失效, keeps the 备注 unless a new one is typed
+  server.nickname ||= servers.find(same(server))?.nickname
   save([...servers.filter((s) => !same(server)(s)), server])
 }
 

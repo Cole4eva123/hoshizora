@@ -1,17 +1,12 @@
 import { type ComponentProps, type RefObject, type SubmitEvent, useId, useRef, useState } from 'react'
-import { Constellation, type Star } from '@/components/Constellation'
-import { EmptyState, Page, sectionTitle } from '@/components/Page'
+import { Plus } from 'lucide-react'
+import { Constellation } from '@/components/Constellation'
+import { EmptyState, Page } from '@/components/Page'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { AddError, type Server, addServer, removeServer, useServers, useStatus } from '@/lib/emby'
+import { AddError, type Server, addServer, nameOf, removeServer, useServers, useStatus } from '@/lib/emby'
 import { useT } from '@/lib/i18n'
 import { cn, server as serverIcon } from '@/lib/utils'
-
-// A plus drawn like the corner menu's icons: two lines crossing at a star.
-const plus: Star[][] = [
-  [[12, 4], [12, 12], [12, 20]],
-  [[4, 12], [12, 12], [20, 12]],
-]
 
 // The servers and the tile that adds one, as many to a row as fit: two on a phone.
 const tile = 'min-h-44 rounded-2xl p-5'
@@ -47,7 +42,7 @@ export default function Library() {
               'flex size-full flex-col items-center justify-center gap-3 border border-dashed border-star/25 text-sm text-star/70 transition-colors hover:border-star/60 hover:text-star',
             )}
           >
-            <Constellation lines={plus} className="size-8" />
+            <Plus className="size-7" strokeWidth={1.5} />
             {t('添加服务器', 'Add server')}
           </button>
         </li>
@@ -88,7 +83,7 @@ function ServerTile({ server }: { server: Server }) {
           )}
         />
       </div>
-      <h2 className="mt-4 truncate font-heading text-lg font-black">{server.name}</h2>
+      <h2 className="mt-4 truncate font-heading text-lg font-black">{nameOf(server)}</h2>
       <p className={cn('mt-1 text-sm', status === 'checking' ? 'text-muted-foreground' : 'text-tone')}>{word}</p>
       <p className="mt-1 flex gap-x-2 text-xs text-muted-foreground">
         <span className="shrink-0">{server.userName}</span>
@@ -108,8 +103,8 @@ function ServerTile({ server }: { server: Server }) {
   )
 }
 
-// Adding a server: where it is, and the user to sign in as (an Emby user may have no password). What went wrong shows
-// under the field it's about.
+// Adding a server: where it is, the user to sign in as (an Emby user may have no password), and a 备注 to call it by if
+// its own name won't do. What went wrong shows under the field it's about.
 function AddServer({ dialog }: { dialog: RefObject<HTMLDialogElement | null> }) {
   const t = useT()
   const [busy, setBusy] = useState(false)
@@ -120,7 +115,8 @@ function AddServer({ dialog }: { dialog: RefObject<HTMLDialogElement | null> }) 
     setBusy(true)
     setFailed(undefined)
     try {
-      await addServer(String(data.get('address')), String(data.get('username')), String(data.get('password')))
+      const field = (name: string) => String(data.get(name))
+      await addServer(field('address'), field('username'), field('password'), field('nickname'))
       dialog.current?.close()
     } catch (err) {
       if (!(err instanceof AddError)) throw err
@@ -147,14 +143,11 @@ function AddServer({ dialog }: { dialog: RefObject<HTMLDialogElement | null> }) 
       }}
       // an add under way finishes in the open dialog, to show how it went (its requests time out)
       onCancel={(e) => busy && e.preventDefault()}
-      aria-labelledby="add-server"
+      aria-label={t('添加服务器', 'Add server')}
       // Tailwind zeroes every margin, the dialog's centring included
       className="m-auto w-[min(26rem,calc(100vw-2*var(--gutter)))] rounded-2xl bg-card p-6 text-foreground inset-ring inset-ring-star/15 backdrop:bg-night/70 backdrop:backdrop-blur-sm"
     >
       <form onSubmit={submit} className="space-y-4">
-        <h2 id="add-server" className={sectionTitle}>
-          {t('添加服务器', 'Add server')}
-        </h2>
         <Field
           label={t('地址', 'Address')}
           error={addressError}
@@ -174,6 +167,12 @@ function AddServer({ dialog }: { dialog: RefObject<HTMLDialogElement | null> }) 
           type="password"
           autoComplete="current-password"
           placeholder={t('没有密码就留空', 'Leave empty if there is none')}
+        />
+        <Field
+          label={t('备注（可选）', 'Nickname (optional)')}
+          name="nickname"
+          autoComplete="off"
+          placeholder={t('不填就用服务器自己的名字', "Leave empty to use the server's own name")}
         />
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="ghost" size="lg" disabled={busy} onClick={() => dialog.current?.close()}>

@@ -93,6 +93,10 @@ _English_: rating sources
 _English_: server
 _Avoid_: 片源、站点
 
+**备注**:
+用户给一台服务器起的名字，显示时代替服务器自己的名字；可以不填。
+_English_: nickname
+
 **媒体库**:
 一台服务器里按内容分开的库，如「电影」库、「剧集」库，沿用 Emby 的意思。
 _English_: library
