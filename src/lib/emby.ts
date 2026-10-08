@@ -19,18 +19,28 @@ export type Server = {
 // What a 服务器 is called: its 备注, or else the name it gives itself.
 export const nameOf = (s: Server) => s.nickname || s.name
 
-// The address every request goes under, from what was typed: http:// when no scheme is given, and Emby's 8096 when no
-// port either, as most servers are reached by IP at home; a typed scheme is kept as is. The web client's page goes, as
-// its address is the one people copy. Every route goes under /emby, which a server answers directly too, and which a
-// reverse proxy may forward and nothing else.
-export function baseOf(typed: string) {
+// The addresses a server may answer at, from what was typed. A typed scheme is kept as is. Without one, https comes
+// before http, so a sign-in goes encrypted wherever it can, each on the port typed, or else on Emby's (8920, 8096) and
+// the scheme's own, where a reverse proxy serves it. The web client's page goes, as its address is the one people copy.
+// Every route goes under /emby, which a server answers directly too, and which a reverse proxy may forward and nothing
+// else.
+export function candidatesOf(typed: string) {
   const text = typed.trim()
   const schemed = /^https?:\/\//i.test(text)
   const url = new URL(schemed ? text : `http://${text}`)
-  // read off the text, as URL drops a typed :80
-  if (!schemed && !/:\d+(\/|$)/.test(text)) url.port = '8096'
   const path = url.pathname.replace(/\/web(\/.*)?$/, '').replace(/\/+$/, '')
-  return url.origin + (path.endsWith('/emby') ? path : `${path}/emby`)
+  const at = (protocol: string, port: string) => {
+    const u = new URL(url)
+    u.protocol = protocol
+    u.port = port
+    return u.origin + (path.endsWith('/emby') ? path : `${path}/emby`)
+  }
+  if (schemed) return [at(url.protocol, url.port)]
+  // read off the host as typed, as URL drops a typed :80
+  const port = text.split(/[/?#]/)[0].match(/:(\d+)$/)?.[1]
+  return port
+    ? [at('https:', port), at('http:', port)]
+    : [at('https:', ''), at('https:', '8920'), at('http:', '8096'), at('http:', '')]
 }
 
 // Who's asking, in the query string as Emby's own client sends it since server 4.4: a header of our own would make the
@@ -113,7 +123,8 @@ export const dismiss = (a: Adding) => setAdding(adding.filter((x) => x.id !== a.
 // Starts adding a server and returns at once, so the dialog can close. Only text that isn't an address throws, before
 // anything shows.
 export function addServer(typed: string, username: string, password: string, nickname: string) {
-  const address = baseOf(typed)
+  const addresses = candidatesOf(typed)
+  const address = addresses[0]
   const entry: Adding = {
     id: ++adds,
     name: nickname.trim() || new URL(address).host,
@@ -123,7 +134,7 @@ export function addServer(typed: string, username: string, password: string, nic
   }
   setAdding([...adding, entry])
   const fail = (status: Status) => setAdding(adding.map((a) => (a.id === entry.id ? { ...a, status } : a)))
-  signIn(address, username, password)
+  signIn(addresses, username, password)
     .then((result) => {
       if (typeof result === 'string') return fail(result)
       // signing in again, as after 登录已失效, keeps the 备注 unless a new one is typed, and ends the old sign-in (Emby
@@ -132,23 +143,36 @@ export function addServer(typed: string, username: string, password: string, nic
       result.nickname = nickname.trim() || old?.nickname
       save([...servers.filter((s) => !same(result)(s)), result])
       if (old && old.token !== result.token) signOut(old)
-      // its tile goes, and so do earlier tries at the same server and user that failed
-      const tried = (a: Adding) => a.address === address && a.userName === username && a.status !== 'checking'
+      // its tile goes, and so do earlier tries at the same host and user that failed, however its address was typed
+      const host = (a: Adding) => new URL(a.address).hostname
+      const tried = (a: Adding) => host(a) === host(entry) && a.userName === username && a.status !== 'checking'
       setAdding(adding.filter((a) => a.id !== entry.id && !tried(a)))
     })
     // a storage that won't keep it: red rather than grey for good, so the tile can at least be removed
     .catch(() => fail('offline'))
 }
 
-// Checks the address and signs in: the server to keep, or why not.
-async function signIn(address: string, username: string, password: string): Promise<Server | Status> {
-  let info: { Id: string; ServerName: string }
+// Finds where the server answers, then signs in there: the server to keep, or why not. The https addresses race each
+// other, and the http ones only once none of those answers in 2 s, so the password goes in the clear only to a server
+// whose https is that slow or missing. A home server's IP mostly turns https down at once; the short wait is for a
+// firewall that drops rather than refuses, which would otherwise hold http back for the whole timeout. A redirect, as
+// from a proxy's http to its https, is followed to where the server answers, and that address is the one kept.
+async function signIn(addresses: string[], username: string, password: string): Promise<Server | Status> {
+  const probe = (timeout: number) => (address: string) =>
+    axios.get(`${address}/System/Info/Public`, { timeout }).then(({ data, request }) => {
+      if (!data?.Id) throw new Error('not an Emby server')
+      const landed = (request as XMLHttpRequest).responseURL?.replace(/\/System\/Info\/Public$/i, '')
+      return { address: landed || address, info: data as { Id: string; ServerName: string } }
+    })
+  const race = (scheme: string, timeout: number) =>
+    Promise.any(addresses.filter((a) => a.startsWith(scheme)).map(probe(timeout)))
+  let found
   try {
-    info = (await axios.get(`${address}/System/Info/Public`, { timeout: 5000 })).data
-    if (!info.Id) throw new Error('not an Emby server')
+    found = await race('https:', 2000).catch(() => race('http:', 5000))
   } catch {
-    return location.protocol === 'https:' && address.startsWith('http:') ? 'insecure' : 'offline'
+    return location.protocol === 'https:' && addresses.some((a) => a.startsWith('http:')) ? 'insecure' : 'offline'
   }
+  const { address, info } = found
   try {
     const { data } = await axios.post(
       `${address}/Users/AuthenticateByName`,
@@ -170,9 +194,11 @@ async function signIn(address: string, username: string, password: string): Prom
   }
 }
 
-// Whether a kept server answers its signed-in user now, asked on mount, every 30 s, and on coming back to the tab. Only
-// the latest check's answer counts, as a slow one can land after it. Keyed by the token, so a server signed in again
-// starts at `checking` rather than showing the old sign-in's answer.
+// Whether a kept server answers its signed-in user now. Asked when the page opens, on coming back to it, and when the
+// network comes or goes, as other Emby players do, rather than on a timer; a network that has just come back is given
+// a moment, as its first requests can fail before it's really up. Only the latest check's answer counts, as a
+// slow one can land after it. Keyed by the token, so a server signed in again starts at `checking` rather than showing
+// the old sign-in's answer.
 export function useStatus({ address, token }: Server) {
   const [answer, setAnswer] = useState<{ token: string; status: Status }>()
   useEffect(() => {
@@ -188,13 +214,21 @@ export function useStatus({ address, token }: Server) {
         )
         .then((status) => n === asked && setAnswer({ token, status }))
     }
+    let settle: ReturnType<typeof setTimeout>
+    const back = () => {
+      clearTimeout(settle)
+      settle = setTimeout(check, 2000)
+    }
     check()
-    const timer = setInterval(check, 30_000)
     document.addEventListener('visibilitychange', check)
+    window.addEventListener('online', back)
+    window.addEventListener('offline', check)
     return () => {
       asked = -1
-      clearInterval(timer)
+      clearTimeout(settle)
       document.removeEventListener('visibilitychange', check)
+      window.removeEventListener('online', back)
+      window.removeEventListener('offline', check)
     }
   }, [address, token])
   return answer?.token === token ? answer.status : 'checking'
