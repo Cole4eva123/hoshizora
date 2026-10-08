@@ -7,7 +7,7 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   // GitHub Pages serves the site from /<repo>/
-  base: '/mp2/',
+  base: '/hoshizora/',
   resolve: {
     alias: { '@': path.resolve(import.meta.dirname, './src') },
   },

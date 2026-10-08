@@ -40,7 +40,7 @@ jobs:
           VITE_MDBLIST_KEY: ${{ secrets.VITE_MDBLIST_KEY }}
 
       # Pages answers any path it has no file for with 404.html. Making that the app means a link to a title page
-      # (/mp2/tv/1399) or a reload there opens the app, whose router then reads the address.
+      # (/hoshizora/tv/1399) or a reload there opens the app, whose router then reads the address.
       - name: Open deep links in the app
         run: cp dist/index.html dist/404.html
 
