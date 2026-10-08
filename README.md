@@ -36,7 +36,3 @@ VITE_MDBLIST_KEY=...  # MDBList，可选，用来显示 IMDb / 烂番茄 / MAL �
 ## 技术栈
 
 React 19、React Router 7、TypeScript、Vite、Tailwind CSS v4、shadcn/ui、Axios。
-
-## 来历
-
-最早是 UIUC CS409 的 MP2 作业，后来从作业仓库里分出来，作为自己的项目继续做。
