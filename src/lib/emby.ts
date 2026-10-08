@@ -68,9 +68,10 @@ const subscribe = (listener: () => void) => {
   listeners.add(listener)
   return () => listeners.delete(listener)
 }
+const notify = () => listeners.forEach((l) => l())
 const changed = (next: Server[]) => {
   servers = next
-  listeners.forEach((l) => l())
+  notify()
 }
 globalThis.addEventListener?.('storage', (e) => e.key === key && changed(read()))
 function save(next: Server[]) {
@@ -81,37 +82,73 @@ function save(next: Server[]) {
 export const useServers = () => useSyncExternalStore(subscribe, () => servers)
 const same = (a: Server) => (b: Server) => a.id === b.id && a.userId === b.userId
 
-// Signs out on the server too, so the token stops working there; a server that doesn't answer keeps it until it ends
+// Ends a sign-in on the server, so its token stops working there; a server that doesn't answer keeps it until it ends
 // the session itself.
-export function removeServer(s: Server) {
+const signOut = (s: Server) =>
   axios.post(`${s.address}/Sessions/Logout`, null, { params: { ...client, 'X-Emby-Token': s.token } }).catch(() => {})
+
+export function removeServer(s: Server) {
+  signOut(s)
   save(servers.filter((x) => !same(s)(x)))
 }
 
-// Why a server couldn't be added: nothing Emby answers at the address, an https page can't call an http server (the
-// web version on GitHub Pages), or the server turned the sign-in down.
-export class AddError extends Error {
-  reason
-  constructor(reason: 'unreachable' | 'insecure' | 'signIn') {
-    super(reason)
-    this.reason = reason
+// How a server's tile shows it: `checking` while it's asked (a grey light), `online`, `offline` when nothing Emby
+// answers, `signedOut` when the server turned a kept token down (revoked, or the user is gone); and for an add that
+// failed, `signIn` when the server turned the sign-in down, `insecure` when an https page (the web version on GitHub
+// Pages) can't call an http server.
+export type Status = 'checking' | 'online' | 'offline' | 'signedOut' | 'signIn' | 'insecure'
+
+// The adds under way, shown at once as tiles of their own: one that signs in turns into its server, one that fails stays
+// with why until it's dismissed. Kept in this tab only, as a failed add has no token to keep.
+export type Adding = Pick<Server, 'name' | 'userName' | 'address'> & { id: number; status: Status }
+let adding: Adding[] = []
+let adds = 0
+const setAdding = (next: Adding[]) => {
+  adding = next
+  notify()
+}
+export const useAdding = () => useSyncExternalStore(subscribe, () => adding)
+export const dismiss = (a: Adding) => setAdding(adding.filter((x) => x.id !== a.id))
+
+// Starts adding a server and returns at once, so the dialog can close. Only text that isn't an address throws, before
+// anything shows.
+export function addServer(typed: string, username: string, password: string, nickname: string) {
+  const address = baseOf(typed)
+  const entry: Adding = {
+    id: ++adds,
+    name: nickname.trim() || new URL(address).host,
+    userName: username,
+    address,
+    status: 'checking',
   }
+  setAdding([...adding, entry])
+  const fail = (status: Status) => setAdding(adding.map((a) => (a.id === entry.id ? { ...a, status } : a)))
+  signIn(address, username, password)
+    .then((result) => {
+      if (typeof result === 'string') return fail(result)
+      // signing in again, as after 登录已失效, keeps the 备注 unless a new one is typed, and ends the old sign-in (Emby
+      // may hand the same device its token back, which must stay)
+      const old = servers.find(same(result))
+      result.nickname = nickname.trim() || old?.nickname
+      save([...servers.filter((s) => !same(result)(s)), result])
+      if (old && old.token !== result.token) signOut(old)
+      // its tile goes, and so do earlier tries at the same server and user that failed
+      const tried = (a: Adding) => a.address === address && a.userName === username && a.status !== 'checking'
+      setAdding(adding.filter((a) => a.id !== entry.id && !tried(a)))
+    })
+    // a storage that won't keep it: red rather than grey for good, so the tile can at least be removed
+    .catch(() => fail('offline'))
 }
 
-// Checks the address, signs in, and keeps the server, in place of an earlier sign-in as the same user.
-export async function addServer(typed: string, username: string, password: string, nickname: string) {
-  let address: string
+// Checks the address and signs in: the server to keep, or why not.
+async function signIn(address: string, username: string, password: string): Promise<Server | Status> {
   let info: { Id: string; ServerName: string }
   try {
-    address = baseOf(typed)
     info = (await axios.get(`${address}/System/Info/Public`, { timeout: 5000 })).data
     if (!info.Id) throw new Error('not an Emby server')
   } catch {
-    // an address typed without a scheme is asked over http too
-    const insecure = location.protocol === 'https:' && !/^https:/i.test(typed.trim())
-    throw new AddError(insecure ? 'insecure' : 'unreachable')
+    return location.protocol === 'https:' && address.startsWith('http:') ? 'insecure' : 'offline'
   }
-  let server: Server
   try {
     const { data } = await axios.post(
       `${address}/Users/AuthenticateByName`,
@@ -119,10 +156,9 @@ export async function addServer(typed: string, username: string, password: strin
       { params: client, timeout: 10000 },
     )
     // read in here, as a proxy's login page can answer 200 in place of Emby
-    server = {
+    return {
       id: info.Id,
       name: info.ServerName,
-      nickname: nickname.trim() || undefined,
       address,
       userId: data.User.Id,
       userName: data.User.Name,
@@ -130,18 +166,13 @@ export async function addServer(typed: string, username: string, password: strin
     }
   } catch (e) {
     // a server that answered at all turned the sign-in down (a wrong password, or a disabled user)
-    throw new AddError(isAxiosError(e) && e.response ? 'signIn' : 'unreachable')
+    return isAxiosError(e) && e.response ? 'signIn' : 'offline'
   }
-  // signing in again, as after 登录已失效, keeps the 备注 unless a new one is typed
-  server.nickname ||= servers.find(same(server))?.nickname
-  save([...servers.filter((s) => !same(server)(s)), server])
 }
 
-// Whether a server answers its signed-in user now, asked on mount, every 30 s, and on coming back to the tab:
-// `signedOut` when the server turned the token down (revoked, or the user is gone), `offline` when nothing answers. Only
+// Whether a kept server answers its signed-in user now, asked on mount, every 30 s, and on coming back to the tab. Only
 // the latest check's answer counts, as a slow one can land after it. Keyed by the token, so a server signed in again
 // starts at `checking` rather than showing the old sign-in's answer.
-type Status = 'checking' | 'online' | 'offline' | 'signedOut'
 export function useStatus({ address, token }: Server) {
   const [answer, setAnswer] = useState<{ token: string; status: Status }>()
   useEffect(() => {
