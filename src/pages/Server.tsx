@@ -64,11 +64,12 @@ function Browse({ server }: { server: Server }) {
     )
 
   return (
-    <Page title={nameOf(server)} back>
+    <Page title={nameOf(server)} back hideTitle>
       {/* the row runs to the screen's edges, past the page's gutter */}
       <div className="-mx-(--gutter)">
         <Row
-          title={t('媒体库', 'Libraries')}
+          // the server's name, small, over its covers, rather than as the page's large title
+          title={nameOf(server)}
           start={start}
           track="auto-cols-[42%] sm:auto-cols-[calc((100%-2*1rem)/3)] lg:auto-cols-[calc((100%-3*1rem)/4)] xl:auto-cols-[calc((100%-4*1rem)/5)]"
         >

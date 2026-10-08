@@ -4,14 +4,27 @@ import { ChevronLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useT } from '@/lib/i18n'
 
-// The title is set large, like a title card.
-export function Page({ title, back, children }: { title: string; back?: boolean; children: ReactNode }) {
+// The title is set large, like a title card; with `hideTitle` it's only read out, and the page starts where it
+// would have: a server's page is headed by its covers, under its name set small.
+export function Page({
+  title,
+  back,
+  hideTitle,
+  children,
+}: {
+  title: string
+  back?: boolean
+  hideTitle?: boolean
+  children: ReactNode
+}) {
   return (
     <div className="px-(--gutter) pt-(--page-top) pb-(--page-bottom)">
       {back && <BackButton />}
       {/* a long English word (Documentaries, Schwarzenegger) is hyphenated rather than run off a phone's screen */}
-      <h1 className="font-heading text-5xl font-black wrap-break-word hyphens-auto md:text-7xl">{title}</h1>
-      <div className="mt-8 md:mt-10">{children}</div>
+      <h1 className={hideTitle ? 'sr-only' : 'font-heading text-5xl font-black wrap-break-word hyphens-auto md:text-7xl'}>
+        {title}
+      </h1>
+      <div className={hideTitle ? undefined : 'mt-8 md:mt-10'}>{children}</div>
     </div>
   )
 }
