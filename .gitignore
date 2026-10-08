@@ -25,3 +25,4 @@ dist-ssr
 
 # notes for Claude Code, kept on this machine
 CLAUDE.md
+.claude/
