@@ -1,4 +1,5 @@
 import { cn } from "cn"
+import type { Star } from "@/components/Constellation"
 
 export { cn }
 
@@ -16,3 +17,17 @@ export const choice = (picked: boolean) =>
 export const reveal = (img: HTMLImageElement | null) => {
   if (img?.complete && img.naturalWidth) img.dataset.loaded = ''
 }
+
+// This device's localStorage, or none where it's blocked or missing (under bun test): then what's kept lasts until the
+// page closes.
+export const storage = (() => {
+  try {
+    return localStorage
+  } catch {
+    return undefined
+  }
+})()
+
+// One server, its light on: the 指定服务器 search scope, and each 服务器 on the 媒体库 page, where the light (7, 12) shows
+// whether it's connected. Kept here as a component file can't share it (fast refresh).
+export const server: Star[][] = [[[3, 7], [21, 7], [21, 17], [3, 17], [3, 7]], [[7, 12]]]

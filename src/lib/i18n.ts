@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { storage } from '@/lib/utils'
 
 // 界面语言。文案中英两份写在一起，由 `t` 挑出显示的那份：t('首页', 'Home')。其他随语言变的东西也走它，JSX 和
 // locale（t('zh-CN', 'en-US')）都算。
@@ -12,13 +13,6 @@ export type Copy = [zh: string, en: string]
 
 // 记在这台设备上：没选过英文就是中文。没有 storage（被屏蔽，或在 bun test 下）时，选择只保留到页面关闭。key 带上
 // 本应用的前缀，因为 github.io 同一个源下的所有应用共用这份 storage。
-const storage = (() => {
-  try {
-    return localStorage
-  } catch {
-    return undefined
-  }
-})()
 const key = 'mp2.lang'
 // 显示的语言，存的是它的 `t`（就是 zh 或 en 本身）。放在模块里而不是 Context 里，LangSwitch 改它、任何组件读它，
 // 都不用在应用外面包一层 Provider。

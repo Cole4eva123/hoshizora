@@ -77,6 +77,8 @@
   --tmdb: #90cea1;
   --apricot: #e2a47c;
   --tone: var(--primary);
+  /* a 服务器's light on the 媒体库 page when it's connected; one that isn't takes --destructive */
+  --online: #7ee2b0;
 
   /* page gutter, shared by the corner menu, hero and rows; clears the notch in landscape */
   --gutter: max(1.25rem, env(safe-area-inset-left));

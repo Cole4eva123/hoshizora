@@ -7,16 +7,15 @@ import { ToLibrary } from '@/components/Page'
 import { PosterGrid } from '@/components/PosterRow'
 import { type Translate, useT } from '@/lib/i18n'
 import { searchPath } from '@/lib/tmdb'
-import { cn } from '@/lib/utils'
+import { cn, server } from '@/lib/utils'
 
 // The constellations of the 搜索范围, like the corner menu's: a rack of servers, a bucket of popcorn for TMDB's 作品,
-// one server.
+// and `server`, shared with the 媒体库.
 const rack: Star[][] = [[[3, 3], [21, 3], [21, 21], [3, 21], [3, 3]], [[3, 12], [21, 12]], [[7, 7.5]], [[7, 16.5]]]
 const popcorn: Star[][] = [
   [[5, 9], [7, 5], [10, 6.5], [12, 3.5], [14, 6.5], [17, 5], [19, 9], [17, 21], [7, 21], [5, 9]],
   [[5, 9], [19, 9]],
 ]
-const server: Star[][] = [[[3, 7], [21, 7], [21, 17], [3, 17], [3, 7]], [[7, 12]]]
 
 // Each 搜索范围 has its own colour (--tone): its star when picked, and the field's icon, caret and ring.
 const scopesIn = (t: Translate) => [
