@@ -186,19 +186,20 @@ export function PosterRow({ category }: { category: Category }) {
       }
       track="auto-cols-[calc((100%-2*0.75rem)/3)] sm:auto-cols-[calc((100%-3*1rem)/4)] lg:auto-cols-[calc((100%-4*1rem)/5)] xl:auto-cols-[calc((100%-5*1rem)/6)]"
     >
-      {titles ? titles.map((m) => <PosterCard key={m.id} m={m} from={from} />) : <PosterSkeletons n={6} pulse={!error} />}
+      {titles ? titles.map((m) => <PosterCard key={hrefOf(m)} m={m} from={from} />) : <PosterSkeletons n={6} pulse={!error} />}
     </Row>
   )
 }
 
-// A TMDB list's 作品 as a grid that loads on as you scroll, for a 分类 or a search.
-export function PosterGrid({ path }: { path: string }) {
+// A TMDB list's 作品 as a grid that loads on as you scroll: a 分类, a search, what's trending. `skip` leaves out the
+// first few, shown above it (a search's top match), though stepping on from a card still goes through them.
+export function PosterGrid({ path, skip = 0 }: { path: string; skip?: number }) {
   const pages = usePages()
   const { titles, loading, more, error, retry } = useTitles(path, pages)
   const from = titles && { lineup: lineupOf(titles), list: { path, pages } }
   return (
     <PagedGrid count={titles?.length} loading={loading} more={more} error={error} retry={retry}>
-      {titles?.map((m) => <PosterCard key={m.id} m={m} from={from} />)}
+      {titles?.slice(skip).map((m) => <PosterCard key={hrefOf(m)} m={m} from={from} />)}
     </PagedGrid>
   )
 }

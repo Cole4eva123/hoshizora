@@ -39,6 +39,11 @@ export const storage = (() => {
 // whether it's connected. Kept here as a component file can't share it (fast refresh).
 export const server: Star[][] = [[[3, 7], [21, 7], [21, 17], [3, 17], [3, 7]], [[7, 12]]]
 
+// A lens and its handle: the corner menu's 搜索, and the mark at the start of the search line.
+export const lens: Star[][] = [
+  [[15.5, 15.5], [8.7, 17.3], [3.7, 12.3], [5.5, 5.5], [12.3, 3.7], [17.3, 8.7], [15.5, 15.5], [21, 21]],
+]
+
 // A 服务器's colour (--tone) for how it answers: green when connected, grey while it's being asked, red otherwise.
 export const toneOf = (status: Status) =>
   status === 'online'

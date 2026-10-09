@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router'
-import { SearchIcon } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router'
 import { Choices } from '@/components/Choices'
-import type { Star } from '@/components/Constellation'
-import { ToLibrary } from '@/components/Page'
-import { PosterGrid } from '@/components/PosterRow'
+import { Constellation, type Star } from '@/components/Constellation'
+import { sectionTitle, ToLibrary } from '@/components/Page'
+import { Frame, PosterGrid } from '@/components/PosterRow'
+import { TitleInfo } from '@/components/PosterWall'
 import { type Translate, useT } from '@/lib/i18n'
-import { searchPath } from '@/lib/tmdb'
-import { cn, server } from '@/lib/utils'
+import { type From, type Media, hrefOf, img, lineupOf, searchPath, titleOf, trendingToday, useTitles } from '@/lib/tmdb'
+import { cn, lens, server, usePages } from '@/lib/utils'
 
 // The constellations of the 搜索范围, like the corner menu's: a rack of servers, a bucket of popcorn for TMDB's 作品,
 // and `server`, shared with the 媒体库.
@@ -17,7 +17,7 @@ const popcorn: Star[][] = [
   [[5, 9], [19, 9]],
 ]
 
-// Each 搜索范围 has its own colour (--tone): its star when picked, and the field's icon, caret and ring.
+// Each 搜索范围 has its own colour (--tone): its star when picked, and the field's lens, caret and line.
 const scopesIn = (t: Translate) => [
   {
     key: 'all',
@@ -72,51 +72,89 @@ export default function Search() {
     // starts where other pages' titles do, clear of the corner menu
     <div className={cn('px-(--gutter) pt-(--page-top) pb-(--page-bottom)', scope.tone)}>
       <h1 className="sr-only">{t('搜索', 'Search')}</h1>
-      {/* Enter, or the keyboard's 搜索 key, puts the keyboard away so the results show */}
+      {/* One line across the top: the lens, what's typed, and the scopes at its end (on a phone, under it). Enter, or
+          the keyboard's 搜索 key, puts the keyboard away so the results show. */}
       <form
         role="search"
         onSubmit={(e) => {
           e.preventDefault()
           ;(document.activeElement as HTMLElement).blur()
         }}
-        className="mx-auto max-w-xl"
+        className="flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-star/15 pb-3 transition-colors has-[input:focus]:border-tone"
       >
-        {/* Quiet words and their constellations over the field, nothing to compete with it; the picked one's star
-            takes the scope's colour */}
+        <Constellation lines={lens} className="size-6 text-tone" />
+        {/* what's typed is set like a title, in the headings' serif. While the placeholder shows, the field takes its
+            smaller sans, else the placeholder would sit on the serif's baseline, below the middle */}
+        <input
+          type="search"
+          defaultValue={q}
+          autoFocus={!q}
+          onChange={(e) => {
+            if (!(e.nativeEvent as InputEvent).isComposing) setTyped(e.target.value)
+          }}
+          onCompositionEnd={(e) => setTyped(e.currentTarget.value)}
+          placeholder={scope.placeholder}
+          aria-label={scope.placeholder}
+          className="h-9 min-w-0 grow basis-48 bg-transparent font-heading text-2xl font-black caret-tone outline-none placeholder-shown:font-sans placeholder-shown:text-lg placeholder-shown:font-normal placeholder:text-muted-foreground sm:basis-64 md:h-10 md:text-3xl"
+        />
         <Choices
           legend={t('搜索范围', 'Search in')}
           options={scopes}
           value={scope.key}
           onChange={(key) => setParams({ scope: key, q: typed.trim() }, { replace: true })}
-          className="mb-5 justify-center"
+          className="max-sm:w-full"
         />
-        <div className="relative">
-          <SearchIcon className="pointer-events-none absolute top-1/2 left-5 size-5 -translate-y-1/2 text-tone" />
-          {/* what's typed is set like a title, in the headings' serif. While the placeholder shows, the field takes its
-              smaller sans, else the placeholder would sit on the serif's baseline, below the middle */}
-          <input
-            type="search"
-            defaultValue={q}
-            autoFocus={!q}
-            onChange={(e) => {
-              if (!(e.nativeEvent as InputEvent).isComposing) setTyped(e.target.value)
-            }}
-            onCompositionEnd={(e) => setTyped(e.currentTarget.value)}
-            placeholder={scope.placeholder}
-            aria-label={scope.placeholder}
-            className="h-14 w-full rounded-2xl bg-card pr-5 pl-14 font-heading text-xl font-black caret-tone outline-none inset-ring inset-ring-star/15 transition-shadow placeholder-shown:font-sans placeholder-shown:text-base placeholder-shown:font-normal placeholder:text-muted-foreground focus-visible:inset-ring-tone/60 md:text-2xl"
-          />
-        </div>
       </form>
 
-      {/* a scope's note sits close under the field, as part of it; results keep their distance */}
-      <div className={scope.empty ? 'mt-5' : 'mt-12'}>
-        {scope.empty ? (
-          <p className="mx-auto max-w-sm text-center text-sm leading-6 text-balance text-muted-foreground">{scope.empty}</p>
-        ) : (
-          q && <PosterGrid path={searchPath(q)} />
-        )}
-      </div>
+      {scope.empty ? (
+        <p className="mt-6 max-w-md text-[15px] leading-7 text-muted-foreground">{scope.empty}</p>
+      ) : q ? (
+        <Found q={q} />
+      ) : (
+        // nothing asked yet: what's being watched today, rather than an empty sky
+        <section className="mt-10">
+          <h2 className={cn(sectionTitle, 'mb-6')}>{t('今天大家在看', 'Trending today')}</h2>
+          <PosterGrid path={trendingToday} />
+        </section>
+      )}
     </div>
+  )
+}
+
+// What a search found: the best match on a wide 剧照 when it has one, then the rest in the grid, whose pages these are
+// too (asked for once). Stepping on from either goes through the same list, the best match first.
+function Found({ q }: { q: string }) {
+  const path = searchPath(q)
+  const pages = usePages()
+  const { titles, error } = useTitles(path, pages)
+  const top = titles?.[0]?.backdrop_path ? titles[0] : undefined
+  return (
+    <>
+      {top ? (
+        <TopMatch key={hrefOf(top)} m={top} from={titles && { lineup: lineupOf(titles), list: { path, pages } }} />
+      ) : (
+        !titles && !error && <TopMatch />
+      )}
+      <div className="mt-10">
+        <PosterGrid path={path} skip={top ? 1 : 0} />
+      </div>
+    </>
+  )
+}
+
+// A 作品 on a wide 剧照, told as the 画报墙 tells it, with the start of its overview; without `m`, its place while the
+// search is on its way. Pointing at it catches starlight on the frame, as on a poster.
+function TopMatch({ m, from }: { m?: Media; from?: From }) {
+  const frame = 'aspect-square max-h-112 w-full rounded-2xl sm:aspect-video lg:aspect-21/9'
+  if (!m) return <Frame className={cn(frame, 'mt-8 animate-pulse')} />
+  return (
+    <Link to={hrefOf(m)} state={from} viewTransition aria-label={titleOf(m)} className="group relative mt-8 block">
+      <Frame src={img(m.backdrop_path, 'w1280')} className={cn(frame, 'transition group-hover:outline-star/60')} />
+      <div className="absolute inset-0 flex items-end rounded-2xl bg-linear-to-tr from-background/90 via-background/30 to-transparent p-6 md:p-10">
+        <TitleInfo m={m}>
+          {m.overview && <p className="mt-3 line-clamp-2 max-w-xl text-sm leading-6 text-foreground/80">{m.overview}</p>}
+        </TitleInfo>
+      </div>
+    </Link>
   )
 }
