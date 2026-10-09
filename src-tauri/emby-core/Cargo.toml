@@ -1,0 +1,20 @@
+[package]
+name = "emby-core"
+version = "0.1.0"
+description = "放映室的 Emby 客户端：找到服务器、登录、保存，列出媒体库和作品"
+authors = ["Bin"]
+edition = "2024"
+rust-version = "1.90"
+
+[dependencies]
+# rustls, checked against macOS's own certificates; the system proxy is followed, as the browser does
+reqwest = { version = "0.13", features = ["json", "query"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt"] }
+url = "2"
+
+[dev-dependencies]
+# a stand-in Emby server for the tests
+axum = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time"] }

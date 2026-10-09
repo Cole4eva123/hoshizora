@@ -13,5 +13,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2.7.1", features = [] }
 
+# emby-core is its own crate, so its tests run without building Tauri (docs/playback-plan.md)
+[workspace]
+members = ["emby-core"]
+
 [dependencies]
 tauri = { version = "2.12.1", features = [] }
+emby-core = { path = "emby-core" }

@@ -9,6 +9,7 @@ import {
   type Server,
   type Status,
   addServer,
+  canConnect,
   dismiss,
   nameOf,
   refresh,
@@ -30,6 +31,18 @@ export default function Library() {
   const adding = useAdding()
   const empty = !servers.length && !adding.length
   const dialog = useRef<HTMLDialogElement>(null)
+  // the web version has no Rust side to reach a server through
+  if (!canConnect)
+    return (
+      <Page title={t('媒体库', 'Library')}>
+        <EmptyState title={t('连接服务器要用放映室 App', 'Servers connect in the Hoshizora app')}>
+          {t(
+            '网页版只用来发现作品。在 Mac App 里添加 Emby 服务器，就能在 App 的媒体库里浏览它们的作品。',
+            'The web version is for discovering titles. Add your Emby servers in the Mac app to browse their libraries there.',
+          )}
+        </EmptyState>
+      </Page>
+    )
   return (
     <Page title={t('媒体库', 'Library')}>
       {empty && (

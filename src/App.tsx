@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { NavLink, Outlet, ScrollRestoration, useLocation } from 'react-router'
+import { isTauri } from '@tauri-apps/api/core'
 import { Constellation, type Star } from '@/components/Constellation'
 import { type Copy, type Translate, en, setLang, useT, zh } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
@@ -39,7 +40,7 @@ const nav: { to: string; label: Copy; icon: Star[][] }[] = [
 
 // The Mac app draws the page under a see-through title bar (tauri.conf.json), its window buttons over the top-left
 // corner. A strip across the top moves the window, as the title bar did.
-const inApp = '__TAURI_INTERNALS__' in window
+const inApp = isTauri()
 document.documentElement.toggleAttribute('data-app', inApp) // index.css moves the corner menu below the buttons
 
 export default function App() {
