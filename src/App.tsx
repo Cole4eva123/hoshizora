@@ -37,6 +37,11 @@ const nav: { to: string; label: Copy; icon: Star[][] }[] = [
   },
 ]
 
+// The Mac app draws the page under a see-through title bar (tauri.conf.json), its window buttons over the top-left
+// corner. A strip across the top moves the window, as the title bar did.
+const inApp = '__TAURI_INTERNALS__' in window
+document.documentElement.toggleAttribute('data-app', inApp) // index.css moves the corner menu below the buttons
+
 export default function App() {
   const t = useT()
   const { pathname } = useLocation()
@@ -47,6 +52,7 @@ export default function App() {
 
   return (
     <>
+      {inApp && <div data-tauri-drag-region className="fixed inset-x-0 top-0 z-40 h-7" />}
       {/* The logo floats in the top-left corner with nothing around it, see-through until used. The pages unroll
           to its right on a bar of the logo's night sky. */}
       <nav

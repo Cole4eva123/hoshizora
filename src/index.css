@@ -97,6 +97,11 @@
   }
 }
 
+/* in the Mac app the window's buttons sit over the top-left corner, so the corner menu starts below them */
+:root[data-app] {
+  --menu-top: max(var(--gutter), 2.5rem);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
