@@ -28,5 +28,6 @@ dist-ssr
 CLAUDE.md
 .claude/
 
-# interview write-ups of major bug fixes (.claude/skills/feature/SKILL.md), kept on this machine
-bugfix/
+# interview write-ups (voQA: questions and answers for the virtual onsite, .claude/skills/feature/SKILL.md), kept on
+# this machine
+voQA/
