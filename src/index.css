@@ -4,6 +4,21 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* The corner menu is open: pointed at, its logo or a link focused from the keyboard, or tapped open (data-open, as
+   touch has no hover). What comes out with it uses menu-open:, and so do the 返回 button and the language switch it
+   can run over, stepping aside. Pointing counts only where there is hover, as with hover:, or a tap's sticky :hover
+   would keep it open on a phone after the tap that closed it. */
+@custom-variant menu-open {
+  @media (hover: hover) {
+    &:where(body:has(#menu:hover) *) {
+      @slot;
+    }
+  }
+  &:where(body:has(#menu :focus-visible, #menu[data-open]) *) {
+    @slot;
+  }
+}
+
 @theme inline {
   --font-heading: "Noto Serif SC", "Songti SC", serif;
   --font-heading--font-feature-settings: "palt";

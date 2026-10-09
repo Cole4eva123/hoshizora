@@ -5,12 +5,17 @@ import type { Status } from "@/lib/emby"
 
 export { cn }
 
-// One option of a Choices row, picked or not: a quiet word, and under the picked one a star in --tone, the way the
-// corner menu's current page shines. Also dresses a control that sits in the row, like the menu of older seasons.
+// The star under a word, in --tone: the picked option's in a Choices row, the current page's in the corner menu.
+export const star =
+  'relative after:absolute after:-bottom-1 after:left-1/2 after:size-1 after:-translate-x-1/2 after:rounded-full after:bg-tone after:shadow-[0_0_6px_1px_var(--tone)]'
+
+// One option of a Choices row, picked or not: a quiet word, and under the picked one the star. Also dresses a control
+// that sits in the row, like the menu of older seasons.
 export const choice = (picked: boolean) =>
   cn(
-    'relative cursor-pointer rounded-sm py-1 text-[15px] text-muted-foreground transition-colors hover:text-foreground has-focus-visible:outline-2 has-focus-visible:outline-offset-4 has-focus-visible:outline-tone',
-    'after:absolute after:-bottom-1 after:left-1/2 after:size-1 after:-translate-x-1/2 after:rounded-full after:bg-tone after:opacity-0 after:shadow-[0_0_6px_1px_var(--tone)] after:transition-opacity',
+    'cursor-pointer rounded-sm py-1 text-[15px] text-muted-foreground transition-colors hover:text-foreground has-focus-visible:outline-2 has-focus-visible:outline-offset-4 has-focus-visible:outline-tone',
+    star,
+    'after:opacity-0 after:transition-opacity',
     picked && 'text-foreground after:opacity-100',
   )
 

@@ -31,7 +31,8 @@ export function Page({
 
 // Back to wherever the page was opened from. A page opened directly has nothing in the app to go back to, so that
 // goes home. React Router numbers its history entries from 0 in history.state.idx, and replacing the URL (a category
-// paging on) keeps the number. Sits beside the corner menu's logo, at its height.
+// paging on) keeps the number. Sits beside the corner menu's logo, at its height, and steps aside while the menu is
+// open over it.
 // ponytail: idx is React Router's bookkeeping, not its API; if an upgrade drops it, 返回 always goes home. Switch to
 // the Navigation API's navigation.canGoBack then.
 export function BackButton() {
@@ -41,7 +42,7 @@ export function BackButton() {
     <Button
       variant="ghost"
       onClick={() => (window.history.state?.idx > 0 ? navigate(-1) : navigate('/'))}
-      className="absolute top-(--menu-top) left-[calc(var(--gutter)+3rem)] h-10"
+      className="absolute top-(--menu-top) left-[calc(var(--gutter)+3rem)] h-10 menu-open:opacity-0"
     >
       <ChevronLeft />
       {t('返回', 'Back')}

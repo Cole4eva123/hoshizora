@@ -4,7 +4,7 @@ import { NavLink, Outlet, ScrollRestoration, useLocation } from 'react-router'
 import { isTauri } from '@tauri-apps/api/core'
 import { Constellation, type Star } from '@/components/Constellation'
 import { type Copy, type Translate, en, setLang, useT, zh } from '@/lib/i18n'
-import { cn } from '@/lib/utils'
+import { cn, star } from '@/lib/utils'
 
 // Each page's icon is a small constellation, drawn like the logo beside them: a house, a star, two frames stacked, a
 // lens and its handle, two sliders.
@@ -38,6 +38,17 @@ const nav: { to: string; label: Copy; icon: Star[][] }[] = [
   },
 ]
 
+// The pages come out of the logo one after another, 70 ms apart: each link's --stagger.
+// ponytail: one per page, written out as Tailwind only sees whole class names; a sixth page needs a sixth here, or it
+// comes out first.
+const stagger = ['[--stagger:0ms]', '[--stagger:70ms]', '[--stagger:140ms]', '[--stagger:210ms]', '[--stagger:280ms]']
+// Each constellation draws itself as it comes out: its lines run out from their first star as its stars come up.
+const draw =
+  '[&_polyline]:[stroke-dasharray:1] [&_polyline]:[stroke-dashoffset:1] menu-open:[&_polyline]:[stroke-dashoffset:0] [&_circle]:origin-center [&_circle]:scale-0 [&_circle]:transform-fill menu-open:[&_circle]:scale-100 [&_*]:transition-[stroke-dashoffset,scale] menu-open:[&_*]:delay-(--stagger) menu-open:[&_*]:duration-600 motion-reduce:[&_*]:transition-none'
+// Its word fades in beside it. They all go back at once, quickly.
+const appear =
+  '-translate-x-1 opacity-0 transition-[opacity,translate] menu-open:translate-x-0 menu-open:opacity-100 menu-open:delay-(--stagger) menu-open:duration-500 motion-reduce:transition-none'
+
 // The Mac app draws the page under a see-through title bar (tauri.conf.json), its window buttons over the top-left
 // corner. A strip across the top moves the window, as the title bar did.
 const inApp = isTauri()
@@ -48,21 +59,28 @@ export default function App() {
   const { pathname } = useLocation()
   // categories, titles and their actors are opened from Home, so Home stays highlighted there
   const underHome = /^\/(category|movie|tv|person)\//.test(pathname)
-  // Hover and keyboard focus unroll the menu in CSS; `open` is for taps, which have no hover.
+  // Hover and keyboard focus open the menu in CSS (menu-open:, index.css); `open` is for taps, which have no hover.
   const [open, setOpen] = useState(false)
 
   return (
     <>
       {inApp && <div data-tauri-drag-region className="fixed inset-x-0 top-0 z-40 h-7" />}
-      {/* The logo floats in the top-left corner with nothing around it, see-through until used. The pages unroll
-          to its right on a bar of the logo's night sky. */}
+      {/* The logo floats in the top-left corner with nothing around it, see-through until used. Its pages come out to
+          its right, over a corner of the sky that darkens behind them so they read over a bright still. Until then
+          only the logo takes the pointer: the links wait unseen in their places, and pointing there opens nothing. */}
       <nav
+        id="menu"
         aria-label={t('主导航', 'Main')}
         data-open={open || undefined}
         onMouseLeave={() => setOpen(false)}
+        // Tabbing out puts it away, as a tap may have left it open.
+        onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && setOpen(false)}
         //离屏幕顶部的距离，取 CSS 变量 --menu-top
         //离屏幕左边的距离，取 CSS 变量 --gutter
-        className="group peer fixed top-(--menu-top) left-(--gutter) z-30 flex items-center gap-1.5"
+        className={cn(
+          'pointer-events-none fixed top-(--menu-top) left-(--gutter) z-30 flex items-center',
+          'before:fixed before:inset-x-0 before:top-0 before:-z-10 before:h-64 before:bg-radial-[80rem_22rem_at_top_left] before:from-night/85 before:from-10% before:to-transparent before:to-70% before:opacity-0 before:transition-opacity before:duration-300 menu-open:before:opacity-100 motion-reduce:before:transition-none',
+        )}
       >
         <button
           // 按钮里只有图片（alt 为空），读屏软件靠这个名字念出"菜单"
@@ -72,52 +90,48 @@ export default function App() {
           // 点一下切换展开/收起：手机没有悬停，只能靠点
           onClick={() => setOpen(!open)}
           // size-10：40×40；shrink-0：菜单栏展开时不被挤小；rounded-xl：圆角，键盘聚焦的描边也跟着圆
-          className="size-10 shrink-0 rounded-xl"
+          // pointer-events-auto：nav 本身不接鼠标，只有 logo 接，指到它才打开菜单
+          className="pointer-events-auto size-10 shrink-0 rounded-xl"
         >
           {/* 午夜星辰播放三角.png cropped to the constellation, with its navy background made transparent */}
           <img
             src={`${import.meta.env.BASE_URL}logo.png`}
             alt="" 
-            className="size-full opacity-75 transition-opacity group-hover:opacity-100 group-has-focus-visible:opacity-100 group-data-open:opacity-100"
+            className="size-full opacity-75 transition-opacity menu-open:opacity-100"
           />
         </button>
-        {/* The bar. 0fr→1fr animates its width to fit the links. The glass and the clip sit on the grid, not the
-            link row: mid-way the row's track is narrower than the grid, which would leave the text ahead of the glass.
-            It stops at the right gutter: on a phone the links don't all fit, so it scrolls sideways, its end
-            fading while there's more. The grid is the scroller itself, as a mask on a wrapper would stop the glass
-            from blurring what's behind it. */}
-        <div
-          // 展开动画：grid 只有一列，平时 0fr（宽 0，overflow-x-auto 把文字裁掉）；
-          //   nav 被悬停（group-hover）、键盘聚焦（group-has-focus-visible）或点开（group-data-open）时变 1fr，
-          //   正好装下所有链接。width 没法从 0 过渡到 auto，0fr→1fr 可以，所以用 grid。
-          // transition-[grid-template-columns] duration-300 ease-out：列宽变化用 0.3 秒、先快后慢；
-          //   motion-reduce:transition-none：系统开了"减少动态效果"就不做动画
-          // rounded-xl：圆角，和 logo 按钮一致
-          // 毛玻璃：bg-night/80 夜空蓝 80% 不透明，backdrop-blur-xl 模糊背后画面，backdrop-saturate-150 让模糊后不发灰
-          // inset-ring inset-ring-star/15：内侧一圈 15% 不透明的星光色细边
-          className="no-scrollbar scroll-hint grid max-w-[calc(100vw-2*var(--gutter)-2.875rem)] grid-cols-[0fr] overflow-x-auto overscroll-x-contain rounded-xl bg-night/80 inset-ring inset-ring-star/15 backdrop-blur-xl backdrop-saturate-150 transition-[grid-template-columns] duration-300 ease-out group-hover:grid-cols-[1fr] group-has-focus-visible:grid-cols-[1fr] group-data-open:grid-cols-[1fr] motion-reduce:transition-none">
-          <div className="flex min-w-0">
-            {nav.map(({ to, label, icon }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={to === '/'}
-                viewTransition
-                onClick={() => setOpen(false)}
-                className={({ isActive }) =>
-                  cn(
-                    'flex items-center gap-2 rounded-lg px-3 text-[15px] leading-10 whitespace-nowrap text-star/70 -outline-offset-2 transition-colors hover:text-star',
-                    // the current page shines like the logo's bright star, its constellation too
-                    (isActive || (to === '/' && underHome)) &&
-                      'font-medium text-white [text-shadow:0_0_12px_var(--glow)] hover:text-white *:drop-shadow-[0_0_6px_var(--glow)]',
-                  )
-                }
-              >
-                <Constellation lines={icon} />
-                {t(...label)}
-              </NavLink>
-            ))}
-          </div>
+        {/* The row stops at the right gutter: on a phone the links don't all fit, so it scrolls sideways, its end
+            fading while there's more. Scrolling sideways clips it top and bottom too, so it has room for the glow of
+            the star under the current page's word. */}
+        <div className="no-scrollbar scroll-hint -my-1 flex max-w-[calc(100vw-2*var(--gutter)-2.5rem)] overflow-x-auto overscroll-x-contain py-1 menu-open:pointer-events-auto">
+          {nav.map(({ to, label, icon }, i) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={to === '/'}
+              viewTransition
+              onClick={() => setOpen(false)}
+              className={cn(
+                'flex h-10 items-center gap-2 rounded-lg px-3 text-[15px] whitespace-nowrap text-star/70 -outline-offset-2 transition-colors hover:text-star',
+                stagger[i],
+              )}
+            >
+              {({ isActive }) => {
+                // the current page is lit, its constellation glowing like the logo's bright star, with the star under
+                // its word as Choices marks the picked one
+                const lit = isActive || (to === '/' && underHome)
+                return (
+                  <>
+                    <Constellation
+                      lines={icon}
+                      className={cn(draw, lit && 'text-white drop-shadow-[0_0_6px_var(--glow)]')}
+                    />
+                    <span className={cn(appear, lit && ['text-white', star])}>{t(...label)}</span>
+                  </>
+                )
+              }}
+            </NavLink>
+          ))}
         </div>
       </nav>
       <LangSwitch />
@@ -130,9 +144,9 @@ export default function App() {
 }
 
 // The logo's counterpart in the top-right corner, and as quiet: starlight that brightens when pointed at, the language
-// shown lit like the menu's current page, a constellation's line between the two. Picking the other one cross-fades
-// the page into it. On a phone the open menu bar runs across this corner, so the switch steps aside meanwhile, and sits
-// under the bar. Not while the menu has keyboard focus, though: Tab from the last link has to land on the switch.
+// shown lit white in a glow, a constellation's line between the two. Picking the other one cross-fades the page into
+// it. Below md the open menu's row can reach this corner, so the switch fades out meanwhile; it only fades, so Tab from
+// the last link still lands on it, which puts the menu away.
 function LangSwitch() {
   const t = useT()
   useEffect(() => {
@@ -151,7 +165,7 @@ function LangSwitch() {
     <div
       role="group"
       aria-label={t('界面语言', 'Language')}
-      className="fixed top-(--menu-top) right-(--gutter) z-20 -mr-1.5 flex items-center text-[13px] opacity-75 transition-opacity hover:opacity-100 has-focus-visible:opacity-100 max-sm:peer-hover:invisible max-sm:peer-data-open:invisible"
+      className="fixed top-(--menu-top) right-(--gutter) z-20 -mr-1.5 flex items-center text-[13px] opacity-75 transition-opacity hover:opacity-100 has-focus-visible:opacity-100 max-md:menu-open:pointer-events-none max-md:menu-open:opacity-0"
     >
       <button lang="zh-CN" aria-pressed={t === zh} onClick={() => pick(zh)} className={option}>
         中文

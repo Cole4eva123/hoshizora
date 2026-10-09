@@ -63,9 +63,9 @@ export default function Category() {
   )
 }
 
-// All the 类型 don't fit in the row, so they sit behind one word at its end. Pointing at it unrolls them in CSS, like
-// the corner menu; a tap or Enter opens them (`open`), as a phone has no hover, and a keyboard then tabs through them
-// only when asked to. The word names the 类型 picked, starred like a picked sort.
+// All the 类型 don't fit in the row, so they sit behind one word at its end. Pointing at it unrolls them in CSS, as it
+// opens the corner menu; a tap or Enter opens them (`open`), as a phone has no hover, and a keyboard then tabs through
+// them only when asked to. The word names the 类型 picked, starred like a picked sort.
 function Genres({ options, ids, onChange }: { options: Genre[]; ids: number[]; onChange: (ids: number[]) => void }) {
   const t = useT()
   const [open, setOpen] = useState(false)
@@ -99,7 +99,7 @@ function Genres({ options, ids, onChange }: { options: Genre[]; ids: number[]; o
       {/* anchored to the row, not the word, so it never runs off a phone's edge; at least as wide as the row, so the
           pointer can go straight down into it from the word */}
       <div className="invisible absolute top-full left-0 z-10 w-max max-w-[calc(100vw-2*var(--gutter))] min-w-full pt-3 opacity-0 transition-[opacity,visibility] group-hover:visible group-hover:opacity-100 group-data-open:visible group-data-open:opacity-100 motion-reduce:transition-none">
-        {/* the corner menu's glass */}
+        {/* on glass, as they sit over the posters */}
         <Choices
           legend={t('类型', 'Genres')}
           options={options}
