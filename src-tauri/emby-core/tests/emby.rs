@@ -16,6 +16,8 @@ use serde_json::{Value, json};
 // What the stand-in server handed out and was told.
 #[derive(Default)]
 struct Seen {
+    // the server's id, "srv" unless a test makes it another server
+    id: Option<&'static str>,
     issued: u32,
     // the tokens it still takes
     tokens: Vec<String>,
@@ -34,8 +36,9 @@ fn signed_in(seen: &Shared, headers: &HeaderMap) -> bool {
     token(headers).is_some_and(|t| seen.lock().unwrap().tokens.iter().any(|x| x == t))
 }
 
-async fn info() -> Json<Value> {
-    Json(json!({ "Id": "srv", "ServerName": "宸澄", "Version": "4.9.5.0" }))
+async fn info(State(seen): State<Shared>) -> Json<Value> {
+    let id = seen.lock().unwrap().id.unwrap_or("srv");
+    Json(json!({ "Id": id, "ServerName": "宸澄", "Version": "4.9.5.0" }))
 }
 
 async fn authenticate(State(seen): State<Shared>, headers: HeaderMap, Json(body): Json<Value>) -> Response {
@@ -47,14 +50,17 @@ async fn authenticate(State(seen): State<Shared>, headers: HeaderMap, Json(body)
     if body["Username"] == "broken" {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
-    if body["Username"] != "bin" || body["Pw"] != "pw" {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
+    // bin, and guest, who has no password
+    let user = match (body["Username"].as_str(), body["Pw"].as_str()) {
+        (Some("bin"), Some("pw")) => json!({ "Id": "u1", "Name": "bin" }),
+        (Some("guest"), Some("")) => json!({ "Id": "u2", "Name": "guest" }),
+        _ => return StatusCode::UNAUTHORIZED.into_response(),
+    };
     let mut seen = seen.lock().unwrap();
     seen.issued += 1;
     let token = format!("token-{}", seen.issued);
     seen.tokens.push(token.clone());
-    Json(json!({ "AccessToken": token, "User": { "Id": "u1", "Name": "bin" } })).into_response()
+    Json(json!({ "AccessToken": token, "User": user })).into_response()
 }
 
 async fn system_info(State(seen): State<Shared>, headers: HeaderMap) -> Response {
@@ -299,6 +305,83 @@ async fn items_come_a_page_at_a_time_linked_to_tmdb_with_the_count_on_the_first(
     let next = emby.items("srv", "u1", "1", 2, 2).await.unwrap();
     assert_eq!(next.total, None);
     assert_eq!(next.items[0].tmdb, Some(Tmdb { media_type: "movie", id: 438631 }));
+}
+
+#[tokio::test]
+async fn a_new_address_where_the_same_server_answers_keeps_the_sign_in_and_an_empty_nickname_clears_it() {
+    let (at, seen) = emby().await;
+    let emby = Emby::open(file("edit-address"));
+    let added = emby.add(&at, "bin", "pw", "家里").await.unwrap();
+    // the same server, by another name for its host, and the same user however its name is typed
+    let elsewhere = at.replace("127.0.0.1", "localhost");
+    let edited = emby.edit("srv", "u1", &elsewhere, " Bin", "", "").await.unwrap();
+    assert_eq!(edited, Server { address: format!("http://{elsewhere}/emby"), nickname: None, ..added });
+    assert_eq!(emby.servers(), [edited]);
+    assert_eq!(emby.status("srv", "u1").await, Status::Online);
+    // neither signed in again nor out
+    let seen = seen.lock().unwrap();
+    assert_eq!((seen.issued, seen.logged_out.len()), (1, 0));
+}
+
+#[tokio::test]
+async fn an_edit_that_fails_changes_nothing() {
+    let (at, _) = emby().await;
+    let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
+    let emby = Emby::open(file("edit-fails"));
+    let added = emby.add(&at, "bin", "pw", "家里").await.unwrap();
+    assert_eq!(emby.edit("srv", "u1", &added.address, "bin", "nope", "").await, Err(Error::SignIn));
+    assert_eq!(emby.edit("srv", "u1", &closed.to_string(), "bin", "", "").await, Err(Error::Offline));
+    assert_eq!(emby.edit("srv", "u1", "not an address", "bin", "", "").await, Err(Error::NotAnAddress));
+    assert_eq!(emby.edit("gone", "u1", &added.address, "bin", "", "").await, Err(Error::NoServer));
+    assert_eq!(emby.servers(), [added]);
+}
+
+#[tokio::test]
+async fn a_password_or_another_server_signs_in_again_in_the_entrys_place_ending_the_old_sign_in() {
+    let (at, seen) = emby().await;
+    let (other, other_seen) = emby().await;
+    // another server, its tokens told apart from the first one's
+    *other_seen.lock().unwrap() = Seen { id: Some("other"), issued: 100, ..Default::default() };
+    let emby = Emby::open(file("edit-sign-in"));
+    let added = emby.add(&at, "bin", "pw", "").await.unwrap();
+    emby.add(&other, "bin", "pw", "").await.unwrap();
+    let again = emby.edit("srv", "u1", &added.address, "bin", "pw", "").await.unwrap();
+    assert_eq!(emby.servers()[0], again);
+    assert!(eventually(|| seen.lock().unwrap().logged_out == ["token-1"]).await);
+    // another server at the new address is signed in to rather than handed the token: here, with no password
+    assert_eq!(emby.edit("srv", "u1", &other, "bin", "", "").await, Err(Error::SignIn));
+    let moved = emby.edit("srv", "u1", &other, "bin", "pw", "").await.unwrap();
+    assert_eq!(moved.id, "other");
+    // and it stands for the entry kept for that server already, whose sign-in ends with the one it replaced
+    assert_eq!(emby.servers(), [moved]);
+    assert!(eventually(|| seen.lock().unwrap().logged_out == ["token-1", "token-2"]).await);
+    assert!(eventually(|| other_seen.lock().unwrap().logged_out == ["token-101"]).await);
+}
+
+#[tokio::test]
+async fn a_sign_in_kept_over_https_is_not_moved_to_http_without_the_password() {
+    let (at, _) = emby().await;
+    let path = file("downgrade");
+    Emby::open(path.clone()).add(&at, "bin", "pw", "").await.unwrap();
+    // as if it had been signed in over https
+    let kept = std::fs::read_to_string(&path).unwrap().replace("http://", "https://");
+    std::fs::write(&path, kept).unwrap();
+    let emby = Emby::open(path);
+    let http = format!("http://{at}/emby");
+    assert_eq!(emby.edit("srv", "u1", &http, "bin", "", "").await, Err(Error::SignIn));
+    assert_eq!(emby.edit("srv", "u1", &http, "bin", "pw", "").await.unwrap().address, http);
+}
+
+#[tokio::test]
+async fn a_sign_in_the_server_turned_down_is_renewed_even_for_a_user_with_no_password() {
+    let (at, seen) = emby().await;
+    let emby = Emby::open(file("renew"));
+    let guest = emby.add(&at, "guest", "", "").await.unwrap();
+    // revoked on the server
+    seen.lock().unwrap().tokens.clear();
+    assert_eq!(emby.status("srv", "u2").await, Status::SignedOut);
+    emby.edit("srv", "u2", &guest.address, "guest", "", "").await.unwrap();
+    assert_eq!(emby.status("srv", "u2").await, Status::Online);
 }
 
 #[tokio::test]

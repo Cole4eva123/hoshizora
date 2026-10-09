@@ -44,6 +44,12 @@ export const lens: Star[][] = [
   [[15.5, 15.5], [8.7, 17.3], [3.7, 12.3], [5.5, 5.5], [12.3, 3.7], [17.3, 8.7], [15.5, 15.5], [21, 21]],
 ]
 
+// Two sliders, bigger stars for their knobs: the corner menu's 设置, and a 服务器's settings on its tile.
+export const sliders: Star[][] = [
+  [[3, 8], [15, 8, 2.6], [21, 8]],
+  [[3, 16], [9, 16, 2.6], [21, 16]],
+]
+
 // A 服务器's colour (--tone) for how it answers: green when connected, grey while it's being asked, red otherwise.
 export const toneOf = (status: Status) =>
   status === 'online'

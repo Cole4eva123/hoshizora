@@ -1,16 +1,19 @@
-import { type ComponentProps, type RefObject, type SubmitEvent, useId, useRef, useState } from 'react'
+import { type ComponentProps, type ReactNode, type RefObject, type SubmitEvent, useId, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { Plus } from 'lucide-react'
-import { ServerMark } from '@/components/Constellation'
+import { Constellation, ServerMark } from '@/components/Constellation'
 import { EmptyState, Page } from '@/components/Page'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
+  type EmbyError,
   type Server,
   type Status,
   addServer,
   canConnect,
   dismiss,
+  editServer,
+  errorText,
   nameOf,
   refresh,
   removeServer,
@@ -20,10 +23,12 @@ import {
   useStatus,
 } from '@/lib/emby'
 import { useT } from '@/lib/i18n'
-import { cn, toneOf } from '@/lib/utils'
+import { cn, sliders, toneOf } from '@/lib/utils'
 
 // The servers and the tile that adds one, as many to a row as fit: two on a phone.
 const tile = 'min-h-44 rounded-2xl p-5'
+// what sits in a tile's top-right corner: a kept server's settings, or an add's 移除
+const corner = 'absolute top-3 right-3 rounded-md'
 
 export default function Library() {
   const t = useT()
@@ -63,8 +68,20 @@ export default function Library() {
           <ServerTile key={`${s.id}/${s.userId}`} server={s} />
         ))}
         {adding.map((a) => (
-          // one under way can't be stopped
-          <Tile key={a.id} {...a} adding onRemove={a.status === 'checking' ? undefined : () => dismiss(a)} />
+          <Tile key={a.id} {...a} adding>
+            {/* one under way can't be stopped; one that failed goes in one press, having nothing to sign out of */}
+            {a.status !== 'checking' && (
+              <button
+                onClick={() => dismiss(a)}
+                className={cn(
+                  corner,
+                  'px-1.5 py-1 text-xs text-muted-foreground opacity-0 transition hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100',
+                )}
+              >
+                {t('移除', 'Remove')}
+              </button>
+            )}
+          </Tile>
         ))}
         <li>
           <button
@@ -79,14 +96,16 @@ export default function Library() {
           </button>
         </li>
       </ul>
-      <AddServer dialog={dialog} />
+      <ServerDialog dialog={dialog} />
     </Page>
   )
 }
 
-// A kept server, as it answers now. It opens its 媒体库; 移除 signs it out.
+// A kept server, as it answers now. It opens its 媒体库; the sliders in its corner open its settings.
 function ServerTile({ server }: { server: Server }) {
+  const t = useT()
   const status = useStatus(server)
+  const settings = useRef<HTMLDialogElement>(null)
   return (
     <Tile
       {...server}
@@ -94,16 +113,23 @@ function ServerTile({ server }: { server: Server }) {
       status={status}
       to={`/library/${server.id}/${server.userId}`}
       onOpen={() => refresh(server)}
-      onRemove={() => removeServer(server)}
-    />
+    >
+      <button
+        onClick={() => settings.current?.showModal()}
+        title={t('服务器设置', 'Server settings')}
+        className={cn(corner, 'p-2 text-star/60 transition-colors hover:text-star focus-visible:text-star')}
+      >
+        <Constellation lines={sliders} />
+      </button>
+      <ServerDialog dialog={settings} server={server} />
+    </Tile>
   )
 }
 
 // A server's light is its icon's own star: green when connected, red when not, grey while it's being asked. The word
 // under the name says the same for anyone who can't tell red from green, and for screen readers. An add's tile
-// (`adding`) is read out as it changes, as it may fail after the dialog has closed, and goes in one press, having
-// nothing to sign out of. A tile with somewhere to go (`to`) is a link all over, but for its 移除, and `onOpen` runs as
-// it's followed.
+// (`adding`) is read out as it changes, as it may fail after the dialog has closed. A tile with somewhere to go (`to`)
+// is a link all over, but for what's in its corner (`children`), and `onOpen` runs as it's followed.
 function Tile({
   name,
   userName,
@@ -112,7 +138,7 @@ function Tile({
   adding,
   to,
   onOpen,
-  onRemove,
+  children,
 }: {
   name: string
   userName: string
@@ -121,18 +147,16 @@ function Tile({
   adding?: boolean
   to?: string
   onOpen?: () => void
-  onRemove?: () => void
+  children?: ReactNode
 }) {
   const t = useT()
-  // 移除 asks once more, and forgets it was asked after a moment
-  const [sure, setSure] = useState(false)
   return (
     <li
       className={cn(
         tile,
         'group relative bg-card inset-ring inset-ring-star/15',
         toneOf(status),
-        // the link's focus, not 移除's, which shows its own
+        // the link's focus, not the settings button's, which shows its own
         to &&
           'transition-shadow hover:inset-ring-star/40 has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-2 has-[a:focus-visible]:outline-ring',
       )}
@@ -155,86 +179,128 @@ function Tile({
         <span className="shrink-0">{userName}</span>
         <span className="truncate">{new URL(address).host}</span>
       </p>
-      {onRemove && (
-        <button
-          onClick={() => {
-            if (sure || adding) return onRemove()
-            setSure(true)
-            setTimeout(() => setSure(false), 3000)
-          }}
-          className="absolute top-3 right-3 rounded-sm px-1.5 py-1 text-xs text-muted-foreground opacity-0 transition hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
-        >
-          {sure ? t('确认移除', 'Remove?') : t('移除', 'Remove')}
-        </button>
-      )}
+      {children}
     </li>
   )
 }
 
-// Adding a server: where it is, the user to sign in as (an Emby user may have no password), and a 备注 to call it by if
-// its own name won't do. The dialog closes at once, and the add goes on in its tile; only text that isn't an address is
-// caught here, under its field.
-function AddServer({ dialog }: { dialog: RefObject<HTMLDialogElement | null> }) {
+// Adding a server, or changing a kept one (`server`): where it is, the user to sign in as (an Emby user may have no
+// password), and a 备注 to call it by if its own name won't do. An add closes at once and goes on in its tile, so only
+// text that isn't an address is caught here. A change waits for its answer, as one that fails changes nothing and has
+// no tile to say why: it says so here, under the field it's about. A kept server is removed here too, on a second press.
+function ServerDialog({ dialog, server }: { dialog: RefObject<HTMLDialogElement | null>; server?: Server }) {
   const t = useT()
-  const [invalid, setInvalid] = useState(false)
+  const [failed, setFailed] = useState<EmbyError>()
+  const [saving, setSaving] = useState(false)
+  // 移除 asks once more, and forgets it was asked after a moment, or when the dialog closes
+  const [sure, setSure] = useState(false)
+  const unsure = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const why = failed && errorText(failed, t)
   const submit = (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
     const data = new FormData(e.currentTarget)
     const field = (name: string) => String(data.get(name))
+    const typed = [field('address'), field('username'), field('password'), field('nickname')] as const
+    if (server) {
+      setSaving(true)
+      setFailed(undefined)
+      editServer(server, ...typed)
+        .then(() => dialog.current?.close(), setFailed)
+        .finally(() => setSaving(false))
+      return
+    }
     try {
-      addServer(field('address'), field('username'), field('password'), field('nickname'))
+      addServer(...typed)
     } catch (err) {
       if (!(err instanceof TypeError)) throw err
-      return setInvalid(true)
+      return setFailed({ kind: 'notAnAddress' })
     }
     dialog.current?.close()
   }
   return (
     <dialog
       ref={dialog}
+      // a change under way can't be called off, so it stays open until it's answered
+      onCancel={(e) => saving && e.preventDefault()}
       // what was typed goes with it, the password included, however it closes
       onClose={(e) => {
-        setInvalid(false)
+        setFailed(undefined)
+        setSure(false)
+        clearTimeout(unsure.current)
         e.currentTarget.querySelector('form')?.reset()
       }}
-      aria-label={t('添加服务器', 'Add server')}
+      aria-label={server ? t('服务器设置', 'Server settings') : t('添加服务器', 'Add server')}
       // Tailwind zeroes every margin, the dialog's centring included
       className="m-auto w-[min(26rem,calc(100vw-2*var(--gutter)))] rounded-2xl bg-card p-6 text-foreground inset-ring inset-ring-star/15 backdrop:bg-night/70 backdrop:backdrop-blur-sm"
     >
-      <form onSubmit={submit} className="space-y-4">
-        <Field
-          label={t('地址', 'Address')}
-          error={invalid ? t('这不是一个服务器地址。', "That isn't a server address.") : undefined}
-          name="address"
-          required
-          inputMode="url"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          placeholder="192.168.1.5:8096"
-        />
-        <Field label={t('用户名', 'Username')} name="username" required autoCapitalize="off" autoComplete="username" />
-        <Field
-          label={t('密码', 'Password')}
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          placeholder={t('没有密码就留空', 'Leave empty if there is none')}
-        />
-        <Field
-          label={t('备注（可选）', 'Nickname (optional)')}
-          name="nickname"
-          autoComplete="off"
-          placeholder={t('不填就用服务器自己的名字', "Leave empty to use the server's own name")}
-        />
-        <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="ghost" size="lg" onClick={() => dialog.current?.close()}>
-            {t('取消', 'Cancel')}
-          </Button>
-          <Button type="submit" size="lg">
-            {t('添加', 'Add')}
-          </Button>
-        </div>
+      <form onSubmit={submit}>
+        <fieldset disabled={saving} className="min-w-0 space-y-4">
+          <Field
+            label={t('地址', 'Address')}
+            error={failed?.kind === 'signIn' ? undefined : why}
+            name="address"
+            defaultValue={server?.address}
+            required
+            inputMode="url"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder="192.168.1.5:8096"
+          />
+          <Field
+            label={t('用户名', 'Username')}
+            name="username"
+            defaultValue={server?.userName}
+            required
+            autoCapitalize="off"
+            autoComplete="username"
+          />
+          <Field
+            label={t('密码', 'Password')}
+            error={failed?.kind === 'signIn' ? why : undefined}
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            placeholder={server ? t('不改就留空', 'Leave empty to stay signed in') : t('没有密码就留空', 'Leave empty if there is none')}
+          />
+          <Field
+            label={t('备注（可选）', 'Nickname (optional)')}
+            name="nickname"
+            defaultValue={server?.nickname}
+            autoComplete="off"
+            placeholder={
+              server
+                ? t(`不填就用服务器自己的名字「${server.name}」`, `Leave empty to use its own name, ${server.name}`)
+                : t('不填就用服务器自己的名字', "Leave empty to use the server's own name")
+            }
+          />
+          <div className="flex justify-end gap-2 pt-2">
+            {server && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="lg"
+                onClick={() => {
+                  if (sure) {
+                    dialog.current?.close()
+                    return removeServer(server)
+                  }
+                  setSure(true)
+                  unsure.current = setTimeout(() => setSure(false), 3000)
+                }}
+                className={cn('mr-auto text-muted-foreground hover:text-destructive', sure && 'text-destructive')}
+              >
+                {sure ? t('确认移除', 'Remove?') : t('移除', 'Remove')}
+              </Button>
+            )}
+            <Button type="button" variant="ghost" size="lg" onClick={() => dialog.current?.close()}>
+              {t('取消', 'Cancel')}
+            </Button>
+            <Button type="submit" size="lg">
+              {saving ? t('正在保存', 'Saving') : server ? t('保存', 'Save') : t('添加', 'Add')}
+            </Button>
+          </div>
+        </fieldset>
       </form>
     </dialog>
   )

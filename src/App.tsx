@@ -4,7 +4,7 @@ import { NavLink, Outlet, ScrollRestoration, useLocation } from 'react-router'
 import { isTauri } from '@tauri-apps/api/core'
 import { Constellation, type Star } from '@/components/Constellation'
 import { type Copy, type Translate, en, setLang, useT, zh } from '@/lib/i18n'
-import { cn, lens, star } from '@/lib/utils'
+import { cn, lens, sliders, star } from '@/lib/utils'
 
 // Each page's icon is a small constellation, drawn like the logo beside them: a house, a star, two frames stacked, a
 // lens and its handle, two sliders.
@@ -28,14 +28,7 @@ const nav: { to: string; label: Copy; icon: Star[][] }[] = [
     label: ['搜索', 'Search'],
     icon: lens,
   },
-  {
-    to: '/settings',
-    label: ['设置', 'Settings'],
-    icon: [
-      [[3, 8], [15, 8, 2.6], [21, 8]],
-      [[3, 16], [9, 16, 2.6], [21, 16]],
-    ],
-  },
+  { to: '/settings', label: ['设置', 'Settings'], icon: sliders },
 ]
 
 // The pages come out of the logo one after another, 70 ms apart: each link's --stagger.

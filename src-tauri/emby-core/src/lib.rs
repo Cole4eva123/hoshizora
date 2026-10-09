@@ -22,6 +22,8 @@ const PROBE_HTTPS: Duration = Duration::from_secs(2);
 const PROBE_HTTP: Duration = Duration::from_secs(5);
 const SIGN_IN: Duration = Duration::from_secs(10);
 const CHECK: Duration = Duration::from_secs(5);
+// an edit's look at whether a kept sign-in still works, short as one that doesn't answer is kept anyway
+const RECHECK: Duration = Duration::from_secs(2);
 const BROWSE: Duration = Duration::from_secs(15);
 
 /// A 服务器 kept on this device, as the pages see it: where it answers, who signed in and when (ms since 1970), and its
@@ -229,43 +231,12 @@ impl Emby {
         self.servers.lock().unwrap().iter().map(|s| s.server.clone()).collect()
     }
 
-    /// Finds where the server typed answers, signs in there and keeps it. The addresses to try come from what was
-    /// typed (`candidates`): the https ones are asked at once, and the http ones only once none of those answers. A
-    /// redirect, as from a proxy's http to its https, is followed, and the address it lands at is the one kept. Signing
-    /// in again as the same user (after 登录已失效) replaces the entry, keeps its 备注 unless a new one is typed, and
-    /// ends the old sign-in.
+    /// Finds where the server typed answers (`find`), signs in there and keeps it. Signing in again as the same user
+    /// (after 登录已失效) replaces the entry, keeps its 备注 unless a new one is typed, and ends the old sign-in.
     pub async fn add(&self, typed: &str, username: &str, password: &str, nickname: &str) -> Result<Server, Error> {
-        let addresses = candidates(typed).ok_or(Error::NotAnAddress)?;
-        let (address, info) = match self.race(&addresses, "https:", PROBE_HTTPS).await {
-            Some(found) => found,
-            None => self.race(&addresses, "http:", PROBE_HTTP).await.ok_or(Error::Offline)?,
-        };
-        let answer = self
-            .identify(self.http.post(format!("{address}/Users/AuthenticateByName")))
-            .json(&serde_json::json!({ "Username": username, "Pw": password }))
-            .timeout(SIGN_IN)
-            .send()
-            .await
-            .map_err(|_| Error::Offline)?;
-        match answer.status() {
-            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => return Err(Error::SignIn),
-            status if !status.is_success() => return Err(Error::Server { status: status.as_u16() }),
-            _ => {}
-        }
-        // a 200 that isn't Emby's answer, as from a proxy's login page, is nothing Emby answered
-        let auth: Auth = answer.json().await.map_err(|_| Error::Offline)?;
-        let mut signed = Signed {
-            server: Server {
-                id: info.id,
-                name: info.server_name,
-                nickname: Some(nickname.trim().to_owned()).filter(|n| !n.is_empty()),
-                address,
-                user_id: auth.user.id,
-                user_name: auth.user.name,
-                signed_in: now(),
-            },
-            token: auth.access_token,
-        };
+        let (address, info) = self.find(typed).await?;
+        let mut signed = self.sign_in(address, info, username, password).await?;
+        signed.server.nickname = nickname_of(nickname);
         let old = self.keep(|servers| {
             let old = servers
                 .iter()
@@ -278,13 +249,8 @@ impl Emby {
         });
         let old = match old {
             Ok(old) => old,
-            // a sign-in that can't be kept isn't left open on the server either, unless its token is the one Emby handed
-            // back, which the kept entry still signs in with
             Err(e) => {
-                let still_kept = self.servers.lock().unwrap().iter().any(|s| s.token == signed.token);
-                if !still_kept {
-                    self.sign_out(signed);
-                }
+                self.abandon(signed);
                 return Err(e);
             }
         };
@@ -293,6 +259,73 @@ impl Emby {
             self.sign_out(old);
         }
         Ok(signed.server)
+    }
+
+    /// Changes a kept server as its settings say: where it's reached (typed as for `add`), who's signed in, and its 备注
+    /// (left empty, none). The sign-in is kept for the same user with no password typed, while the server still takes
+    /// it; at a new address, only where a server with the same id answers, and never from https to http, where its
+    /// token would go in the clear. Otherwise it signs in again and ends the old sign-in, which also renews one the
+    /// server turned down, as for a user with no password to type. All of it holds or none of it does, and the entry
+    /// keeps its place in the list.
+    pub async fn edit(
+        &self,
+        server: &str,
+        user: &str,
+        typed: &str,
+        username: &str,
+        password: &str,
+        nickname: &str,
+    ) -> Result<Server, Error> {
+        let kept = self.signed(server, user)?;
+        // where it's reached, and who answers there: asked only of an address that's new
+        let (address, info) = if typed.trim() == kept.server.address {
+            (kept.server.address.clone(), Info { id: kept.server.id.clone(), server_name: kept.server.name.clone() })
+        } else {
+            self.find(typed).await?
+        };
+        let moved = Signed {
+            server: Server { address: address.clone(), name: info.server_name.clone(), ..kept.server.clone() },
+            token: kept.token.clone(),
+        };
+        // The token goes out, to see that it still works, only once the rest holds.
+        // ponytail: the id is public, so a host that copies it gets the token: over https only the host typed (or
+        // redirected to), as its certificate shows; over http any, though there the token went in the clear already.
+        // Ask for the password whenever the host changes if that's too little.
+        let keeps = info.id == kept.server.id
+            && password.is_empty()
+            // the same user, whatever the case of the name, as Emby has it
+            && username.trim().to_lowercase() == kept.server.user_name.to_lowercase()
+            && (address.starts_with("https:") || !kept.server.address.starts_with("https:"))
+            && !matches!(self.get::<IgnoredAny>(&moved, "System/Info", &[], RECHECK).await, Err(Error::SignedOut));
+        let mut next = if keeps { moved } else { self.sign_in(address, info, username, password).await? };
+        next.server.nickname = nickname_of(nickname);
+        let replaced = self.keep(|servers| {
+            let i = servers.iter().position(|s| s.server.id == server && s.server.user_id == user)?;
+            // the sign-in kept is the one there now, which an add may have renewed meanwhile
+            if keeps {
+                next.token = servers[i].token.clone();
+                next.server.signed_in = servers[i].server.signed_in;
+            }
+            let edited = std::mem::replace(&mut servers[i], next.clone());
+            // one kept already as the server and user it now is goes, as this one stands for it
+            let twin = servers
+                .iter()
+                .enumerate()
+                .position(|(j, s)| j != i && s.server.id == next.server.id && s.server.user_id == next.server.user_id);
+            Some([Some(edited), twin.map(|j| servers.remove(j))])
+        });
+        match replaced.and_then(|replaced| replaced.ok_or(Error::NoServer)) {
+            Ok(replaced) => {
+                for old in replaced.into_iter().flatten().filter(|o| o.token != next.token) {
+                    self.sign_out(old);
+                }
+                Ok(next.server)
+            }
+            Err(e) => {
+                self.abandon(next);
+                Err(e)
+            }
+        }
     }
 
     /// Forgets a kept server, and ends its sign-in on the server in the background. Async though it awaits nothing, as
@@ -400,6 +433,47 @@ impl Emby {
         self.identify(request).header("X-Emby-Token", token)
     }
 
+    // Where the server typed answers, and who it is. The addresses to try come from what was typed (`candidates`): the
+    // https ones are asked at once, and the http ones only once none of those answers. A redirect, as from a proxy's
+    // http to its https, is followed, and the address it lands at is the one found.
+    async fn find(&self, typed: &str) -> Result<(String, Info), Error> {
+        let addresses = candidates(typed).ok_or(Error::NotAnAddress)?;
+        match self.race(&addresses, "https:", PROBE_HTTPS).await {
+            Some(found) => Ok(found),
+            None => self.race(&addresses, "http:", PROBE_HTTP).await.ok_or(Error::Offline),
+        }
+    }
+
+    // Signs in as `username` to the server found at `address`; its entry has no 备注 yet.
+    async fn sign_in(&self, address: String, info: Info, username: &str, password: &str) -> Result<Signed, Error> {
+        let answer = self
+            .identify(self.http.post(format!("{address}/Users/AuthenticateByName")))
+            .json(&serde_json::json!({ "Username": username.trim(), "Pw": password }))
+            .timeout(SIGN_IN)
+            .send()
+            .await
+            .map_err(|_| Error::Offline)?;
+        match answer.status() {
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => return Err(Error::SignIn),
+            status if !status.is_success() => return Err(Error::Server { status: status.as_u16() }),
+            _ => {}
+        }
+        // a 200 that isn't Emby's answer, as from a proxy's login page, is nothing Emby answered
+        let auth: Auth = answer.json().await.map_err(|_| Error::Offline)?;
+        Ok(Signed {
+            server: Server {
+                id: info.id,
+                name: info.server_name,
+                nickname: None,
+                address,
+                user_id: auth.user.id,
+                user_name: auth.user.name,
+                signed_in: now(),
+            },
+            token: auth.access_token,
+        })
+    }
+
     // The first of `addresses` with `scheme` where Emby answers, all asked at once: where it landed, and who it is.
     async fn race(&self, addresses: &[String], scheme: &str, timeout: Duration) -> Option<(String, Info)> {
         let mut probes = JoinSet::new();
@@ -419,6 +493,15 @@ impl Emby {
     fn sign_out(&self, s: Signed) {
         let request = self.ask(self.http.post(format!("{}/Sessions/Logout", s.server.address)), &s.token);
         tokio::spawn(async move { request.timeout(BROWSE).send().await.ok() });
+    }
+
+    // A sign-in that can't be kept isn't left open on the server either, unless its token is one a kept entry still
+    // signs in with, as Emby may hand a device its token back.
+    fn abandon(&self, signed: Signed) {
+        let still_kept = self.servers.lock().unwrap().iter().any(|s| s.token == signed.token);
+        if !still_kept {
+            self.sign_out(signed);
+        }
     }
 
     // Changes the kept servers and writes them; the change stands only once written.
@@ -523,6 +606,11 @@ fn item(address: &str, i: Listed) -> Item {
         id: i.id,
         name: i.name,
     }
+}
+
+// A 备注 as typed: none when left empty.
+fn nickname_of(typed: &str) -> Option<String> {
+    Some(typed.trim().to_owned()).filter(|n| !n.is_empty())
 }
 
 fn now() -> u64 {

@@ -24,6 +24,19 @@ async fn emby_add(
 }
 
 #[tauri::command]
+async fn emby_edit(
+    emby: State<'_, Emby>,
+    server: String,
+    user: String,
+    typed: String,
+    username: String,
+    password: String,
+    nickname: String,
+) -> Result<Server, Error> {
+    emby.edit(&server, &user, &typed, &username, &password, &nickname).await
+}
+
+#[tauri::command]
 async fn emby_remove(emby: State<'_, Emby>, server: String, user: String) -> Result<(), Error> {
     emby.remove(&server, &user).await
 }
@@ -61,6 +74,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             emby_servers,
             emby_add,
+            emby_edit,
             emby_remove,
             emby_status,
             emby_libraries,

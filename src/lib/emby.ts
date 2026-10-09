@@ -25,7 +25,7 @@ export type Server = {
 export const nameOf = (s: Server) => s.nickname || s.name
 
 // Why the Rust side couldn't do what was asked (emby-core's Error).
-type EmbyError =
+export type EmbyError =
   | { kind: 'notAnAddress' | 'offline' | 'signIn' | 'signedOut' | 'noServer' | 'storage' }
   | { kind: 'server'; status: number }
 
@@ -52,6 +52,15 @@ const which = (s: Pick<Server, 'id' | 'userId'>) => ({ server: s.id, user: s.use
 // Forgets a server; the Rust side ends its sign-in on the server too. One it couldn't forget (its file couldn't be
 // written) stays in the list.
 export const removeServer = (s: Server) => invoke('emby_remove', which(s)).then(reload, reload)
+
+// Changes a kept server as its settings say; the Rust side works out what that takes (Emby::edit). One that fails
+// changes nothing and rejects with why (an EmbyError). What was kept of the server's answers goes, as nothing asks
+// for those under an old address again.
+export const editServer = (s: Server, typed: string, username: string, password: string, nickname: string) =>
+  invoke('emby_edit', { ...which(s), typed, username, password, nickname }).then(() => {
+    refresh(s)
+    return reload()
+  })
 
 // How a server's tile shows it: `checking` while it's asked (a grey light), `online`, `offline` when nothing Emby
 // answers, `signedOut` when the server turned a kept token down (revoked, or the user is gone); and for an add that
@@ -114,12 +123,12 @@ export function addServer(typed: string, username: string, password: string, nic
 // Whether a kept server answers its signed-in user now. Asked when the page opens, on coming back to it, and when the
 // network comes or goes, as other Emby players do, rather than on a timer; a network that has just come back is given
 // a moment, as its first requests can fail before it's really up. Only the latest check's answer counts, as a
-// slow one can land after it. Keyed by the sign-in, so a server signed in again starts at `checking` rather than showing
-// the old sign-in's answer. Until its own first answer, a check starts from the last one for that sign-in, so the
-// server's page opens with the light its tile had.
+// slow one can land after it. Keyed by the sign-in and the address, so a server signed in again, or moved, starts at
+// `checking` rather than showing the old answer. Until its own first answer, a check starts from the last one for that
+// key, so the server's page opens with the light its tile had.
 const answered = new Map<string, Status>()
-export function useStatus({ id, userId, signedIn }: Server) {
-  const key = `${id}/${userId}/${signedIn}`
+export function useStatus({ id, userId, signedIn, address }: Server) {
+  const key = `${id}/${userId}/${signedIn}/${address}`
   const [answer, setAnswer] = useState<{ key: string; status: Status }>()
   useEffect(() => {
     let asked = 0
@@ -154,19 +163,32 @@ export function useStatus({ id, userId, signedIn }: Server) {
   return answer?.key === key ? answer.status : (answered.get(key) ?? 'checking')
 }
 
-const errorText = (e: unknown, t: Translate) => {
+// Why a server couldn't be asked, or a change to it didn't go through, in words: on its page, and in its settings.
+export const errorText = (e: unknown, t: Translate) => {
   const error = e as EmbyError | undefined
-  if (error?.kind === 'signedOut')
-    return t('登录已失效。在媒体库里移除这台服务器，再添加一次。', 'Signed out. Remove this server in Library and add it again.')
-  return error?.kind === 'server'
-    ? t(`服务器返回错误 ${error.status}`, `The server answered with error ${error.status}`)
-    : t('连不上这台服务器，检查一下网络', "Can't reach this server, check your connection")
+  switch (error?.kind) {
+    case 'signedOut':
+      return t(
+        '登录已失效。在媒体库里打开这台服务器的设置，输入密码重新登录。',
+        "Signed out. Open this server's settings in Library and enter the password to sign in again.",
+      )
+    case 'server':
+      return t(`服务器返回错误 ${error.status}`, `The server answered with error ${error.status}`)
+    case 'notAnAddress':
+      return t('这不是一个服务器地址', "That isn't a server address")
+    case 'signIn':
+      return t('登录没成功，检查一下用户名和密码', "Couldn't sign in, check the username and password")
+    case 'storage':
+      return t('没能存到这台设备上', "Couldn't save it on this device")
+    default:
+      return t('连不上这台服务器，检查一下网络和它的地址', "Can't reach this server, check your connection and its address")
+  }
 }
 
-// A server's answers are kept in cache.ts under its own prefix, `emby/{server}/{user}/{signedIn}/`, then what was
-// asked: `views`, or `items/{library}/{page}`. The sign-in is in it as one signed in again may answer at another
-// address, which its pictures' URLs carry. The cache asks for a key it doesn't have by these, which read the key back.
-const keyOf = (s: Server) => `emby/${s.id}/${s.userId}/${s.signedIn}/`
+// A server's answers are kept in cache.ts under its own prefix, `emby/{server}/{user}/{address}/`, then what was
+// asked: `views`, or `items/{library}/{page}`. The address is in it as its pictures' URLs carry it, so one moved to
+// another address asks again. The cache asks for a key it doesn't have by these, which read the key back.
+const keyOf = (s: Server) => `emby/${s.id}/${s.userId}/${encodeURIComponent(s.address)}/`
 const askViews = (key: string) => {
   const [, server, user] = key.split('/')
   return invoke<Library[]>('emby_libraries', { server, user })
