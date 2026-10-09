@@ -27,3 +27,6 @@ dist-ssr
 # notes for Claude Code, kept on this machine
 CLAUDE.md
 .claude/
+
+# interview write-ups of major bug fixes (.claude/skills/feature/SKILL.md), kept on this machine
+bugfix/
