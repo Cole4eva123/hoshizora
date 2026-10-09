@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { useMemo } from 'react'
 import { arrivedOf, ask, useAnswers } from '@/lib/cache'
+import type { Shelf } from '@/lib/emby'
 import { type Copy, type Translate, useT } from '@/lib/i18n'
 
 const token: string | undefined = import.meta.env.VITE_TMDB_TOKEN
@@ -147,9 +148,9 @@ export type Lineup = { media_type: MediaType; id: number; title: string }[]
 export const hrefOf = (m: Pick<Media, 'media_type' | 'id'>) => `/${m.media_type}/${m.id}`
 export const lineupOf = (list: Media[]): Lineup =>
   list.map((m) => ({ media_type: m.media_type, id: m.id, title: titleOf(m) }))
-// Where a title page was opened from: the lineup, and for a list that pages on (a 分类, a search) its request and the
-// pages it showed, so stepping past the last one goes on into the next page.
-export type From = { lineup: Lineup; list?: { path: string; pages: number } }
+// Where a title page was opened from: the lineup, and for a list that pages on (a 分类, a search, a 服务器's 媒体库)
+// its request and the pages it showed, so stepping past the last one goes on into the next page.
+export type From = { lineup: Lineup; list?: { path: string; pages: number } | Shelf }
 export const originalTitleOf = (m: Media) => m.original_title ?? m.original_name ?? ''
 export const yearOf = (m: Media) => (m.release_date ?? m.first_air_date ?? '').slice(0, 4)
 export const img = (path: string | null, size: 'w300' | 'w342' | 'w500' | 'w1280') =>

@@ -5,6 +5,7 @@ import { Choices } from '@/components/Choices'
 import { BackButton, Page } from '@/components/Page'
 import { Frame, Row } from '@/components/PosterRow'
 import { PosterWall, TitleInfo } from '@/components/PosterWall'
+import { useLineupAfter } from '@/lib/emby'
 import { useT } from '@/lib/i18n'
 import {
   type Details,
@@ -69,31 +70,34 @@ export default function Detail({ type }: { type: MediaType }) {
 const stepping = (from: From) => ({ state: from, replace: true, viewTransition: true })
 
 // The 作品 before and after this one in the list it was opened from (a 分类, a search, a home row or the wall, an
-// actor's 作品). Past the last one loaded from a list that pages on, the next page is asked for and the steps go on
-// into it; a list goes round only at its true end, and before the first one. A step replaces the history entry, so 返回
-// still goes back to the list. A title opened from a link of its own has no list, and so no neighbors.
+// actor's 作品, a 服务器's 媒体库). Past the last one loaded from a list that pages on, the next page is asked for and the
+// steps go on into it; a list goes round only at its true end, and before the first one. A step replaces the history
+// entry, so 返回 still goes back to the list. A title opened from a link of its own has no list, and so no neighbors.
 // No ← → keys: after a click in the wall or a row, Chrome scrolls that with the arrows, and the page would step too.
 function useNeighbors(type: MediaType, id: string) {
   const from = useLocation().state as From | null
   const indexIn = (lineup: Lineup) => lineup.findIndex((x) => x.media_type === type && `${x.id}` === id)
   const list = from?.list
   const atEnd = !!from && indexIn(from.lineup) === from.lineup.length - 1
-  const more = useTitles(atEnd ? list?.path : undefined, (list?.pages ?? 0) + 1)
+  // the next page is TMDB's, or the 服务器's for a 媒体库; the other asks for nothing
+  const titles = useTitles(atEnd && list && 'path' in list ? list.path : undefined, (list?.pages ?? 0) + 1)
+  const items = useLineupAfter(atEnd && list && 'library' in list ? list : undefined)
   // the list with its next page, once that brings 作品 the lineup didn't have
-  const longer = useMemo(
-    () =>
-      from && list && more.titles && more.titles.length > from.lineup.length
-        ? { lineup: lineupOf(more.titles), list: { ...list, pages: list.pages + 1 } }
-        : undefined,
-    [from, list, more.titles],
-  )
+  // ponytail: a next page that brings none (a 媒体库's 60 with no TMDB entry, or copies of 作品 already in it) ends
+  // the list there, and it goes round; ask on page by page while `more` says so if 媒体库 like that turn up.
+  const longer = useMemo(() => {
+    const lineup = items.lineup ?? (titles.titles && lineupOf(titles.titles))
+    return from && list && lineup && lineup.length > from.lineup.length
+      ? { lineup, list: { ...list, pages: list.pages + 1 } }
+      : undefined
+  }, [from, list, titles.titles, items.lineup])
   const all = longer ?? from
   // found again in the longer list, whose first pages, fetched afresh, may have shifted
   const i = all ? indexIn(all.lineup) : -1
   if (!all || i < 0 || all.lineup.length < 2) return
   // while the next page is on its way, there's no next yet, rather than a step back round to the first (if it fails,
   // the list goes round)
-  const waiting = more.loading && !more.error
+  const waiting = (titles.loading && !titles.error) || (items.loading && !items.error)
   return { from: all, prev: all.lineup.at(i - 1)!, next: waiting ? undefined : all.lineup[(i + 1) % all.lineup.length] }
 }
 

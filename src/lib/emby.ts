@@ -109,8 +109,9 @@ export function removeServer(s: Server) {
 
 // How a server's tile shows it: `checking` while it's asked (a grey light), `online`, `offline` when nothing Emby
 // answers, `signedOut` when the server turned a kept token down (revoked, or the user is gone); and for an add that
-// failed, `signIn` when the server turned the sign-in down, `insecure` when an https page (the web version on GitHub
-// Pages) can't call an http server.
+// failed, `signIn` when the server turned the sign-in down, `insecure` when no https address answered as Emby (or none
+// was typed) and an https page (the web version on GitHub Pages) can't try http, so an http-only server can't be told
+// from one that's off.
 export type Status = 'checking' | 'online' | 'offline' | 'signedOut' | 'signIn' | 'insecure'
 
 // A Status in words, beside its light for anyone who can't tell red from green, and for screen readers.
@@ -121,7 +122,7 @@ export const statusText = (status: Status, t: Translate) =>
     offline: t('连不上', 'Unreachable'),
     signedOut: t('登录已失效', 'Signed out'),
     signIn: t('登录没成功', "Couldn't sign in"),
-    insecure: t('网页版只能连 https', 'The web version needs https'),
+    insecure: t('连不上，网页版只能连 https', "Unreachable, and the web version can't try http"),
   })[status]
 
 // The adds under way, shown at once as tiles of their own: one that signs in turns into its server, one that fails stays
@@ -168,6 +169,10 @@ export function addServer(typed: string, username: string, password: string, nic
     .catch(() => fail('offline'))
 }
 
+// Where a probe landed after any redirect: the address its /System/Info/Public sits under, with a slash or a query
+// after it or not; none when the redirect took it elsewhere.
+export const landedAt = (url: string | undefined) => url?.match(/^([^?#]*)\/System\/Info\/Public\/?(?:[?#].*)?$/i)?.[1]
+
 // Finds where the server answers, then signs in there: the server to keep, or why not. The https addresses race each
 // other, and the http ones only once none of those answers in 2 s, so the password goes in the clear only to a server
 // whose https is that slow or missing. A home server's IP mostly turns https down at once; the short wait is for a
@@ -177,7 +182,7 @@ async function signIn(addresses: string[], username: string, password: string): 
   const probe = (timeout: number) => (address: string) =>
     axios.get(`${address}/System/Info/Public`, { timeout }).then(({ data, request }) => {
       if (!data?.Id) throw new Error('not an Emby server')
-      const landed = (request as XMLHttpRequest).responseURL?.replace(/\/System\/Info\/Public$/i, '')
+      const landed = landedAt((request as XMLHttpRequest).responseURL)
       return { address: landed || address, info: data as { Id: string; ServerName: string } }
     })
   const race = (scheme: string, timeout: number) =>
@@ -340,11 +345,11 @@ const pageSize = 60
 const maxPages = 500
 
 // The first `pages` pages of a 媒体库's 作品, newest added first, as one list; like useTitles, with `total`, the
-// 作品 the 媒体库 has, and their `lineup`. Without a `library` it asks for nothing.
-export function useItems(s: Server, library: string | undefined, pages: number) {
+// 作品 the 媒体库 has, and their `lineup`. Without a server or a `library` it asks for nothing.
+export function useItems(s: Server | undefined, library: string | undefined, pages: number) {
   const t = useT()
   const pageOf = (i: number) =>
-    `${keyOf(s)}Items?${new URLSearchParams({
+    `${keyOf(s!)}Items?${new URLSearchParams({
       ParentId: library!,
       Recursive: 'true',
       IncludeItemTypes: 'Movie,Series',
@@ -360,11 +365,11 @@ export function useItems(s: Server, library: string | undefined, pages: number) 
       // only the first page's count is read, and counting a large 媒体库 is work for the server
       EnableTotalRecordCount: `${i === 0}`,
     })}`
-  const urls = library ? Array.from({ length: Math.min(pages, maxPages) }, (_, i) => pageOf(i)) : []
-  const get = useMemo(() => getAs(s.token), [s.token])
+  const urls = s && library ? Array.from({ length: Math.min(pages, maxPages) }, (_, i) => pageOf(i)) : []
+  const get = useMemo(() => getAs(s?.token ?? ''), [s?.token])
   const { data, failed, retry } = useAnswers<{ Items: Listed[]; TotalRecordCount: number }>(urls, get)
   const arrived = useMemo(() => arrivedOf(data), [data])
-  const items = useMemo(() => (arrived.length ? itemsOf(s, arrived.flatMap((p) => p.Items)) : undefined), [s, arrived])
+  const items = useMemo(() => (s && arrived.length ? itemsOf(s, arrived.flatMap((p) => p.Items)) : undefined), [s, arrived])
   const lineup = useMemo(() => items && lineupOfItems(items), [items])
   const total = arrived[0]?.TotalRecordCount
   return {
@@ -372,8 +377,19 @@ export function useItems(s: Server, library: string | undefined, pages: number) 
     total,
     lineup,
     loading: arrived.length < urls.length,
-    more: total !== undefined && urls.length * pageSize < total,
+    // none past the cap, where one page more would ask for nothing new
+    more: total !== undefined && urls.length < maxPages && urls.length * pageSize < total,
     error: failed && errorText(failed.error, t),
     retry,
   }
+}
+
+// A 媒体库 as a 作品 page opened from it knows it: its server, user and id, and the pages its grid showed.
+export type Shelf = { server: string; user: string; library: string; pages: number }
+
+// The 媒体库's lineup with one page more than its grid showed, for 下一部 past the last card loaded there. Without a
+// `shelf`, or with its server removed meanwhile, it asks for nothing.
+export function useLineupAfter(shelf: Shelf | undefined) {
+  const s = useServers().find((x) => x.id === shelf?.server && x.userId === shelf?.user)
+  return useItems(s, shelf?.library, (shelf?.pages ?? 0) + 1)
 }

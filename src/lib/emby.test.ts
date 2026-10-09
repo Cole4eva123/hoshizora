@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { candidatesOf, itemsOf, librariesOf, lineupOfItems } from '@/lib/emby'
+import { candidatesOf, itemsOf, landedAt, librariesOf, lineupOfItems } from '@/lib/emby'
 
 test("candidatesOf tries https before http, on the port typed or else Emby's and the default", () => {
   expect(candidatesOf('192.168.1.5')).toEqual([
@@ -71,4 +71,15 @@ test('lineupOfItems steps through the 作品 with a TMDB entry, each once howeve
     { media_type: 'movie', id: 2, title: 'X' },
     { media_type: 'movie', id: 3, title: 'B' },
   ])
+})
+
+test('landedAt keeps the address a redirect landed at, whatever a proxy adds after the path', () => {
+  expect(landedAt('https://nas.local/emby/System/Info/Public')).toBe('https://nas.local/emby')
+  expect(landedAt('https://nas.local/emby/System/Info/Public/')).toBe('https://nas.local/emby')
+  expect(landedAt('https://nas.local:8920/emby/system/info/public?x=1')).toBe('https://nas.local:8920/emby')
+  // taken elsewhere, as to a login page, or not read: the address asked is kept
+  expect(landedAt('https://nas.local/login?next=/emby/System/Info/Public/x')).toBeUndefined()
+  expect(landedAt('https://nas.local/login?next=/emby/System/Info/Public')).toBeUndefined()
+  expect(landedAt('')).toBeUndefined()
+  expect(landedAt(undefined)).toBeUndefined()
 })

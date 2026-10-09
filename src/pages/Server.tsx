@@ -31,15 +31,18 @@ export default function ServerPage() {
 
 // The server's 媒体库 as its own covers, and under them the 作品 of the one picked (?lib=, else the first), newest
 // added first. A card opens the 作品's page when the server knows its TMDB entry, and the 上一部/下一部 there step
-// through the cards shown.
+// through the cards shown and on through the 媒体库.
 function Browse({ server }: { server: Server }) {
   const t = useT()
   const [params, setParams] = useSearchParams()
   const { libraries, error, retry } = useLibraries(server)
   const status = useStatus(server)
   const library = libraries?.find((l) => l.id === params.get('lib')) ?? libraries?.[0]
-  const { items, total, lineup, ...list } = useItems(server, library?.id, usePages())
-  const from = lineup && { lineup }
+  const pages = usePages()
+  const { items, total, lineup, ...list } = useItems(server, library?.id, pages)
+  // a card carries its 媒体库 along with the lineup, so 下一部 past the last card loaded goes on into the next page
+  const shelf = library && { server: server.id, user: server.userId, library: library.id, pages }
+  const from = lineup && { lineup, list: shelf }
   // The covers start at the one picked when the 媒体库 come in, which, back from a 作品 or opened from a link, may sit
   // past the screen's edge. Only then: a cover picked later is in view already.
   const [start, setStart] = useState<number>()
