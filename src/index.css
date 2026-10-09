@@ -47,7 +47,8 @@
 /* Dark only, in the logo's palette: its midnight sky behind everything, starlight as the one accent. */
 :root {
   color-scheme: dark;
-  /* sampled from 午夜星辰播放三角.png: the sky, the starlight, the glow around the stars */
+  /* sampled from 午夜星辰播放三角.png: the sky, the starlight, the glow around the stars. --night is copied, as
+     neither can read it, into index.html's theme-color and the app window's backgroundColor (src-tauri/tauri.conf.json) */
   --night: #020a20;
   --star: #9ec7e7;
   --glow: #5191cb;
