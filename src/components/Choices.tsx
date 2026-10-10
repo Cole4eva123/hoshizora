@@ -72,7 +72,7 @@ export function Choices<K extends string | number>({
   )
 }
 
-// A menu at the end of a Choices row, for the options past those the row shows (older seasons, more 字幕): one more
+// A menu at the end of a Choices row, for the options past those the row shows (older seasons): one more
 // quiet word, `placeholder`, until one in it is picked, which it then shows, starred like a picked word. The star and
 // the focus ring go on its wrapper, as a select draws no ::after.
 export function ChoiceMenu<K extends string | number>({

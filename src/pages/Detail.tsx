@@ -1,4 +1,4 @@
-import { Fragment, useId, useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { Link, useLocation, useParams, useViewTransitionState } from 'react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { ChoiceMenu, Choices } from '@/components/Choices'
@@ -52,11 +52,41 @@ export default function Detail({ type }: { type: MediaType }) {
       </Page>
     )
   if (!m) return <BackButton /> // the way back is there before the title arrives
+  // keyed by the title, so another one starts over: its wall at the first slide, its 片源 and 选集 its own
+  return <TitlePage key={`${type}/${id}`} m={m} backdrops={backdrops} neighbors={neighbors} preferred={preferred} />
+}
 
+// A 作品's page once its details are in: the 画报墙, where to watch it under its overview (the app only), then a
+// series' 选集, which show which episodes the picked 片源 has, and the cast.
+function TitlePage({
+  m,
+  backdrops,
+  neighbors,
+  preferred,
+}: {
+  m: Details
+  backdrops: string[]
+  neighbors: ReturnType<typeof useNeighbors>
+  preferred?: Partial<Picked>
+}) {
+  const t = useT()
+  // The 片源 wanted: the one picked here, or the copy the 作品 was opened from on a 服务器's page (a step from it names
+  // the server only). Short of it, that server's first copy, a series' with episodes coming first; with no such server
+  // kept, the first kept server's. Only the very copy wanted is read at once (`eager`); the others wait for intent.
+  // ponytail: the first kept server even when only another has the 作品, which then has to be picked; take the first
+  // that has it if more than one server turns out common.
+  const [wanted, setWanted] = useState(preferred)
+  const servers = useServers()
+  const kept = servers.find((s) => s.id === wanted?.server && s.userId === wanted.user)
+  const on = kept ?? servers[0]
+  const found = useSources(on, m).sources
+  // by its server too, as two servers may number their items alike
+  const copy = kept && found?.find((x) => x.item === wanted?.item)
+  const item = (copy ?? found?.[0])?.item
+  const picked = on && item ? { server: on.id, user: on.userId, item } : undefined
   const facts = [...m.genres.slice(0, 3).map((g) => g.name), m.runtime ? t(`${m.runtime} 分钟`, `${m.runtime} min`) : '']
   return (
-    // keyed by the title, so another one starts over: its wall at the first slide, its 选集 at its own season
-    <Fragment key={`${type}/${id}`}>
+    <>
       <PosterWall
         label={t('剧照', 'Stills')}
         backdrops={backdrops}
@@ -65,16 +95,17 @@ export default function Detail({ type }: { type: MediaType }) {
             <p className="mt-4 max-w-xl text-[15px] leading-7 text-foreground/80">
               {m.overview || t('TMDB 上还没有这部作品的中文简介。', 'TMDB has no English overview of this title yet.')}
             </p>
+            {canConnect && <Sources m={m} on={on} picked={picked} onPick={setWanted} eager={!!copy} />}
             {neighbors && <Neighbors {...neighbors} />}
           </TitleInfo>
         )}
       />
       <BackButton />
-      <div className="space-y-12 pt-6 pb-(--page-bottom) md:space-y-14">
-        <Watch m={m} preferred={preferred} />
+      <div className="space-y-12 pb-(--page-bottom) md:space-y-14">
+        {!!m.seasons?.length && <Episodes tv={m} on={on && picked && { s: on, series: picked.item }} />}
         <Cast cast={m.credits.cast} />
       </div>
-    </Fragment>
+    </>
   )
 }
 
@@ -85,24 +116,6 @@ const stepping = (from: From) => ({ state: { ...from, item: undefined }, replace
 // that server's first.
 const preferredOf = (from: From | null): Partial<Picked> | undefined =>
   from?.list && 'library' in from.list ? { server: from.list.server, user: from.list.user, item: from.item } : undefined
-
-// Where to watch it: its 片源 on the kept 服务器 (the app only), and a series' 选集, showing which episodes the picked
-// 片源 has. Inside the page's keyed fragment, so another 作品 starts over on its own pick.
-function Watch({ m, preferred }: { m: Details; preferred?: Partial<Picked> }) {
-  const [wanted, setWanted] = useState(preferred)
-  const on = useServers().find((s) => s.id === wanted?.server && s.userId === wanted?.user)
-  // the copy wanted, once that server's 片源 are in; with none named, or one it doesn't find (a 媒体库's card for a copy
-  // it doesn't count), its first, a series' with episodes coming first
-  const found = useSources(on, m).sources
-  const item = (found?.find((x) => x.item === wanted?.item) ?? found?.[0])?.item
-  const picked = on && item ? { server: on.id, user: on.userId, item } : undefined
-  return (
-    <>
-      {canConnect && <Sources m={m} on={on} picked={picked} onPick={setWanted} />}
-      {!!m.seasons?.length && <Episodes tv={m} on={on && picked && { s: on, series: picked.item }} />}
-    </>
-  )
-}
 
 // The 作品 before and after this one in the list it was opened from (a 分类, a search, a home row or the wall, an
 // actor's 作品, a 服务器's 媒体库). Past the last one loaded from a list that pages on, the next page is asked for and the
@@ -181,7 +194,7 @@ function Neighbor({ to, from, side }: { to: Lineup[number]; from: From; side: 'p
 }
 
 // A series' 选集. With a 片源 picked (`on`), each episode says whether it's there, and one that is can be picked, its
-// 清晰度, 音轨 and 字幕 showing under the row; pointing at it has the server read its file ahead.
+// 播放, 版本, 音频 and 字幕 showing under the row; pointing at it has the server read its file ahead.
 function Episodes({ tv, on }: { tv: Details; on?: { s: Server; series: string } }) {
   const t = useT()
   const seasons = tv.seasons!
@@ -265,13 +278,10 @@ function Episodes({ tv, on }: { tv: Details; on?: { s: Server; series: string } 
             ))}
       </Row>
       {on && picked && (
-        <Tracks
-          key={watching}
-          s={on.s}
-          item={picked.item}
-          given={picked.versions}
-          title={episodesOf(picked, t)}
-        />
+        <div className="mt-6 px-(--gutter)">
+          <p className="mb-3 text-sm text-muted-foreground">{episodesOf(picked, t)}</p>
+          <Tracks s={on.s} item={picked.item} given={picked.versions} eager />
+        </div>
       )}
     </div>
   )
@@ -284,7 +294,7 @@ const episodesOf = ({ season, episode, last }: EpisodeSource, t: Translate) => {
 }
 
 // An episode as TMDB has it. On the picked 片源 (`there`), its title is a radio's label, whose box covers the card, so
-// the card takes the click and the radio its name, lit like a 片源 when picked; one not found on the 片源 by its
+// the card takes the click and the radio its name, lit when picked; one not found on the 片源 by its
 // numbers (`missing`) is dimmed, and says so. The card's element stays the same as the 片源's episodes come in, so
 // the row isn't drawn afresh (its stills fading in again).
 // ponytail: matched by season and episode number, as the user's server has few episodes' TMDB ids; one numbered

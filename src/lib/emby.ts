@@ -356,7 +356,8 @@ export function useLineupAfter(shelf: Shelf | undefined) {
 }
 
 // Where a 作品 can be played on a 服务器 (emby-core's sources): its 片源 there, the versions of each, and each version's
-// 音轨 and 字幕 by their index in the file. A version the server hasn't read yet (a .strm) has no `video` and no tracks.
+// 音轨 and 字幕 by their index in the file. A version the server hasn't read yet (a .strm) has no `video`, `bitrate` or
+// tracks. `file` is its file's name, as on the server's disk or in a .strm's link (URI-encoded there).
 export type Track = {
   index: number
   language?: string
@@ -369,7 +370,8 @@ export type Track = {
 export type Version = {
   id: string
   name: string
-  size?: number
+  file?: string
+  bitrate?: number
   video?: { width: number; height: number; range?: string }
   audio: Track[]
   subtitles: Track[]
@@ -423,23 +425,25 @@ export const readAheadOn = (s: Server, item: string, versions: Version[]) => ({
   onBlur: stop('focus'),
 })
 
-// A 片源's or an episode's versions, with their tracks: read by the server if it hasn't yet, `reading` meanwhile, and
-// `error` when it couldn't be, as when the server is down; one the server can't read stays as it was, without tracks.
-export function useVersions(s: Server, item: string, versions: Version[]) {
+// A 片源's or an episode's versions, with their tracks: read by the server if it hasn't yet and they're `wanted`,
+// `reading` meanwhile, and `error` when it couldn't be, as when the server is down; one the server can't read stays as it
+// was, without tracks. Without an item it asks for nothing.
+export function useVersions(s: Server | undefined, item: string | undefined, versions: Version[], wanted: boolean) {
   const t = useT()
-  // asked once the pick has rested, its hook mounted that long (it's keyed by the pick); read ahead already, at once
-  const [rested, setRested] = useState(false)
+  const key = s && item ? versionsKey(s, item) : ''
+  // asked once the item has rested 400 ms, as arrow keys pick each radio they pass; read ahead already, at once
+  const [rested, setRested] = useState<string>()
   useEffect(() => {
-    const id = setTimeout(() => setRested(true), rest)
+    const id = setTimeout(() => setRested(key), rest)
     return () => clearTimeout(id)
-  }, [])
-  const key = versionsKey(s, item)
-  const keys = unread(versions) && (rested || has(key)) ? [key] : []
+  }, [key])
+  const keys = key && unread(versions) && ((wanted && rested === key) || has(key)) ? [key] : []
   const { data, failed, retry } = useAnswers<Version[]>(keys, askVersions)
   const read = data[0]
   return {
     versions: read?.length ? read : versions,
-    reading: unread(versions) && !read && !failed,
+    // from the moment they're wanted, through the rest before asking
+    reading: !!key && unread(versions) && (wanted || keys.length > 0) && !read && !failed,
     error: failed && errorText(failed.error, t),
     retry,
   }

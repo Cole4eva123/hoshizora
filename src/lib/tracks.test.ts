@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import type { Track, Version } from '@/lib/emby'
 import { en, zh } from '@/lib/i18n'
-import { audioLabel, picksOf, qualityOf, subtitleLabel, subtitlesOf } from '@/lib/tracks'
+import { asideOf, audioLabel, picksOf, releaseNameOf, specOf, subtitleLabel, subtitlesOf } from '@/lib/tracks'
 
 // Versions as the user's server has them (2026-10-09): X加Y, a 4K file read long ago; 春江水暖, a .strm read once; and
 // a .strm it hasn't read, known only by its name.
@@ -33,20 +33,41 @@ const spring: Version = {
 }
 const strm = (name: string): Version => ({ id: 'u', name, audio: [], subtitles: [] })
 
-test('qualityOf names a version by the size of its picture, or else as its name says', () => {
-  expect(qualityOf(xy)).toBe('4K HDR10')
-  expect(qualityOf(spring)).toBe('1080p')
-  // a 4:3 or anamorphic 1080p, and a 4K wider than tall by 3:2
-  expect(qualityOf({ ...spring, video: { width: 1440, height: 1080 } })).toBe('1080p')
-  expect(qualityOf({ ...spring, video: { width: 3780, height: 2520 } })).toBe('4K')
-  expect(qualityOf({ ...spring, video: { width: 2560, height: 1440 } })).toBe('1440p')
-  // read without its size: as its name says
-  expect(qualityOf({ ...strm('2160p - WEB-DL'), video: { width: 0, height: 0 } })).toBe('4K')
-  expect(qualityOf(strm('2160p - WEB-DL HQ'))).toBe('4K')
-  expect(qualityOf(strm('4k'))).toBe('4K')
-  expect(qualityOf(strm('Bleach.2004.S01E010.1080P.AI'))).toBe('1080p')
-  expect(qualityOf(strm('春江水暖'))).toBeUndefined()
-  expect(qualityOf(strm('DVDRip'))).toBeUndefined()
+test('releaseNameOf names a version by its file from the 清晰度 on, as a release names itself', () => {
+  // files on the user's server (2026-10-10): a release, one named by a media manager, and .strm links
+  const named = (file: string) => releaseNameOf({ ...strm('2160p - WEB-DL'), file })
+  expect(named('Crisis.Negotiators.2024.2160p.WEB-DL.H265.HDR.DDP5.1.2Audio-DreamHD.mkv')).toBe(
+    '2160p.WEB-DL.H265.HDR.DDP5.1.2Audio-DreamHD',
+  )
+  expect(named('一路超平安 (2026) [tmdb-1761059] - 2160p - WEB-DL HDR10 HQ.mp4')).toBe('2160p - WEB-DL HDR10 HQ')
+  expect(named('%E6%83%8A%E5%A4%A9%E8%90%A5%E6%95%91%20%282020%29%20-%202160p.mkv')).toBe('2160p')
+  // no 清晰度 in it or the server's name: the whole name; a % of its own; no file known: the server's name
+  expect(releaseNameOf({ ...strm('朋友'), file: '%E3%80%90540%E3%80%91%E6%9C%8B%E5%8F%8B.1974.mkv' })).toBe('【540】朋友.1974')
+  // a link's last part that's an id, where the server's name says the 清晰度
+  expect(named('9f8a7b6c')).toBe('2160p - WEB-DL')
+  expect(named('Movie.100%.Pure.4K.HDR.mkv')).toBe('4K.HDR')
+  expect(releaseNameOf(strm('2160p - WEB-DL'))).toBe('2160p - WEB-DL')
+})
+
+test('specOf says what a version plays at: bitrate, height and range', () => {
+  const at = (bitrate: number, height: number, range?: string) =>
+    specOf({ ...strm(''), bitrate, video: { width: 3840, height, range } })
+  expect(at(14.9e6, 1920, 'SDR')).toBe('14.9mbps 1920P SDR')
+  expect(at(16_111_679, 1604, 'HDR 10')).toBe('16.1mbps 1604P HDR10')
+  expect(at(14_426_506, 1608, 'DolbyVision')).toBe('14.4mbps 1608P DV')
+  expect(specOf(spring)).toBe('1080P SDR')
+  expect(specOf(strm('2160p'))).toBe('')
+})
+
+test("asideOf keeps what a 字幕's title adds to its name, and drops what it repeats", () => {
+  const aside = (more: Partial<Track>) => asideOf(track(2, more), zh)
+  expect(aside({ language: 'spa', title: 'European' })).toBe('European')
+  expect(aside({ language: 'por', title: 'Brazilian' })).toBe('Brazilian')
+  expect(aside({ language: 'chi', title: 'Simplified' })).toBeUndefined()
+  expect(aside({ language: 'chi', title: 'Big5' })).toBeUndefined()
+  expect(aside({ language: 'eng', title: 'English' })).toBeUndefined()
+  expect(aside({ language: 'pt-BR', title: 'Brazilian Portuguese' })).toBeUndefined()
+  expect(xy.subtitles.map((s) => asideOf(s, zh))).toEqual([undefined, undefined, undefined, undefined])
 })
 
 test('tracks are named in the language shown, 简体 and 繁体中文 told apart by their titles', () => {

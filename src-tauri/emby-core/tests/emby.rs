@@ -147,7 +147,8 @@ async fn items(State(seen): State<Shared>, headers: HeaderMap, Query(q): Query<H
 
 // A version the server has read: a 4K file with two 音轨 and two 字幕, and a cover picture, which isn't a track.
 fn read_version() -> Value {
-    json!({ "Id": "v1", "Name": "2160p - BluRay", "Size": 21_800_000_000u64, "MediaStreams": [
+    json!({ "Id": "v1", "Name": "2160p - BluRay", "Size": 21_800_000_000u64, "Bitrate": 30_481_253,
+        "Path": "/mnt/movies/X加Y #1 (2014)/X+Y.2014.2160p.BluRay.x265.10bit.DTS-HD.MA.7.1-SWTYBLZ.mkv", "MediaStreams": [
         { "Type": "Video", "Index": 0, "Codec": "hevc", "Width": 3840, "Height": 1600, "VideoRange": "HDR 10" },
         { "Type": "Audio", "Index": 1, "Codec": "dts", "Language": "eng", "Channels": 8, "IsDefault": true },
         { "Type": "Audio", "Index": 2, "Codec": "ac3", "Language": "eng", "Title": "Commentary", "Channels": 2 },
@@ -158,9 +159,10 @@ fn read_version() -> Value {
     ]})
 }
 
-// A .strm the server hasn't read: nothing known of it but its name, its size 0.
+// A .strm the server hasn't read: nothing known of it but its name and its link.
 fn unread_version() -> Value {
-    json!({ "Id": "v2", "Name": "1080p - BluRay", "Size": 0, "MediaStreams": [] })
+    json!({ "Id": "v2", "Name": "1080p - BluRay", "Size": 0, "MediaStreams": [],
+        "Path": "https://drive.example/d/%E6%98%A5%E6%B1%9F.1080p.BluRay.mkv?sign=secret#t=0" })
 }
 
 // A season of a series' 片源, as Emby numbers it.
@@ -209,7 +211,8 @@ async fn playback_info(
     let is = |k: &str, v: &str| q.get(k).map(String::as_str) == Some(v);
     let read = is("IsPlayback", "true") && is("AutoOpenLiveStream", "false") && is("UserId", "u1");
     let version = if read {
-        json!({ "Id": "v2", "Name": "1080p - BluRay", "MediaStreams": [
+        json!({ "Id": "v2", "Name": "1080p - BluRay", "Bitrate": 5_382_534,
+            "Path": "D:\\Movies\\Dwelling.in.the.Fuchun.Mountains.2019.1080p.mkv", "MediaStreams": [
             { "Type": "Video", "Index": 0, "Codec": "hevc", "Width": 1920, "Height": 1080, "VideoRange": "SDR" },
             { "Type": "Audio", "Index": 1, "Codec": "ac3", "Channels": 6, "IsDefault": true },
             { "Type": "Subtitle", "Index": 2, "Codec": "PGSSUB", "Language": "chi", "Title": "chs", "IsDefault": true },
@@ -654,7 +657,8 @@ async fn a_movies_sources_are_found_by_its_tmdb_entry_with_their_versions_and_tr
             versions: vec![Version {
                 id: "v1".into(),
                 name: "2160p - BluRay".into(),
-                size: Some(21_800_000_000),
+                file: Some("X+Y.2014.2160p.BluRay.x265.10bit.DTS-HD.MA.7.1-SWTYBLZ.mkv".into()),
+                bitrate: Some(30_481_253),
                 video: Some(Video { width: 3840, height: 1600, range: Some("HDR 10".into()) }),
                 audio: vec![
                     track(1, "dts", Some("eng"), None, Some(8), (true, false)),
@@ -672,9 +676,10 @@ async fn a_movies_sources_are_found_by_its_tmdb_entry_with_their_versions_and_tr
     assert_eq!(asked, ["Tmdb.278236", "Movie", "true"]);
     assert_eq!(emby.sources("srv", "u1", "movie", 1).await.unwrap(), []);
     assert_eq!(emby.sources("srv", "u1", "movie", 7).await.unwrap(), []);
-    // a .strm the server hasn't read: no picture, no tracks, and its size 0 is no size
+    // a .strm the server hasn't read: no picture, bitrate or tracks; its link's name without the drive's signature
     let unread = &emby.sources("srv", "u1", "movie", 596881).await.unwrap()[0].versions[0];
-    assert_eq!((unread.size, &unread.video, unread.audio.len()), (None, &None, 0));
+    assert_eq!((unread.bitrate, &unread.video, unread.audio.len()), (None, &None, 0));
+    assert_eq!(unread.file.as_deref(), Some("%E6%98%A5%E6%B1%9F.1080p.BluRay.mkv"));
     assert_eq!(emby.sources("gone", "u1", "movie", 278236).await, Err(Error::NoServer));
 }
 
@@ -702,6 +707,9 @@ async fn versions_have_the_server_read_a_file_it_has_not_yet() {
     emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
     let read = emby.versions("srv", "u1", "m2").await.unwrap();
     assert_eq!(read[0].video.as_ref().map(|v| v.height), Some(1080));
+    // read, it has its bitrate; on a Windows server, its file's name after the last backslash
+    assert_eq!(read[0].bitrate, Some(5_382_534));
+    assert_eq!(read[0].file.as_deref(), Some("Dwelling.in.the.Fuchun.Mountains.2019.1080p.mkv"));
     assert_eq!(read[0].audio, [track(1, "ac3", None, None, Some(6), (true, false))]);
     assert_eq!(read[0].subtitles[0].title.as_deref(), Some("chs"));
     assert_eq!(emby.versions("srv", "u1", "Items/x").await.unwrap(), []);

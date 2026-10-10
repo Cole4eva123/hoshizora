@@ -4,6 +4,7 @@
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 use crate::browse::{Ids, Listing};
 use crate::{BROWSE, Emby, Error};
@@ -34,14 +35,18 @@ pub struct Episode {
     pub versions: Vec<Version>,
 }
 
-/// A version of a 片源, one file: its picture, and its 音轨 and 字幕, once the server has read it. One it hasn't read
-/// yet (a .strm) has neither picture nor tracks, till `versions` has it read; its `name` often says its 清晰度 anyway.
+/// A version of a 片源, one file: its name (as a release names itself, the 作品's name, 清晰度, source and group),
+/// its picture, bitrate, and its 音轨 and 字幕, once the server has read it. One it hasn't read yet (a .strm) has
+/// neither picture nor bitrate nor tracks, till `versions` has it read; its `name` and `file` often say its 清晰度 anyway.
 #[derive(Debug, PartialEq, Serialize)]
 pub struct Version {
     pub id: String,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub size: Option<u64>,
+    pub file: Option<String>,
+    /// bits a second
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bitrate: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub video: Option<Video>,
     pub audio: Vec<Track>,
@@ -111,7 +116,8 @@ struct MediaSource {
     id: String,
     #[serde(default)]
     name: String,
-    size: Option<u64>,
+    path: Option<String>,
+    bitrate: Option<u64>,
     #[serde(default)]
     media_streams: Vec<Stream>,
 }
@@ -243,8 +249,29 @@ fn version(m: MediaSource) -> Version {
             _ => {}
         }
     }
-    Version { id: m.id, name: m.name, size: m.size.filter(|&n| n > 0), video, audio, subtitles }
+    Version {
+        id: m.id,
+        name: m.name,
+        file: m.path.as_deref().and_then(file_name),
+        bitrate: m.bitrate.filter(|&n| n > 0),
+        video,
+        audio,
+        subtitles,
+    }
 }
+
+// The last part of a file's path, on the server's disk (either slash, and ? and # are a name's own there) or in a
+// .strm's link, which keeps it URI-encoded; of a link, only its path: never its host, nor its query, which may carry
+// the cloud drive's signature.
+fn file_name(path: &str) -> Option<String> {
+    let name = if path.contains("://") {
+        Url::parse(path).ok()?.path_segments()?.next_back()?.to_owned()
+    } else {
+        path.rsplit(['/', '\\']).next()?.to_owned()
+    };
+    Some(name).filter(|name| !name.is_empty())
+}
+
 
 fn track(s: Stream) -> Track {
     Track {
@@ -255,5 +282,21 @@ fn track(s: Stream) -> Track {
         channels: s.channels,
         default: s.is_default,
         forced: s.is_forced,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_files_name_is_its_paths_last_part_and_a_links_only_from_its_path() {
+        assert_eq!(file_name("/mnt/movies/Movie #9 (2015)/Movie #9 - 1080p.mkv").as_deref(), Some("Movie #9 - 1080p.mkv"));
+        assert_eq!(file_name("D:\\Movies\\X.2019.1080p.mkv").as_deref(), Some("X.2019.1080p.mkv"));
+        assert_eq!(file_name("https://drive/d/a/X.2160p.mkv?sign=s#t=0").as_deref(), Some("X.2160p.mkv"));
+        // a link with no path, or none before its query, names no file
+        assert_eq!(file_name("http://192.168.1.5:5244"), None);
+        assert_eq!(file_name("http://192.168.1.5:5244?path=/X.2160p.mkv"), None);
+        assert_eq!(file_name("https://drive/d/"), None);
     }
 }

@@ -4,24 +4,35 @@ import type { Translate } from '@/lib/i18n'
 // What a 片源's versions and tracks are called on the page, and which a version starts on: rules of naming, apart
 // from asking Emby (emby.ts), as they change with the words the page uses.
 
-// 4K, 1440p, 1080p, 720p by the size of the picture (a 4K film may be 1600 high); for a version the server hasn't read,
-// or read without its size, as its name says it, the way servers name versions ("2160p - WEB-DL").
-const sizeOf = ({ video: p, name }: Version) => {
-  if (!p?.width && !p?.height)
-    return /\b(2160p|4k|uhd)\b/i.test(name) ? '4K' : name.match(/\b(1440|1080|720|576|480)p\b/i)?.[0].toLowerCase()
-  // either side, as a film may be wider than 16:9 and a 4:3 or anamorphic transfer narrower
-  if (p.width >= 3800 || p.height >= 2100) return '4K'
-  if (p.width >= 2500 || p.height >= 1400) return '1440p'
-  if (p.width >= 1900 || p.height >= 1060) return '1080p'
-  if (p.width >= 1260 || p.height >= 700) return '720p'
-  return p.height ? `${p.height}p` : undefined
+const quality = /\b(2160|1440|1080|720|576|480)[pi]\b|\b(4k|uhd)\b/i
+
+// A version by its release, as its file names it from the 清晰度 on (2160p.AMZN.WEB-DL.DDP5.1.H265-NTb), the 作品's
+// own name and year before it dropped. A file that names no 清晰度 goes by the server's name for the version when that
+// does (a link's last part may be an id), else by its whole name; one not known, by the server's name.
+// ponytail: decodes every name, as a .strm's link keeps it encoded; a name on disk with a %20 of its own shows decoded.
+// Have emby-core decode links only if one turns up.
+export function releaseNameOf({ file, name }: Version) {
+  if (!file) return name
+  let release = file.replace(/\.(mkv|mp4|m4v|avi|ts|m2ts|iso|mov|wmv|webm|flv|rmvb|strm)$/i, '')
+  try {
+    release = decodeURIComponent(release)
+  } catch {
+    // a name with a % of its own
+  }
+  const at = release.search(quality)
+  return at < 0 && quality.test(name) ? name : release.slice(Math.max(at, 0))
 }
 
-// A version's 清晰度: its size (sizeOf), and its range when that's more than SDR. None when neither says.
-export function qualityOf(v: Version) {
-  const range = v.video?.range && v.video.range !== 'SDR' ? v.video.range.replace('HDR ', 'HDR') : undefined
-  return [sizeOf(v), range].filter(Boolean).join(' ') || undefined
-}
+// What a version plays at, as a release lists it: its bitrate, its picture's height and its range (14.9mbps 1920P
+// SDR). Empty till the server has read it.
+export const specOf = ({ bitrate, video }: Version) =>
+  [
+    bitrate && `${(bitrate / 1e6).toFixed(1)}mbps`,
+    video?.height && `${video.height}P`,
+    video?.range && (/dolby\s*vision/i.test(video.range) ? 'DV' : video.range.replaceAll(' ', '')),
+  ]
+    .filter(Boolean)
+    .join(' ')
 
 // Languages named in the language shown. Emby names them by ISO 639-2, often by the older codes (chi, fre, ger),
 // which the app's WebKit names too, and a file may by a tag with its region or script (zh-CN, zh-Hans, en-US); two
@@ -85,6 +96,19 @@ export const subtitleLabel = (s: Track, t: Translate) =>
   ]
     .filter(Boolean)
     .join(' ')
+
+// What a 字幕's title in the file adds to its name (European, Brazilian), as two of one language may differ only there;
+// none when it says only what the name does: its language, 简繁, 强制, SDH or a commentary.
+export function asideOf(tr: Track, t: Translate) {
+  const title = tr.title?.trim()
+  if (!title || simplified(tr) || traditional(tr) || forced(tr) || notesOf(tr, t).some(Boolean)) return
+  const code = tr.language && base(tr.language)
+  // as the tag names it too (pt-BR, Brazilian Portuguese)
+  const names = code
+    ? [code, ...[code, tr.language!].flatMap((c) => [named(c, 'en'), named(c, 'zh')])]
+    : []
+  return names.some((n) => n?.toLowerCase() === title.toLowerCase()) ? undefined : title
+}
 
 // The 音轨 and 字幕 a version starts on, by index, -1 for none: the file's default 音轨, else its first; a whole 字幕 in
 // the language shown when the 音轨 isn't in it (简体 first among Chinese ones), else the file's default 字幕; and with
