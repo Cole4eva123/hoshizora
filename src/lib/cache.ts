@@ -48,7 +48,8 @@ const keysOf = (joined: string) => (joined ? joined.split('\n') : [])
 // The answers to several requests, in order, each undefined until it arrives, and never another request's answer.
 // The missing ones are asked of `get`, which is asked again for those still missing when it changes (keep it the same
 // between renders); `retry` asks again for the ones that failed. `failed` holds the error one of them failed with, as
-// `get` threw it.
+// `get` threw it, and `of` each key that failed with its error, so a list of several can tell one that failed from one
+// still on its way.
 export function useAnswers<T>(keys: string[], get: (key: string) => Promise<T>) {
   const joined = keys.join('\n')
   // which of these answers are in, like '1101'; it changes, and so re-renders, when one comes in
@@ -57,11 +58,14 @@ export function useAnswers<T>(keys: string[], get: (key: string) => Promise<T>) 
     () => keysOf(joined).map((k, i) => (settled[i] === '1' ? (answers.get(k) as T) : undefined)),
     [joined, settled],
   )
-  const [failed, setFailed] = useState<{ joined: string; error: unknown }>()
+  const [failed, setFailed] = useState<{ joined: string; error: unknown; of: Record<string, unknown> }>()
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     let live = true
-    for (const k of keysOf(joined)) ask(k, get).catch((error) => live && setFailed({ joined, error }))
+    for (const k of keysOf(joined))
+      ask(k, get).catch(
+        (error) => live && setFailed((f) => ({ joined, error, of: { ...(f?.joined === joined && f.of), [k]: error } })),
+      )
     return () => {
       live = false
       setFailed(undefined) // an error goes with its request: other requests, and a retry, start clean

@@ -10,6 +10,7 @@ import {
   type EpisodeSource,
   type Server,
   canConnect,
+  pickOf,
   readAheadOn,
   useEpisodes,
   useSources,
@@ -70,20 +71,13 @@ function TitlePage({
   preferred?: Partial<Picked>
 }) {
   const t = useT()
-  // The 片源 wanted: the one picked here, or the copy the 作品 was opened from on a 服务器's page (a step from it names
-  // the server only). Short of it, that server's first copy, a series' with episodes coming first; with no such server
-  // kept, the first kept server's. Only the very copy wanted is read at once (`eager`); the others wait for intent.
-  // ponytail: the first kept server even when only another has the 作品, which then has to be picked; take the first
-  // that has it if more than one server turns out common.
+  // The 片源 shown (pickOf). One found elsewhere than on the server wanted (none wanted, or that one without it, or
+  // down) makes its own server the wanted one, so the pick stays put as other servers answer, or one is asked again.
   const [wanted, setWanted] = useState(preferred)
-  const servers = useServers()
-  const kept = servers.find((s) => s.id === wanted?.server && s.userId === wanted.user)
-  const on = kept ?? servers[0]
-  const found = useSources(on, m).sources
-  // by its server too, as two servers may number their items alike
-  const copy = kept && found?.find((x) => x.item === wanted?.item)
-  const item = (copy ?? found?.[0])?.item
-  const picked = on && item ? { server: on.id, user: on.userId, item } : undefined
+  const { answers, found, searching, down, retry } = useSources(useServers(), m)
+  const { pick, exact } = pickOf(answers, wanted)
+  if (pick && (pick.s.id !== wanted?.server || pick.s.userId !== wanted.user))
+    setWanted({ server: pick.s.id, user: pick.s.userId })
   const facts = [...m.genres.slice(0, 3).map((g) => g.name), m.runtime ? t(`${m.runtime} 分钟`, `${m.runtime} min`) : '']
   return (
     <>
@@ -95,14 +89,25 @@ function TitlePage({
             <p className="mt-4 max-w-xl text-[15px] leading-7 text-foreground/80">
               {m.overview || t('TMDB 上还没有这部作品的中文简介。', 'TMDB has no English overview of this title yet.')}
             </p>
-            {canConnect && <Sources m={m} on={on} picked={picked} onPick={setWanted} eager={!!copy} />}
+            {canConnect && (
+              <Sources
+                m={m}
+                found={found}
+                pick={pick}
+                searching={searching}
+                down={down}
+                retry={retry}
+                onPick={setWanted}
+                eager={!!exact}
+              />
+            )}
             {neighbors && <Neighbors {...neighbors} />}
           </TitleInfo>
         )}
       />
       <BackButton />
       <div className="space-y-12 pb-(--page-bottom) md:space-y-14">
-        {!!m.seasons?.length && <Episodes tv={m} on={on && picked && { s: on, series: picked.item }} />}
+        {!!m.seasons?.length && <Episodes tv={m} on={pick ? { s: pick.s, series: pick.src.item } : undefined} />}
         <Cast cast={m.credits.cast} />
       </div>
     </>

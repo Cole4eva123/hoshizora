@@ -3,14 +3,15 @@ import { Link } from 'react-router'
 import { Constellation, ServerMark, type Star } from '@/components/Constellation'
 import { Failed } from '@/components/PosterRow'
 import {
+  type Answer,
   type Server,
+  type ServerSource,
   type Source,
   type Status,
   type Version,
   nameOf,
   readAheadOn,
   useServers,
-  useSources,
   useVersions,
 } from '@/lib/emby'
 import { useT } from '@/lib/i18n'
@@ -49,25 +50,32 @@ const anchored: Record<Kind, string> = {
   subtitle: '[position-anchor:--subtitle]',
 }
 
-// Where to watch a 作品, on the 画报墙 under its overview: its 片源 on every kept 服务器, as each answers, one of them
-// picked (on the server `on`); for a movie, 播放 and the picked one's 版本, 音频 and 字幕 too (a series' are its picked
-// episode's, under 选集). `eager` when the 片源 was picked, not merely the first found: its file is read at once then.
+// Where to watch a 作品, on the 画报墙 under its overview: its 片源 on the kept 服务器 (`found`, as each server answers;
+// `searching` while some haven't, and those `down` that couldn't be asked, each with why), one of them picked (`pick`);
+// for a movie, 播放 and the picked one's 版本, 音频 and 字幕 too (a series' are its picked episode's, under 选集). The
+// list shows only the servers that have the 作品. `eager` when the 片源 was picked, not merely the first found: its file
+// is read at once then.
 export function Sources({
   m,
-  on,
-  picked,
+  found,
+  pick,
+  searching,
+  down,
+  retry,
   onPick,
   eager,
 }: {
-  m: Pick<Media, 'media_type' | 'id'>
-  on?: Server
-  picked?: Picked
+  m: Pick<Media, 'media_type'>
+  found: ServerSource[]
+  pick?: ServerSource
+  searching: boolean
+  down: Answer[]
+  retry: () => void
   onPick: (p: Picked) => void
   eager: boolean
 }) {
   const t = useT()
   const servers = useServers()
-  const { sources, error } = useSources(on, m)
   const name = useId()
   if (!servers.length)
     return (
@@ -79,35 +87,55 @@ export function Sources({
         {t('，就能在这里找到片源。', ' to find sources here.')}
       </p>
     )
-  const src = sources?.find((x) => x.item === picked?.item)
+  // why there's none to pick, and what the list says besides its 片源
+  const none = searching
+    ? t('正在找片源', 'Looking for sources')
+    : down.length
+      ? t('没能找片源', "Couldn't look for sources")
+      : t('服务器上都没有这部作品', 'No server has this title')
+  // the picked one's server, or how the asking goes: grey while it does, red when a server couldn't be asked
+  const light: Status = pick || !(searching || down.length) ? 'online' : searching ? 'checking' : 'offline'
+  const note = 'py-1.5 pr-2.5 pl-6.5 text-[11px] leading-4 text-muted-foreground'
+  // where a server keeps the 作品 twice, in two 媒体库
+  const twice = ({ s, src }: ServerSource) => found.some((f) => f.s === s && f.src !== src)
   const list = (
     <Menu
       kind="source"
       label={t('片源', 'Source')}
-      icon={(className) => <ServerMark status={lightOf(sources, error)} className={className} />}
-      current={picked && on && nameOf(on)}
+      icon={(className) => <ServerMark status={light} className={className} />}
+      // and the copy's own name, where its server keeps the 作品 twice
+      current={pick && [nameOf(pick.s), twice(pick) && pick.src.name].filter(Boolean).join(' ')}
     >
-      {servers.map((s) => (
-        <Found key={`${s.id}/${s.userId}`} s={s} m={m} name={name} picked={picked} onPick={onPick} />
+      {found.map(({ s, src }) => (
+        <SourceOption
+          key={`${s.id}/${s.userId}/${src.item}`}
+          s={s}
+          src={src}
+          name={name}
+          picked={s === pick?.s && src === pick.src}
+          onPick={() => onPick({ server: s.id, user: s.userId, item: src.item })}
+          // its own name too, where a server keeps the 作品 twice
+          twice={twice({ s, src })}
+        />
+      ))}
+      {(searching || (!found.length && !down.length)) && (
+        <p role="status" className={note}>
+          {none}
+        </p>
+      )}
+      {down.map(({ s, error }) => (
+        <div key={`${s.id}/${s.userId}`} role="status" className={cn(note, 'relative')}>
+          <ServerMark status="offline" className="absolute top-1.5 left-1.5 size-4" />
+          <span className="text-[13px] leading-5 text-foreground/60">{nameOf(s)}</span>
+          <Failed error={error!} retry={retry} className="text-[11px]" />
+        </div>
       ))}
     </Menu>
   )
   return (
     <div className="pointer-events-auto mt-6">
       {m.media_type === 'movie' ? (
-        <Tracks
-          s={on}
-          item={src?.item}
-          given={src?.versions ?? []}
-          eager={eager}
-          why={
-            sources
-              ? t('这台服务器上没有，在片源里换一台', 'Not on this server: pick another under Source')
-              : error
-                ? t('没能找片源', "Couldn't look for sources")
-                : t('正在找片源', 'Looking for sources')
-          }
-        >
+        <Tracks s={pick?.s} item={pick?.src.item} given={pick?.src.versions ?? []} eager={eager} why={none}>
           {list}
         </Tracks>
       ) : (
@@ -117,73 +145,48 @@ export function Sources({
   )
 }
 
-// A server's light as it's asked for the 作品's 片源: on once it answers, off when it couldn't be asked.
-const lightOf = (sources: Source[] | undefined, error: string | undefined): Status =>
-  sources ? 'online' : error ? 'offline' : 'checking'
-
-// One server's 片源 of the 作品, an option each; or a line saying it's looking, has none, or couldn't be asked, its
-// light saying which. A movie's says what it plays at, or how many versions it has; a series' its seasons there, and
-// its name when the server keeps it twice. Resting on a movie's has the server read its file ahead (readAheadOn).
-// ponytail: an option says what the server first answered, so after a read it still lacks what it plays at, till the
-// next launch; have it peek at the read (versions/{item} in cache.ts) if that ever misleads.
-function Found({
+// A 片源 as an option, by its server: a movie's says what it plays at, or how many versions it has; a series' its
+// seasons there. Resting on a movie's has the server read its file ahead (readAheadOn).
+// ponytail: it says what the server first answered, so after a read it still lacks what it plays at, till the next
+// launch; have it peek at the read (versions/{item} in cache.ts) if that ever misleads.
+function SourceOption({
   s,
-  m,
+  src,
   name,
   picked,
   onPick,
+  twice,
 }: {
   s: Server
-  m: Pick<Media, 'media_type' | 'id'>
+  src: Source
   name: string
-  picked?: Picked
-  onPick: (p: Picked) => void
+  picked: boolean
+  onPick: () => void
+  twice: boolean
 }) {
   const t = useT()
-  const { sources, error, retry } = useSources(s, m)
-  if (!sources?.length)
-    return (
-      <div role="status" className="flex items-start gap-1.5 py-1.5 pr-2.5 pl-6.5 text-[13px] leading-5">
-        <ServerMark status={lightOf(sources, error)} className="mt-0.5 size-4" />
-        <div className="min-w-0 text-foreground/60">
-          {nameOf(s)}
-          <div className="text-[11px] leading-4 text-muted-foreground">
-            {sources ? (
-              t('没有这部作品', 'Not on this server')
-            ) : error ? (
-              <Failed error={error} retry={retry} className="text-[11px]" />
-            ) : (
-              t('正在找', 'Searching')
-            )}
-          </div>
-        </div>
-      </div>
-    )
-  return sources.map((src) => {
-    const series = src.seasons !== undefined
-    const v = src.versions[0]
-    return (
-      <Option
-        key={src.item}
-        name={name}
-        picked={picked?.server === s.id && picked.user === s.userId && picked.item === src.item}
-        onPick={() => onPick({ server: s.id, user: s.userId, item: src.item })}
-        intent={series ? undefined : readAheadOn(s, src.item, src.versions)}
-        mark={<ServerMark status="online" className="size-4" />}
-        label={nameOf(s)}
-        aside={sources.length > 1 ? src.name : undefined}
-        detail={
-          series
-            ? src.seasons
-              ? t(`${src.seasons} 季`, `${src.seasons} season${src.seasons === 1 ? '' : 's'}`)
-              : t('没有分集', 'No episodes')
-            : src.versions.length > 1
-              ? t(`${src.versions.length} 个版本`, `${src.versions.length} versions`)
-              : v && (specOf(v) || releaseNameOf(v))
-        }
-      />
-    )
-  })
+  const series = src.seasons !== undefined
+  const v = src.versions[0]
+  return (
+    <Option
+      name={name}
+      picked={picked}
+      onPick={onPick}
+      intent={series ? undefined : readAheadOn(s, src.item, src.versions)}
+      mark={<ServerMark status="online" className="size-4" />}
+      label={nameOf(s)}
+      aside={twice ? src.name : undefined}
+      detail={
+        series
+          ? src.seasons
+            ? t(`${src.seasons} 季`, `${src.seasons} season${src.seasons === 1 ? '' : 's'}`)
+            : t('没有分集', 'No episodes')
+          : src.versions.length > 1
+            ? t(`${src.versions.length} 个版本`, `${src.versions.length} versions`)
+            : v && (specOf(v) || releaseNameOf(v))
+      }
+    />
+  )
 }
 
 // 播放, then what a movie's 片源 or an episode plays: its 版本, 音频 and 字幕, each an icon opening its list, with

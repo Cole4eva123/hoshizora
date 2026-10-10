@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 // Finding a server, signing in and reading its answers are emby-core's, tested in Rust (src-tauri/emby-core).
-import { itemsOf, librarySorts, lineupOfItems } from '@/lib/emby'
+import { type Answer, type Server, itemsOf, librarySorts, lineupOfItems, pickOf } from '@/lib/emby'
 import { zh } from '@/lib/i18n'
 
 test('librarySorts turns 最新 into 最早 where it stands, and back', () => {
@@ -25,4 +25,33 @@ test('lineupOfItems steps through the 作品 with a TMDB entry, each once howeve
     { media_type: 'movie', id: 2, title: 'X' },
     { media_type: 'movie', id: 3, title: 'B' },
   ])
+})
+
+test('pickOf shows the 片源 wanted, waiting for its server, else the first found that plays', () => {
+  const server = (id: string) => ({ id, userId: 'u' }) as Server
+  const [a, b] = [server('a'), server('b')]
+  const asking = (s: Server): Answer => ({ s })
+  const has = (s: Server, ...items: [string, number?][]): Answer => ({
+    s,
+    sources: items.map(([item, seasons]) => ({ item, name: item, seasons, versions: [] })),
+  })
+  const down: Answer = { s: a, error: '连接异常' }
+  const picked = ({ pick, exact }: ReturnType<typeof pickOf>) => pick && `${pick.s.id}/${pick.src.item}${exact ? '!' : ''}`
+  // none wanted: the first found, whichever server answers first
+  expect(picked(pickOf([asking(a), has(b, ['b1'])]))).toBe('b/b1')
+  expect(picked(pickOf([down, has(b, ['b1'])]))).toBe('b/b1')
+  // opened from a's page: wait for a; its copy wanted, or its first; elsewhere when a hasn't the 作品
+  const fromA = { server: 'a', user: 'u', item: 'a2' }
+  expect(picked(pickOf([asking(a), has(b, ['b1'])], fromA))).toBeUndefined()
+  expect(picked(pickOf([has(a, ['a1'], ['a2']), has(b, ['b1'])], fromA))).toBe('a/a2!')
+  expect(picked(pickOf([has(a, ['a1']), has(b, ['b1'])], { server: 'a', user: 'u' }))).toBe('a/a1')
+  expect(picked(pickOf([has(a), has(b, ['b1'])], fromA))).toBe('b/b1')
+  // a series: one with episodes before one without, which is shown once no server is still asked
+  expect(picked(pickOf([has(a, ['a0', 0]), has(b, ['b1', 2])]))).toBe('b/b1')
+  expect(picked(pickOf([has(a, ['a0', 0]), asking(b)]))).toBeUndefined()
+  expect(picked(pickOf([has(a, ['a0', 0]), has(b)]))).toBe('a/a0')
+  // the server shown, kept as wanted: still its copy with episodes, though its first has none; and another server's
+  // with episodes over the wanted one's without
+  expect(picked(pickOf([has(a, ['a0', 0], ['a1', 2])], { server: 'a', user: 'u' }))).toBe('a/a1')
+  expect(picked(pickOf([has(a, ['a0', 0]), has(b, ['b1', 2])], { server: 'a', user: 'u' }))).toBe('b/b1')
 })

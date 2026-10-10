@@ -381,13 +381,47 @@ export type Source = { item: string; name: string; seasons?: number; versions: V
 // an episode on a series' 片源, numbered as the server numbers it; `last` for a file holding several (S01E01-E02)
 export type EpisodeSource = { item: string; season: number; episode: number; last?: number; versions: Version[] }
 
-// The 片源 of a 作品 on one server, found by its TMDB entry; none when the server doesn't have it. Without a server it
-// asks for nothing.
-export function useSources(s: Server | undefined, m: Pick<Media, 'media_type' | 'id'>) {
+// A 片源 found, with its server.
+export type ServerSource = { s: Server; src: Source }
+// A server asked for a 作品's 片源: its answer, none where it doesn't have the 作品, or why it couldn't be asked.
+export type Answer = { s: Server; sources?: Source[]; error?: string }
+const isAnswered = (a: Answer) => !!a.sources || !!a.error
+
+// The 片源 of a 作品 on each of `servers`, found by its TMDB entry, all asked at once: each server's `answers` in the
+// servers' order; the 片源 `found` so far; whether some are still `searching`; those `down` that couldn't be asked,
+// and `retry` for them.
+export function useSources(servers: Server[], m: Pick<Media, 'media_type' | 'id'>) {
   const t = useT()
-  const keys = s ? [`${keyOf(s)}sources/${m.media_type}/${m.id}`] : []
+  const keys = servers.map((s) => `${keyOf(s)}sources/${m.media_type}/${m.id}`)
   const { data, failed, retry } = useAnswers<Source[]>(keys, askSources)
-  return { sources: data[0], error: failed && errorText(failed.error, t), retry }
+  const answers = servers.map((s, i): Answer => {
+    // failed, unless an answer has come in since (another page asked for it)
+    const down = !data[i] && !!failed && keys[i] in failed.of
+    return { s, sources: data[i], error: down ? errorText(failed.of[keys[i]], t) : undefined }
+  })
+  return {
+    answers,
+    found: answers.flatMap(({ s, sources }) => (sources ?? []).map((src): ServerSource => ({ s, src }))),
+    searching: !answers.every(isAnswered),
+    down: answers.filter((a) => a.error),
+    retry,
+  }
+}
+
+// The 片源 to show, and whether it's the very one wanted (`exact`, which has its file read at once). The one wanted
+// (picked here, or the one the 作品 was opened from on a 服务器's page) on its server, waiting for that server to
+// answer; else that server's first that plays (a step from its page names the server only). With none wanted, or that
+// server without one that plays, the first found that plays (a series' with episodes), or any once no server is still
+// asked. Two servers may number their items alike, so the server counts too.
+export function pickOf(answers: Answer[], wanted?: { server?: string; user?: string; item?: string }) {
+  const there = answers.find(({ s }) => s.id === wanted?.server && s.userId === wanted.user)
+  if (there && !isAnswered(there)) return {}
+  const exact = there?.sources?.find((src) => src.item === wanted?.item)
+  const plays = (src: Source) => src.seasons !== 0
+  const src = exact ?? there?.sources?.find(plays)
+  if (there && src) return { pick: { s: there.s, src }, exact: !!exact }
+  const found = answers.flatMap(({ s, sources }) => (sources ?? []).map((src): ServerSource => ({ s, src })))
+  return { pick: found.find(({ src }) => plays(src)) ?? (answers.every(isAnswered) ? found[0] : undefined) }
 }
 
 // A season's episodes on a series' 片源; without one it asks for nothing.
