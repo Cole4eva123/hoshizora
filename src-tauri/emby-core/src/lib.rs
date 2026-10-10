@@ -116,6 +116,17 @@ pub struct Tmdb {
     pub id: u64,
 }
 
+/// How a 媒体库's 作品 are put in order: the newest added first; by premiere, the newest or the oldest first; or by
+/// Emby's community rating, which counts no votes, so a title one person gave 10 can lead.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Sort {
+    Added,
+    Latest,
+    Oldest,
+    Rating,
+}
+
 /// A page of a 媒体库's 作品; the page from the 0th has the count of them all.
 #[derive(Debug, PartialEq, Serialize)]
 pub struct Page {
@@ -365,18 +376,32 @@ impl Emby {
             .collect())
     }
 
-    /// A page of a 媒体库's movies and series, `limit` of them from the `start`th, the newest added first. Only the page
-    /// from the 0th has the count of them all, as counting a large 媒体库 is work for the server.
-    pub async fn items(&self, server: &str, user: &str, library: &str, start: u32, limit: u32) -> Result<Page, Error> {
+    /// A page of a 媒体库's movies and series in the order `sort` asks for, `limit` of them from the `start`th. Only the
+    /// page from the 0th has the count of them all, as counting a large 媒体库 is work for the server.
+    pub async fn items(
+        &self,
+        server: &str,
+        user: &str,
+        library: &str,
+        sort: Sort,
+        start: u32,
+        limit: u32,
+    ) -> Result<Page, Error> {
         let s = self.signed(server, user)?;
         let (from, count) = (start.to_string(), limit.to_string());
-        let query = [
+        // an order for each field: the sort's, then A to Z, for a batch added at once (a library scan) or a tie
+        let (by, order) = match sort {
+            Sort::Added => ("DateCreated,SortName", "Descending,Ascending"),
+            Sort::Latest => ("PremiereDate,SortName", "Descending,Ascending"),
+            Sort::Oldest => ("PremiereDate,SortName", "Ascending,Ascending"),
+            Sort::Rating => ("CommunityRating,SortName", "Descending,Ascending"),
+        };
+        let mut query = vec![
             ("ParentId", library),
             ("Recursive", "true"),
             ("IncludeItemTypes", "Movie,Series"),
-            ("SortBy", "DateCreated,SortName"),
-            // an order for each: the newest first, and a batch added at once (a library scan) A to Z
-            ("SortOrder", "Descending,Ascending"),
+            ("SortBy", by),
+            ("SortOrder", order),
             ("Fields", "ProviderIds,ProductionYear"),
             ("EnableImageTypes", "Primary"),
             ("ImageTypeLimit", "1"),
@@ -385,6 +410,13 @@ impl Emby {
             ("Limit", &count),
             ("EnableTotalRecordCount", if start == 0 { "true" } else { "false" }),
         ];
+        // By premiere, only those premiered: none still to come, none with no date, and none with the date Emby writes
+        // for one it doesn't know (0001-01-01), which would lead the oldest.
+        // ponytail: IsUnaired leaves out movies and series still to come on Emby 4.9 (checked on the user's 4.9.5); an
+        // older Emby may apply it to episodes only. Send MaxPremiereDate with today's date if one turns up.
+        if matches!(sort, Sort::Latest | Sort::Oldest) {
+            query.extend([("IsUnaired", "false"), ("MinPremiereDate", "1800-01-01T00:00:00Z")]);
+        }
         let listing: Listing<Listed> = self.get(&s, &format!("Users/{}/Items", s.server.user_id), &query, BROWSE).await?;
         Ok(Page {
             items: listing.items.into_iter().map(|i| item(&s.server.address, i)).collect(),

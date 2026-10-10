@@ -28,7 +28,8 @@ export default function Category() {
   const ids = genres.length ? genres.filter((g) => asked.includes(g.key)).map((g) => g.key) : asked.filter(Boolean)
   const path = withGenres(sort?.path ?? category.path, ids)
   // a new sort or new 类型 start the list over from its first page, at the top, and keep the other. Each 类型 is a
-  // ?genre= of its own, as a comma would show in the address bar as %2C.
+  // ?genre= of its own, as a comma would show in the address bar as %2C. Committed at once, not in the router's
+  // transition, which a quick press on the next one would throw away, leaving the word pressed unlit.
   const choose = (name: 'sort' | 'genre', values: (string | number)[]) =>
     setParams(
       (p) => {
@@ -37,7 +38,7 @@ export default function Category() {
         p.delete('pages')
         return p
       },
-      { replace: true },
+      { replace: true, flushSync: true },
     )
 
   return (

@@ -72,14 +72,24 @@ export const statusText = (status: Status, t: Translate) =>
   ({
     checking: t('正在连接', 'Connecting'),
     online: t('已连接', 'Connected'),
-    offline: t('连不上', 'Unreachable'),
+    offline: t('连接异常', 'Connection error'),
     signedOut: t('登录已失效', 'Signed out'),
     signIn: t('登录没成功', "Couldn't sign in"),
   })[status]
 
 // The adds under way, shown at once as tiles of their own: one that signs in turns into its server, one that fails stays
-// with why until it's dismissed. Kept in this window only, as a failed add has nothing to keep.
-export type Adding = Pick<Server, 'name' | 'userName' | 'address'> & { id: number; status: Status }
+// with why until it's tried again or dismissed. Kept in this window only, as a failed add has nothing to keep. What was
+// typed goes with it, the password too, so trying again starts from it rather than from nothing; it's dropped with
+// the tile.
+export type Adding = Pick<Server, 'name' | 'userName' | 'address'> & {
+  id: number
+  status: Status
+  // why it failed, as the Rust side said, to tell again when it's tried again
+  error?: EmbyError
+  typed: string
+  password: string
+  nickname: string
+}
 let adding: Adding[] = []
 let adds = 0
 const setAdding = (next: Adding[]) => {
@@ -91,19 +101,26 @@ export const dismiss = (a: Adding) => setAdding(adding.filter((x) => x.id !== a.
 
 // Starts adding a server and returns at once, so the dialog can close. Only text that isn't an address throws (a
 // TypeError), before anything shows; the Rust side reads it the same way (both parse it as a URL), then finds where the
-// server answers and signs in.
-export function addServer(typed: string, username: string, password: string, nickname: string) {
+// server answers and signs in. Trying again after a failed add (`instead`) takes that one's place.
+export function addServer(typed: string, username: string, password: string, nickname: string, instead?: Adding) {
   const text = typed.trim()
   const url = new URL(/^https?:\/\//i.test(text) ? text : `http://${text}`)
   const entry: Adding = {
-    id: ++adds,
+    // a try again keeps the failed one's id, so its tile stays, and reads out how this one goes
+    id: instead?.id ?? ++adds,
     name: nickname.trim() || url.host,
     userName: username,
     address: url.origin,
     status: 'checking',
+    typed,
+    password,
+    nickname,
   }
-  setAdding([...adding, entry])
-  const fail = (status: Status) => setAdding(adding.map((a) => (a.id === entry.id ? { ...a, status } : a)))
+  // in the failed one's place if it's still there, as an add of the same host and user may have cleared it meanwhile
+  const at = adding.findIndex((a) => a.id === instead?.id)
+  setAdding(at < 0 ? [...adding, entry] : adding.with(at, entry))
+  const fail = (status: Status, error?: EmbyError) =>
+    setAdding(adding.map((a) => (a.id === entry.id ? { ...a, status, error } : a)))
   invoke('emby_add', { typed, username, password, nickname })
     .then(() => invoke<Server[]>('emby_servers'))
     .then((next) => {
@@ -116,8 +133,8 @@ export function addServer(typed: string, username: string, password: string, nic
       setAdding(adding.filter((a) => a.id !== entry.id && !tried(a)))
     })
     // the server answered but didn't sign in, or else red rather than grey for good (unreachable, or not kept), so
-    // the tile can at least be removed
-    .catch((e?: EmbyError) => fail(e?.kind === 'signIn' || e?.kind === 'server' ? 'signIn' : 'offline'))
+    // the tile can be tried again or removed
+    .catch((e?: EmbyError) => fail(e?.kind === 'signIn' || e?.kind === 'server' ? 'signIn' : 'offline', e))
 }
 
 // Whether a kept server answers its signed-in user now. Asked when the page opens, on coming back to it, and when the
@@ -181,22 +198,53 @@ export const errorText = (e: unknown, t: Translate) => {
     case 'storage':
       return t('没能存到这台设备上', "Couldn't save it on this device")
     default:
-      return t('连不上这台服务器，检查一下网络和它的地址', "Can't reach this server, check your connection and its address")
+      return t('连接异常，检查一下网络和服务器地址', "Connection error, check your network and the server's address")
   }
 }
 
 // A server's answers are kept in cache.ts under its own prefix, `emby/{server}/{user}/{address}/`, then what was
-// asked: `views`, or `items/{library}/{page}`. The address is in it as its pictures' URLs carry it, so one moved to
-// another address asks again. The cache asks for a key it doesn't have by these, which read the key back.
+// asked: `views`, or `items/{library}/{sort}/{page}`. The address is in it as its pictures' URLs carry it, so one
+// moved to another address asks again. The cache asks for a key it doesn't have by these, which read the key back.
 const keyOf = (s: Server) => `emby/${s.id}/${s.userId}/${encodeURIComponent(s.address)}/`
 const askViews = (key: string) => {
   const [, server, user] = key.split('/')
   return invoke<Library[]>('emby_libraries', { server, user })
 }
 const askItems = (key: string) => {
-  const [, server, user, , , library, page] = key.split('/')
-  return invoke<Page>('emby_items', { server, user, library, start: Number(page) * pageSize, limit: pageSize })
+  const [, server, user, , , library, sort, page] = key.split('/')
+  return invoke<Page>('emby_items', { server, user, library, sort, start: Number(page) * pageSize, limit: pageSize })
 }
+
+// How a 媒体库's 作品 are put in order (emby-core's Sort), which the server does, as only it has them all.
+export type Sort = 'added' | 'latest' | 'oldest' | 'rating'
+
+// The orders a 服务器's page offers, as a 分类 offers its sorts (sortsOf): 最新 turns into 最早 when pressed again,
+// and back. The server knows no popularity or vote counts, so there's no 热门 or 口碑, and its 高分 can't leave out
+// what only a few people rated.
+export const librarySorts = (
+  t: Translate,
+  picked?: string | null,
+): { key: Sort; flip?: Sort; label: string; hint: string }[] => [
+  { key: 'added', label: t('最近添加', 'Recently Added'), hint: t('最近加到服务器上的在前', 'Most recently added first') },
+  picked === 'oldest'
+    ? {
+        key: 'oldest',
+        flip: 'latest',
+        label: t('最早', 'Oldest'),
+        hint: t('首映早的在前，还没首映的和没有日期的不算', 'Earliest premieres first, leaving out upcoming and undated ones'),
+      }
+    : {
+        key: 'latest',
+        flip: 'oldest',
+        label: t('最新', 'Latest'),
+        hint: t('首映新的在前，还没首映的和没有日期的不算', 'Latest premieres first, leaving out upcoming and undated ones'),
+      },
+  {
+    key: 'rating',
+    label: t('高分', 'Top Rated'),
+    hint: t('Emby 的社区评分高的在前，只有几个人打分的也算在内', 'Highest community rating first, even if only a few people rated it'),
+  },
+]
 
 // A 媒体库 as the server page shows it: its name and the 16:9 cover the server draws for it. Only those of movies and
 // series come, in the server's order.
@@ -218,8 +266,8 @@ type Item = { id: string; name: string; year?: number; poster?: string; tmdb?: {
 // a page of them; the first has the count of them all
 type Page = { items: Item[]; total?: number }
 
-// The 作品 of the pages in so far, each once: the newest come first and are counted by offset, so one added while the
-// list pages on pushes the last of a page onto the next.
+// The 作品 of the pages in so far, each once: pages are counted by offset, so one added while the list pages on (the
+// newest added come first) pushes the last of a page onto the next.
 export const itemsOf = (pages: Pick<Page, 'items'>[]) => [
   ...new Map(pages.flatMap((p) => p.items).map((i) => [i.id, i])).values(),
 ]
@@ -238,11 +286,12 @@ const pageSize = 60
 // for the first page alone and cap by its total if a library ever runs past it.
 const maxPages = 500
 
-// The first `pages` pages of a 媒体库's 作品, newest added first, as one list; like useTitles, with `total`, the
-// 作品 the 媒体库 has, and their `lineup`. Without a server or a `library` it asks for nothing.
-export function useItems(s: Server | undefined, library: string | undefined, pages: number) {
+// The first `pages` pages of a 媒体库's 作品 in `sort`'s order, as one list; like useTitles, with `total`, the 作品
+// the list has, and their `lineup`. Without a server or a `library` it asks for nothing.
+export function useItems(s: Server | undefined, library: string | undefined, sort: Sort, pages: number) {
   const t = useT()
-  const keys = s && library ? Array.from({ length: Math.min(pages, maxPages) }, (_, i) => `${keyOf(s)}items/${library}/${i}`) : []
+  const keys =
+    s && library ? Array.from({ length: Math.min(pages, maxPages) }, (_, i) => `${keyOf(s)}items/${library}/${sort}/${i}`) : []
   const { data, failed, retry } = useAnswers<Page>(keys, askItems)
   const arrived = useMemo(() => arrivedOf(data), [data])
   const items = useMemo(() => (arrived.length ? itemsOf(arrived) : undefined), [arrived])
@@ -260,12 +309,12 @@ export function useItems(s: Server | undefined, library: string | undefined, pag
   }
 }
 
-// A 媒体库 as a 作品 page opened from it knows it: its server, user and id, and the pages its grid showed.
-export type Shelf = { server: string; user: string; library: string; pages: number }
+// A 媒体库 as a 作品 page opened from it knows it: its server, user and id, its order, and the pages its grid showed.
+export type Shelf = { server: string; user: string; library: string; sort: Sort; pages: number }
 
 // The 媒体库's lineup with one page more than its grid showed, for 下一部 past the last card loaded there. Without a
 // `shelf`, or with its server removed meanwhile, it asks for nothing.
 export function useLineupAfter(shelf: Shelf | undefined) {
   const s = useServers().find((x) => x.id === shelf?.server && x.userId === shelf?.user)
-  return useItems(s, shelf?.library, (shelf?.pages ?? 0) + 1)
+  return useItems(s, shelf?.library, shelf?.sort ?? 'added', (shelf?.pages ?? 0) + 1)
 }

@@ -6,6 +6,7 @@ import { EmptyState, Page } from '@/components/Page'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
+  type Adding,
   type EmbyError,
   type Server,
   type Status,
@@ -27,8 +28,6 @@ import { cn, sliders, toneOf } from '@/lib/utils'
 
 // The servers and the tile that adds one, as many to a row as fit: two on a phone.
 const tile = 'min-h-44 rounded-2xl p-5'
-// what sits in a tile's top-right corner: a kept server's settings, or an add's 移除
-const corner = 'absolute top-3 right-3 rounded-md'
 
 export default function Library() {
   const t = useT()
@@ -68,19 +67,9 @@ export default function Library() {
           <ServerTile key={`${s.id}/${s.userId}`} server={s} />
         ))}
         {adding.map((a) => (
+          // one under way can't be stopped or changed
           <Tile key={a.id} {...a} adding>
-            {/* one under way can't be stopped; one that failed goes in one press, having nothing to sign out of */}
-            {a.status !== 'checking' && (
-              <button
-                onClick={() => dismiss(a)}
-                className={cn(
-                  corner,
-                  'px-1.5 py-1 text-xs text-muted-foreground opacity-0 transition hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100',
-                )}
-              >
-                {t('移除', 'Remove')}
-              </button>
-            )}
+            {a.status !== 'checking' && <Settings adding={a} />}
           </Tile>
         ))}
         <li>
@@ -103,9 +92,7 @@ export default function Library() {
 
 // A kept server, as it answers now. It opens its 媒体库; the sliders in its corner open its settings.
 function ServerTile({ server }: { server: Server }) {
-  const t = useT()
   const status = useStatus(server)
-  const settings = useRef<HTMLDialogElement>(null)
   return (
     <Tile
       {...server}
@@ -114,15 +101,27 @@ function ServerTile({ server }: { server: Server }) {
       to={`/library/${server.id}/${server.userId}`}
       onOpen={() => refresh(server)}
     >
+      <Settings server={server} />
+    </Tile>
+  )
+}
+
+// The sliders in a tile's top-right corner, and the dialog they open: a kept server's settings, or a failed add's, to
+// try it again from what was typed.
+function Settings({ server, adding }: { server?: Server; adding?: Adding }) {
+  const t = useT()
+  const dialog = useRef<HTMLDialogElement>(null)
+  return (
+    <>
       <button
-        onClick={() => settings.current?.showModal()}
-        title={t('服务器设置', 'Server settings')}
-        className={cn(corner, 'p-2 text-star/60 transition-colors hover:text-star focus-visible:text-star')}
+        onClick={() => dialog.current?.showModal()}
+        title={server ? t('服务器设置', 'Server settings') : t('修改后重试', 'Edit and try again')}
+        className="absolute top-3 right-3 rounded-md p-2 text-star/60 transition-colors hover:text-star focus-visible:text-star"
       >
         <Constellation lines={sliders} />
       </button>
-      <ServerDialog dialog={settings} server={server} />
-    </Tile>
+      <ServerDialog dialog={dialog} server={server} adding={adding} />
+    </>
   )
 }
 
@@ -184,18 +183,30 @@ function Tile({
   )
 }
 
-// Adding a server, or changing a kept one (`server`): where it is, the user to sign in as (an Emby user may have no
-// password), and a 备注 to call it by if its own name won't do. An add closes at once and goes on in its tile, so only
-// text that isn't an address is caught here. A change waits for its answer, as one that fails changes nothing and has
-// no tile to say why: it says so here, under the field it's about. A kept server is removed here too, on a second press.
-function ServerDialog({ dialog, server }: { dialog: RefObject<HTMLDialogElement | null>; server?: Server }) {
+// Adding a server, trying a failed add again from what was typed (`adding`), or changing a kept one (`server`): where
+// it is, the user to sign in as (an Emby user may have no password), and a 备注 to call it by if its own name won't
+// do. An add closes at once and goes on in its tile, so only text that isn't an address is caught here; a failed one
+// opens with why it failed. A change waits for its answer, as one that fails changes nothing and has no tile to say
+// why: it says so here, under the field it's about. A kept server is removed here too, on a second press, and a failed
+// add on the first, having no sign-in to lose.
+function ServerDialog({
+  dialog,
+  server,
+  adding,
+}: {
+  dialog: RefObject<HTMLDialogElement | null>
+  server?: Server
+  adding?: Adding
+}) {
   const t = useT()
   const [failed, setFailed] = useState<EmbyError>()
   const [saving, setSaving] = useState(false)
   // 移除 asks once more, and forgets it was asked after a moment, or when the dialog closes
   const [sure, setSure] = useState(false)
   const unsure = useRef<ReturnType<typeof setTimeout>>(undefined)
-  const why = failed && errorText(failed, t)
+  const shown = failed ?? adding?.error
+  const why = shown && errorText(shown, t)
+  const remove = server ? () => removeServer(server) : adding && (() => dismiss(adding))
   const submit = (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
     const data = new FormData(e.currentTarget)
@@ -210,7 +221,7 @@ function ServerDialog({ dialog, server }: { dialog: RefObject<HTMLDialogElement 
       return
     }
     try {
-      addServer(...typed)
+      addServer(...typed, adding)
     } catch (err) {
       if (!(err instanceof TypeError)) throw err
       return setFailed({ kind: 'notAnAddress' })
@@ -222,14 +233,15 @@ function ServerDialog({ dialog, server }: { dialog: RefObject<HTMLDialogElement 
       ref={dialog}
       // a change under way can't be called off, so it stays open until it's answered
       onCancel={(e) => saving && e.preventDefault()}
-      // what was typed goes with it, the password included, however it closes
+      // what was typed goes with it, however it closes, back to what it opened with: nothing for an add, and a failed
+      // add's own, its password too
       onClose={(e) => {
         setFailed(undefined)
         setSure(false)
         clearTimeout(unsure.current)
         e.currentTarget.querySelector('form')?.reset()
       }}
-      aria-label={server ? t('服务器设置', 'Server settings') : t('添加服务器', 'Add server')}
+      aria-label={server ? t('服务器设置', 'Server settings') : adding ? t('修改后重试', 'Edit and try again') : t('添加服务器', 'Add server')}
       // Tailwind zeroes every margin, the dialog's centring included
       className="m-auto w-[min(26rem,calc(100vw-2*var(--gutter)))] rounded-2xl bg-card p-6 text-foreground inset-ring inset-ring-star/15 backdrop:bg-night/70 backdrop:backdrop-blur-sm"
     >
@@ -237,9 +249,9 @@ function ServerDialog({ dialog, server }: { dialog: RefObject<HTMLDialogElement 
         <fieldset disabled={saving} className="min-w-0 space-y-4">
           <Field
             label={t('地址', 'Address')}
-            error={failed?.kind === 'signIn' ? undefined : why}
+            error={shown?.kind === 'signIn' ? undefined : why}
             name="address"
-            defaultValue={server?.address}
+            defaultValue={server?.address ?? adding?.typed}
             required
             inputMode="url"
             autoCapitalize="off"
@@ -250,15 +262,16 @@ function ServerDialog({ dialog, server }: { dialog: RefObject<HTMLDialogElement 
           <Field
             label={t('用户名', 'Username')}
             name="username"
-            defaultValue={server?.userName}
+            defaultValue={server?.userName ?? adding?.userName}
             required
             autoCapitalize="off"
             autoComplete="username"
           />
           <Field
             label={t('密码', 'Password')}
-            error={failed?.kind === 'signIn' ? why : undefined}
+            error={shown?.kind === 'signIn' ? why : undefined}
             name="password"
+            defaultValue={adding?.password}
             type="password"
             autoComplete="current-password"
             placeholder={server ? t('不改就留空', 'Leave empty to stay signed in') : t('没有密码就留空', 'Leave empty if there is none')}
@@ -266,7 +279,7 @@ function ServerDialog({ dialog, server }: { dialog: RefObject<HTMLDialogElement 
           <Field
             label={t('备注（可选）', 'Nickname (optional)')}
             name="nickname"
-            defaultValue={server?.nickname}
+            defaultValue={server?.nickname ?? adding?.nickname}
             autoComplete="off"
             placeholder={
               server
@@ -275,15 +288,15 @@ function ServerDialog({ dialog, server }: { dialog: RefObject<HTMLDialogElement 
             }
           />
           <div className="flex justify-end gap-2 pt-2">
-            {server && (
+            {remove && (
               <Button
                 type="button"
                 variant="ghost"
                 size="lg"
                 onClick={() => {
-                  if (sure) {
+                  if (sure || !server) {
                     dialog.current?.close()
-                    return removeServer(server)
+                    return remove()
                   }
                   setSure(true)
                   unsure.current = setTimeout(() => setSure(false), 3000)

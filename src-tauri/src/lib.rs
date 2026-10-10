@@ -1,6 +1,6 @@
 // The app's shell: the window over the web app, and Emby (emby-core) for its pages. Playback moves in here next
 // (docs/playback-plan.md).
-use emby_core::{Emby, Error, Library, Page, Server, Status};
+use emby_core::{Emby, Error, Library, Page, Server, Sort, Status};
 use tauri::{Manager, State};
 
 // What the pages ask of Emby (src/lib/emby.ts), one command for each thing emby-core does, and nothing more: the
@@ -57,10 +57,11 @@ async fn emby_items(
     server: String,
     user: String,
     library: String,
+    sort: Sort,
     start: u32,
     limit: u32,
 ) -> Result<Page, Error> {
-    emby.items(&server, &user, &library, start, limit).await
+    emby.items(&server, &user, &library, sort, start, limit).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

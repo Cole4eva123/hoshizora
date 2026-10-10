@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { Navigate, useParams, useSearchParams } from 'react-router'
+import { Choices } from '@/components/Choices'
 import { ServerMark } from '@/components/Constellation'
 import { EmptyState, Page } from '@/components/Page'
 import { Failed, Frame, PagedGrid, Poster, Row } from '@/components/PosterRow'
 import {
   type Library,
   type Server,
+  librarySorts,
   nameOf,
   statusText,
   useItems,
@@ -29,34 +31,37 @@ export default function ServerPage() {
   return s ? <Browse key={`${s.id}/${s.userId}`} server={s} /> : <Navigate to="/library" replace />
 }
 
-// The server's 媒体库 as its own covers, and under them the 作品 of the one picked (?lib=, else the first), newest
-// added first. A card opens the 作品's page when the server knows its TMDB entry, and the 上一部/下一部 there step
-// through the cards shown and on through the 媒体库.
+// The server's 媒体库 as its own covers, and under them the 作品 of the one picked (?lib=, else the first), in the
+// order picked (?sort=, else the newest added first). A card opens the 作品's page when the server knows its TMDB
+// entry, and the 上一部/下一部 there step through the cards shown and on through the 媒体库.
 function Browse({ server }: { server: Server }) {
   const t = useT()
   const [params, setParams] = useSearchParams()
   const { libraries, error, retry } = useLibraries(server)
   const status = useStatus(server)
   const library = libraries?.find((l) => l.id === params.get('lib')) ?? libraries?.[0]
+  const sorts = librarySorts(t, params.get('sort'))
+  const sort = sorts.find((s) => s.key === params.get('sort')) ?? sorts[0]
   const pages = usePages()
-  const { items, total, lineup, ...list } = useItems(server, library?.id, pages)
+  const { items, total, lineup, ...list } = useItems(server, library?.id, sort.key, pages)
   // a card carries its 媒体库 along with the lineup, so 下一部 past the last card loaded goes on into the next page
-  const shelf = library && { server: server.id, user: server.userId, library: library.id, pages }
+  const shelf = library && { server: server.id, user: server.userId, library: library.id, sort: sort.key, pages }
   const from = lineup && { lineup, list: shelf }
   // The covers start at the one picked when the 媒体库 come in, which, back from a 作品 or opened from a link, may sit
   // past the screen's edge. Only then: a cover picked later is in view already.
   const [start, setStart] = useState<number>()
   if (libraries && library && start === undefined) setStart(libraries.indexOf(library))
-  // another 媒体库 starts over at its first page
-  const pick = (l: Library) =>
+  // Another 媒体库 or another order starts over at its first page, and keeps the other. Committed at once, not in the
+  // router's transition, which a quick press on the next one would throw away, so what's lit is always what's shown.
+  const choose = (name: 'lib' | 'sort', value: string) =>
     setParams(
       (p) => {
-        p.set('lib', l.id)
+        p.set(name, value)
         p.delete('pages')
         return p
       },
       // the covers stay where they are, as arrow keys step through them
-      { replace: true, preventScrollReset: true },
+      { replace: true, preventScrollReset: true, flushSync: true },
     )
 
   if (error)
@@ -100,15 +105,21 @@ function Browse({ server }: { server: Server }) {
           track="auto-cols-[42%] sm:auto-cols-[calc((100%-2*1rem)/3)] lg:auto-cols-[calc((100%-3*1rem)/4)] xl:auto-cols-[calc((100%-4*1rem)/5)]"
         >
           {libraries
-            ? libraries.map((l) => <Cover key={l.id} library={l} picked={l === library} onPick={() => pick(l)} />)
+            ? libraries.map((l) => <Cover key={l.id} library={l} picked={l === library} onPick={() => choose('lib', l.id)} />)
             : Array.from({ length: 4 }, (_, i) => (
                 <div key={i} className="aspect-video animate-pulse rounded-lg bg-muted/70" />
               ))}
         </Row>
       </div>
-      <p className="mt-8 mb-5 h-5 text-sm text-muted-foreground">
-        {total !== undefined && t(`共 ${count(total)} 部`, `${count(total)} title${total === 1 ? '' : 's'}`)}
-      </p>
+      <div className="my-8">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+          <Choices legend={t('排序', 'Sort by')} options={sorts} value={sort.key} onChange={(s) => choose('sort', s)} />
+          <p className="text-sm text-muted-foreground">
+            {total !== undefined && t(`共 ${count(total)} 部`, `${count(total)} title${total === 1 ? '' : 's'}`)}
+          </p>
+        </div>
+        <p className="mt-4 text-sm text-muted-foreground">{sort.hint}</p>
+      </div>
       <PagedGrid {...list} loading={!libraries || list.loading} count={items?.length}>
         {items?.map((i) => (
           <Poster key={i.id} to={i.tmdb && hrefOf(i.tmdb)} state={from} src={i.poster} title={i.name}>
@@ -120,8 +131,8 @@ function Browse({ server }: { server: Server }) {
   )
 }
 
-// A 媒体库's cover, a radio among the server's: the picked one lights up, and its name is starred like a picked word
-// in a Choices row; the others are dimmed until pointed at.
+// A 媒体库's cover, a radio among the server's: the picked one lights up at once, as the 作品 under it change at once,
+// and its name is starred like a picked word in a Choices row; the others are dimmed until pointed at.
 function Cover({ library, picked, onPick }: { library: Library; picked: boolean; onPick: () => void }) {
   return (
     <label className="group snap-start cursor-pointer">
@@ -129,7 +140,7 @@ function Cover({ library, picked, onPick }: { library: Library; picked: boolean;
       <Frame
         src={library.cover}
         className={cn(
-          'aspect-video transition duration-300 group-has-focus-visible:outline-2 group-has-focus-visible:outline-offset-2 group-has-focus-visible:outline-ring',
+          'aspect-video transition-opacity group-has-focus-visible:outline-2 group-has-focus-visible:outline-offset-2 group-has-focus-visible:outline-ring',
           picked ? 'outline-star/70 shadow-[0_0_24px_-6px_var(--glow)]' : 'opacity-50 group-hover:opacity-100',
         )}
       />

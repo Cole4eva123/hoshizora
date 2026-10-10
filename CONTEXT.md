@@ -73,8 +73,8 @@ _English_: category
 _Avoid_: 频道、栏目
 
 **排序**:
-分类里作品的先后：热门、最新（已播出或上映的，新的在前）、最早（最新倒过来，旧的在前）、高分（评分人数过线的，分高的在前）、口碑（评分人数多的在前）。「热门电影」只按热门。
-_English_: sort (Popular, Latest, Oldest, Top Rated, Most Rated)
+分类里作品的先后：热门、最新（已播出或上映的，新的在前）、最早（最新倒过来，旧的在前）、高分（评分人数过线的，分高的在前）、口碑（评分人数多的在前）。「热门电影」只按热门。服务器的媒体库里由服务器来排：最近添加（最近加到服务器上的在前）、最新和最早（按首映，不含还没首映的和没有日期的）、高分（只按 Emby 的社区评分，不看评分人数）；服务器不知道热度和评分人数，所以没有热门和口碑。
+_English_: sort (Popular, Latest, Oldest, Top Rated, Most Rated; on a server, Recently Added, Latest, Oldest, Top Rated)
 _Avoid_: 排行
 
 **类型**:

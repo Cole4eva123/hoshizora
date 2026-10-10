@@ -1,6 +1,13 @@
 import { expect, test } from 'bun:test'
 // Finding a server, signing in and reading its answers are emby-core's, tested in Rust (src-tauri/emby-core).
-import { itemsOf, lineupOfItems } from '@/lib/emby'
+import { itemsOf, librarySorts, lineupOfItems } from '@/lib/emby'
+import { zh } from '@/lib/i18n'
+
+test('librarySorts turns 最新 into 最早 where it stands, and back', () => {
+  const keys = (picked?: string) => librarySorts(zh, picked).map((s) => [s.key, s.flip])
+  expect(keys()).toEqual([['added', undefined], ['latest', 'oldest'], ['rating', undefined]])
+  expect(keys('oldest')).toEqual([['added', undefined], ['oldest', 'latest'], ['rating', undefined]])
+})
 
 test('itemsOf keeps each 作品 once, as one added while the list pages on pushes the last of a page onto the next', () => {
   const item = (id: string) => ({ id, name: id })

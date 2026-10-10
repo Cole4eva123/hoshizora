@@ -101,7 +101,8 @@ export default function Search() {
           legend={t('搜索范围', 'Search in')}
           options={scopes}
           value={scope.key}
-          onChange={(key) => setParams({ scope: key, q: typed.trim() }, { replace: true })}
+          // at once, as a 分类's sorts are, so a quick press on the next scope isn't lost
+          onChange={(key) => setParams({ scope: key, q: typed.trim() }, { replace: true, flushSync: true })}
           className="max-sm:w-full"
         />
       </form>

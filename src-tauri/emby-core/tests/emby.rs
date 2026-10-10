@@ -10,7 +10,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use emby_core::{Emby, Error, Item, Library, Page, Server, Status, Tmdb};
+use emby_core::{Emby, Error, Item, Library, Page, Server, Sort, Status, Tmdb};
 use serde_json::{Value, json};
 
 // What the stand-in server handed out and was told.
@@ -24,6 +24,8 @@ struct Seen {
     logged_out: Vec<String>,
     // where the 媒体库 have moved to, as a proxy might redirect them
     moved_to: Option<String>,
+    // what the last list of 作品 was asked with
+    items_asked: HashMap<String, String>,
 }
 type Shared = Arc<Mutex<Seen>>;
 
@@ -91,6 +93,7 @@ async fn items(State(seen): State<Shared>, headers: HeaderMap, Query(q): Query<H
     if !signed_in(&seen, &headers) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
+    seen.lock().unwrap().items_asked = q.clone();
     let all = if q["ParentId"] == "1" {
         vec![
             json!({ "Id": "a", "Name": "三国", "Type": "Series", "ProductionYear": 2010, "ImageTags": { "Primary": "t" }, "ProviderIds": { "Tmdb": "40052" } }),
@@ -287,7 +290,7 @@ async fn items_come_a_page_at_a_time_linked_to_tmdb_with_the_count_on_the_first(
     let emby = Emby::open(file("items"));
     emby.add(&at, "bin", "pw", "").await.unwrap();
     assert_eq!(
-        emby.items("srv", "u1", "1", 0, 2).await.unwrap(),
+        emby.items("srv", "u1", "1", Sort::Added, 0, 2).await.unwrap(),
         Page {
             items: vec![
                 Item {
@@ -302,9 +305,32 @@ async fn items_come_a_page_at_a_time_linked_to_tmdb_with_the_count_on_the_first(
             total: Some(3),
         }
     );
-    let next = emby.items("srv", "u1", "1", 2, 2).await.unwrap();
+    let next = emby.items("srv", "u1", "1", Sort::Added, 2, 2).await.unwrap();
     assert_eq!(next.total, None);
     assert_eq!(next.items[0].tmdb, Some(Tmdb { media_type: "movie", id: 438631 }));
+}
+
+#[tokio::test]
+async fn each_sort_asks_for_its_order_and_by_premiere_only_for_titles_premiered() {
+    let (at, seen) = emby().await;
+    let emby = Emby::open(file("sorts"));
+    emby.add(&at, "bin", "pw", "").await.unwrap();
+    // the names the pages send (src/lib/emby.ts)
+    for name in ["added", "latest", "oldest", "rating"] {
+        assert!(serde_json::from_value::<Sort>(json!(name)).is_ok(), "{name}");
+    }
+    for (sort, by, order, premiered) in [
+        (Sort::Added, "DateCreated,SortName", "Descending,Ascending", false),
+        (Sort::Latest, "PremiereDate,SortName", "Descending,Ascending", true),
+        (Sort::Oldest, "PremiereDate,SortName", "Ascending,Ascending", true),
+        (Sort::Rating, "CommunityRating,SortName", "Descending,Ascending", false),
+    ] {
+        emby.items("srv", "u1", "1", sort, 0, 2).await.unwrap();
+        let asked = seen.lock().unwrap().items_asked.clone();
+        assert_eq!((asked["SortBy"].as_str(), asked["SortOrder"].as_str()), (by, order), "{sort:?}");
+        assert_eq!(asked.get("IsUnaired").map(String::as_str), premiered.then_some("false"), "{sort:?}");
+        assert_eq!(asked.contains_key("MinPremiereDate"), premiered, "{sort:?}");
+    }
 }
 
 #[tokio::test]
