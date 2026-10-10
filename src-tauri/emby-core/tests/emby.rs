@@ -10,7 +10,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use emby_core::{Emby, Error, Item, Library, Page, Server, Sort, Status, Tmdb};
+use emby_core::{Emby, Error, Form, Item, Library, Page, Server, Sort, Status, Tmdb};
 use serde_json::{Value, json};
 
 // What the stand-in server handed out and was told.
@@ -140,6 +140,13 @@ async fn emby() -> (String, Shared) {
     (at, seen)
 }
 
+// What the dialog sends: the address as typed, the user, the password and the 备注, under the names the page gives
+// them (src/lib/emby.ts), so a name that drifts on either side fails here rather than in the app.
+fn form(address: &str, username: &str, password: &str, nickname: &str) -> Form {
+    serde_json::from_value(json!({ "address": address, "username": username, "password": password, "nickname": nickname }))
+        .unwrap()
+}
+
 // A file of its own for each test to keep its servers in.
 fn file(test: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("emby-core-{}-{test}", std::process::id()));
@@ -162,7 +169,7 @@ async fn eventually(done: impl Fn() -> bool) -> bool {
 async fn adds_a_server_over_http_when_it_has_no_https_and_keeps_it_across_launches() {
     let (at, _) = emby().await;
     let path = file("adds");
-    let added = Emby::open(path.clone()).add(&at, "bin", "pw", " 家里 ").await.unwrap();
+    let added = Emby::open(path.clone()).add(&form(&at, "bin", "pw", " 家里 ")).await.unwrap();
     assert_eq!(
         added,
         Server {
@@ -190,8 +197,8 @@ async fn adds_a_server_over_http_when_it_has_no_https_and_keeps_it_across_launch
 async fn a_wrong_password_keeps_nothing_and_a_server_error_is_not_taken_for_one() {
     let (at, _) = emby().await;
     let emby = Emby::open(file("wrong"));
-    assert_eq!(emby.add(&at, "bin", "nope", "").await, Err(Error::SignIn));
-    assert_eq!(emby.add(&at, "broken", "pw", "").await, Err(Error::Server { status: 500 }));
+    assert_eq!(emby.add(&form(&at, "bin", "nope", "")).await, Err(Error::SignIn));
+    assert_eq!(emby.add(&form(&at, "broken", "pw", "")).await, Err(Error::Server { status: 500 }));
     assert_eq!(emby.servers(), []);
 }
 
@@ -203,7 +210,7 @@ async fn an_unreadable_file_is_moved_aside_rather_than_written_over() {
     std::fs::write(&path, "not json").unwrap();
     let emby = Emby::open(path.clone());
     assert_eq!(emby.servers(), []);
-    emby.add(&at, "bin", "pw", "").await.unwrap();
+    emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
     let aside = std::fs::read_dir(path.parent().unwrap())
         .unwrap()
         .map(|e| e.unwrap().path())
@@ -217,15 +224,15 @@ async fn nothing_there_is_offline_and_text_that_is_not_an_address_is_turned_down
     // a port nothing listens on any more
     let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
     let emby = Emby::open(file("offline"));
-    assert_eq!(emby.add(&closed.to_string(), "bin", "pw", "").await, Err(Error::Offline));
-    assert_eq!(emby.add("not an address", "bin", "pw", "").await, Err(Error::NotAnAddress));
+    assert_eq!(emby.add(&form(&closed.to_string(), "bin", "pw", "")).await, Err(Error::Offline));
+    assert_eq!(emby.add(&form("not an address", "bin", "pw", "")).await, Err(Error::NotAnAddress));
 }
 
 #[tokio::test]
 async fn follows_a_redirect_and_keeps_the_address_it_landed_at() {
     let (at, _) = emby().await;
     let emby = Emby::open(file("moved"));
-    let added = emby.add(&format!("http://{at}/moved"), "bin", "pw", "").await.unwrap();
+    let added = emby.add(&form(&format!("http://{at}/moved"), "bin", "pw", "")).await.unwrap();
     assert_eq!(added.address, format!("http://{at}/emby"));
     assert_eq!(emby.status("srv", "u1").await, Status::Online);
 }
@@ -234,8 +241,8 @@ async fn follows_a_redirect_and_keeps_the_address_it_landed_at() {
 async fn signing_in_again_keeps_the_nickname_and_ends_the_old_sign_in() {
     let (at, seen) = emby().await;
     let emby = Emby::open(file("again"));
-    emby.add(&at, "bin", "pw", "家里").await.unwrap();
-    let again = emby.add(&at, "bin", "pw", "").await.unwrap();
+    emby.add(&form(&at, "bin", "pw", "家里")).await.unwrap();
+    let again = emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
     assert_eq!(again.nickname.as_deref(), Some("家里"));
     assert_eq!(emby.servers(), [again]);
     assert!(eventually(|| seen.lock().unwrap().logged_out == ["token-1"]).await);
@@ -246,7 +253,7 @@ async fn signing_in_again_keeps_the_nickname_and_ends_the_old_sign_in() {
 async fn status_tells_a_token_turned_down_from_a_server_not_kept() {
     let (at, seen) = emby().await;
     let emby = Emby::open(file("status"));
-    emby.add(&at, "bin", "pw", "").await.unwrap();
+    emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
     assert_eq!(emby.status("srv", "u1").await, Status::Online);
     // revoked on the server
     seen.lock().unwrap().tokens.clear();
@@ -258,7 +265,7 @@ async fn status_tells_a_token_turned_down_from_a_server_not_kept() {
 async fn libraries_are_those_of_movies_and_series_in_the_servers_order_with_covers() {
     let (at, seen) = emby().await;
     let emby = Emby::open(file("libraries"));
-    emby.add(&at, "bin", "pw", "").await.unwrap();
+    emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
     let cover = format!("http://{at}/emby/Items/3/Images/Primary?tag=b&maxWidth=480&quality=90");
     assert_eq!(
         emby.libraries("srv", "u1").await.unwrap(),
@@ -278,7 +285,7 @@ async fn a_signed_in_request_is_not_redirected_with_its_token() {
     let (at, seen) = emby().await;
     let (elsewhere, _) = emby().await;
     let emby = Emby::open(file("redirected"));
-    emby.add(&at, "bin", "pw", "").await.unwrap();
+    emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
     seen.lock().unwrap().moved_to = Some(format!("http://{elsewhere}/emby/Users/u1/Views"));
     // followed, the other server would turn the token down (SignedOut); not followed, the redirect is the answer
     assert_eq!(emby.libraries("srv", "u1").await, Err(Error::Server { status: 307 }));
@@ -288,7 +295,7 @@ async fn a_signed_in_request_is_not_redirected_with_its_token() {
 async fn items_come_a_page_at_a_time_linked_to_tmdb_with_the_count_on_the_first() {
     let (at, _) = emby().await;
     let emby = Emby::open(file("items"));
-    emby.add(&at, "bin", "pw", "").await.unwrap();
+    emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
     assert_eq!(
         emby.items("srv", "u1", "1", Sort::Added, 0, 2).await.unwrap(),
         Page {
@@ -314,7 +321,7 @@ async fn items_come_a_page_at_a_time_linked_to_tmdb_with_the_count_on_the_first(
 async fn each_sort_asks_for_its_order_and_by_premiere_only_for_titles_premiered() {
     let (at, seen) = emby().await;
     let emby = Emby::open(file("sorts"));
-    emby.add(&at, "bin", "pw", "").await.unwrap();
+    emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
     // the names the pages send (src/lib/emby.ts)
     for name in ["added", "latest", "oldest", "rating"] {
         assert!(serde_json::from_value::<Sort>(json!(name)).is_ok(), "{name}");
@@ -337,10 +344,10 @@ async fn each_sort_asks_for_its_order_and_by_premiere_only_for_titles_premiered(
 async fn a_new_address_where_the_same_server_answers_keeps_the_sign_in_and_an_empty_nickname_clears_it() {
     let (at, seen) = emby().await;
     let emby = Emby::open(file("edit-address"));
-    let added = emby.add(&at, "bin", "pw", "家里").await.unwrap();
+    let added = emby.add(&form(&at, "bin", "pw", "家里")).await.unwrap();
     // the same server, by another name for its host, and the same user however its name is typed
     let elsewhere = at.replace("127.0.0.1", "localhost");
-    let edited = emby.edit("srv", "u1", &elsewhere, " Bin", "", "").await.unwrap();
+    let edited = emby.edit("srv", "u1", &form(&elsewhere, " Bin", "", "")).await.unwrap();
     assert_eq!(edited, Server { address: format!("http://{elsewhere}/emby"), nickname: None, ..added });
     assert_eq!(emby.servers(), [edited]);
     assert_eq!(emby.status("srv", "u1").await, Status::Online);
@@ -354,11 +361,11 @@ async fn an_edit_that_fails_changes_nothing() {
     let (at, _) = emby().await;
     let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
     let emby = Emby::open(file("edit-fails"));
-    let added = emby.add(&at, "bin", "pw", "家里").await.unwrap();
-    assert_eq!(emby.edit("srv", "u1", &added.address, "bin", "nope", "").await, Err(Error::SignIn));
-    assert_eq!(emby.edit("srv", "u1", &closed.to_string(), "bin", "", "").await, Err(Error::Offline));
-    assert_eq!(emby.edit("srv", "u1", "not an address", "bin", "", "").await, Err(Error::NotAnAddress));
-    assert_eq!(emby.edit("gone", "u1", &added.address, "bin", "", "").await, Err(Error::NoServer));
+    let added = emby.add(&form(&at, "bin", "pw", "家里")).await.unwrap();
+    assert_eq!(emby.edit("srv", "u1", &form(&added.address, "bin", "nope", "")).await, Err(Error::SignIn));
+    assert_eq!(emby.edit("srv", "u1", &form(&closed.to_string(), "bin", "", "")).await, Err(Error::Offline));
+    assert_eq!(emby.edit("srv", "u1", &form("not an address", "bin", "", "")).await, Err(Error::NotAnAddress));
+    assert_eq!(emby.edit("gone", "u1", &form(&added.address, "bin", "", "")).await, Err(Error::NoServer));
     assert_eq!(emby.servers(), [added]);
 }
 
@@ -369,14 +376,14 @@ async fn a_password_or_another_server_signs_in_again_in_the_entrys_place_ending_
     // another server, its tokens told apart from the first one's
     *other_seen.lock().unwrap() = Seen { id: Some("other"), issued: 100, ..Default::default() };
     let emby = Emby::open(file("edit-sign-in"));
-    let added = emby.add(&at, "bin", "pw", "").await.unwrap();
-    emby.add(&other, "bin", "pw", "").await.unwrap();
-    let again = emby.edit("srv", "u1", &added.address, "bin", "pw", "").await.unwrap();
+    let added = emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
+    emby.add(&form(&other, "bin", "pw", "")).await.unwrap();
+    let again = emby.edit("srv", "u1", &form(&added.address, "bin", "pw", "")).await.unwrap();
     assert_eq!(emby.servers()[0], again);
     assert!(eventually(|| seen.lock().unwrap().logged_out == ["token-1"]).await);
     // another server at the new address is signed in to rather than handed the token: here, with no password
-    assert_eq!(emby.edit("srv", "u1", &other, "bin", "", "").await, Err(Error::SignIn));
-    let moved = emby.edit("srv", "u1", &other, "bin", "pw", "").await.unwrap();
+    assert_eq!(emby.edit("srv", "u1", &form(&other, "bin", "", "")).await, Err(Error::SignIn));
+    let moved = emby.edit("srv", "u1", &form(&other, "bin", "pw", "")).await.unwrap();
     assert_eq!(moved.id, "other");
     // and it stands for the entry kept for that server already, whose sign-in ends with the one it replaced
     assert_eq!(emby.servers(), [moved]);
@@ -388,25 +395,25 @@ async fn a_password_or_another_server_signs_in_again_in_the_entrys_place_ending_
 async fn a_sign_in_kept_over_https_is_not_moved_to_http_without_the_password() {
     let (at, _) = emby().await;
     let path = file("downgrade");
-    Emby::open(path.clone()).add(&at, "bin", "pw", "").await.unwrap();
+    Emby::open(path.clone()).add(&form(&at, "bin", "pw", "")).await.unwrap();
     // as if it had been signed in over https
     let kept = std::fs::read_to_string(&path).unwrap().replace("http://", "https://");
     std::fs::write(&path, kept).unwrap();
     let emby = Emby::open(path);
     let http = format!("http://{at}/emby");
-    assert_eq!(emby.edit("srv", "u1", &http, "bin", "", "").await, Err(Error::SignIn));
-    assert_eq!(emby.edit("srv", "u1", &http, "bin", "pw", "").await.unwrap().address, http);
+    assert_eq!(emby.edit("srv", "u1", &form(&http, "bin", "", "")).await, Err(Error::SignIn));
+    assert_eq!(emby.edit("srv", "u1", &form(&http, "bin", "pw", "")).await.unwrap().address, http);
 }
 
 #[tokio::test]
 async fn a_sign_in_the_server_turned_down_is_renewed_even_for_a_user_with_no_password() {
     let (at, seen) = emby().await;
     let emby = Emby::open(file("renew"));
-    let guest = emby.add(&at, "guest", "", "").await.unwrap();
+    let guest = emby.add(&form(&at, "guest", "", "")).await.unwrap();
     // revoked on the server
     seen.lock().unwrap().tokens.clear();
     assert_eq!(emby.status("srv", "u2").await, Status::SignedOut);
-    emby.edit("srv", "u2", &guest.address, "guest", "", "").await.unwrap();
+    emby.edit("srv", "u2", &form(&guest.address, "guest", "", "")).await.unwrap();
     assert_eq!(emby.status("srv", "u2").await, Status::Online);
 }
 
@@ -415,7 +422,7 @@ async fn removing_a_server_forgets_it_and_signs_it_out() {
     let (at, seen) = emby().await;
     let path = file("remove");
     let emby = Emby::open(path.clone());
-    emby.add(&at, "bin", "pw", "").await.unwrap();
+    emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
     emby.remove("srv", "u1").await.unwrap();
     assert_eq!(emby.servers(), []);
     assert_eq!(Emby::open(path).servers(), []);

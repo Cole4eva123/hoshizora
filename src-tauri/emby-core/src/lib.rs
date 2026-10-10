@@ -45,6 +45,18 @@ pub struct Server {
     pub signed_in: u64,
 }
 
+/// What the dialog that adds a server, or changes one, sends: the address as typed, the user to sign in as, the
+/// password (empty when there's none, or when a change keeps the sign-in), and the 备注 (empty for none). No `Debug`,
+/// so the password can't end up in a log.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Form {
+    pub address: String,
+    pub username: String,
+    pub password: String,
+    pub nickname: String,
+}
+
 // A server with the token its sign-in gave, which never leaves this crate. The password is never kept.
 #[derive(Clone, Serialize, Deserialize)]
 struct Signed {
@@ -125,10 +137,10 @@ impl Emby {
 
     /// Finds where the server typed answers (`find`), signs in there and keeps it. Signing in again as the same user
     /// (after 登录已失效) replaces the entry, keeps its 备注 unless a new one is typed, and ends the old sign-in.
-    pub async fn add(&self, typed: &str, username: &str, password: &str, nickname: &str) -> Result<Server, Error> {
-        let (address, info) = self.find(typed).await?;
-        let mut signed = self.sign_in(address, info, username, password).await?;
-        signed.server.nickname = nickname_of(nickname);
+    pub async fn add(&self, form: &Form) -> Result<Server, Error> {
+        let (address, info) = self.find(&form.address).await?;
+        let mut signed = self.sign_in(address, info, &form.username, &form.password).await?;
+        signed.server.nickname = nickname_of(&form.nickname);
         let old = self.keep(|servers| {
             let old =
                 servers.iter().position(|s| s.is(&signed.server.id, &signed.server.user_id)).map(|i| servers.remove(i));
@@ -157,15 +169,8 @@ impl Emby {
     /// token would go in the clear. Otherwise it signs in again and ends the old sign-in, which also renews one the
     /// server turned down, as for a user with no password to type. All of it holds or none of it does, and the entry
     /// keeps its place in the list.
-    pub async fn edit(
-        &self,
-        server: &str,
-        user: &str,
-        typed: &str,
-        username: &str,
-        password: &str,
-        nickname: &str,
-    ) -> Result<Server, Error> {
+    pub async fn edit(&self, server: &str, user: &str, form: &Form) -> Result<Server, Error> {
+        let Form { address: typed, username, password, nickname } = form;
         let kept = self.signed(server, user)?;
         // where it's reached, and who answers there: asked only of an address that's new
         let (address, info) = if typed.trim() == kept.server.address {

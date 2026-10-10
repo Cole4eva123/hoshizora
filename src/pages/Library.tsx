@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import {
   type Adding,
   type EmbyError,
+  type Form,
   type Server,
   type Status,
   addServer,
@@ -209,19 +210,25 @@ function ServerDialog({
   const remove = server ? () => removeServer(server) : adding && (() => dismiss(adding))
   const submit = (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
+    // its inputs are named as a Form's fields are
     const data = new FormData(e.currentTarget)
-    const field = (name: string) => String(data.get(name))
-    const typed = [field('address'), field('username'), field('password'), field('nickname')] as const
+    const field = (name: keyof Form) => String(data.get(name) ?? '')
+    const form: Form = {
+      address: field('address'),
+      username: field('username'),
+      password: field('password'),
+      nickname: field('nickname'),
+    }
     if (server) {
       setSaving(true)
       setFailed(undefined)
-      editServer(server, ...typed)
+      editServer(server, form)
         .then(() => dialog.current?.close(), setFailed)
         .finally(() => setSaving(false))
       return
     }
     try {
-      addServer(...typed, adding)
+      addServer(form, adding)
     } catch (err) {
       if (!(err instanceof TypeError)) throw err
       return setFailed({ kind: 'notAnAddress' })
@@ -251,7 +258,7 @@ function ServerDialog({
             label={t('地址', 'Address')}
             error={shown?.kind === 'signIn' ? undefined : why}
             name="address"
-            defaultValue={server?.address ?? adding?.typed}
+            defaultValue={server?.address ?? adding?.form.address}
             required
             inputMode="url"
             autoCapitalize="off"
@@ -262,7 +269,7 @@ function ServerDialog({
           <Field
             label={t('用户名', 'Username')}
             name="username"
-            defaultValue={server?.userName ?? adding?.userName}
+            defaultValue={server?.userName ?? adding?.form.username}
             required
             autoCapitalize="off"
             autoComplete="username"
@@ -271,7 +278,7 @@ function ServerDialog({
             label={t('密码', 'Password')}
             error={shown?.kind === 'signIn' ? why : undefined}
             name="password"
-            defaultValue={adding?.password}
+            defaultValue={adding?.form.password}
             type="password"
             autoComplete="current-password"
             placeholder={server ? t('不改就留空', 'Leave empty to stay signed in') : t('没有密码就留空', 'Leave empty if there is none')}
@@ -279,7 +286,7 @@ function ServerDialog({
           <Field
             label={t('备注（可选）', 'Nickname (optional)')}
             name="nickname"
-            defaultValue={server?.nickname ?? adding?.nickname}
+            defaultValue={server?.nickname ?? adding?.form.nickname}
             autoComplete="off"
             placeholder={
               server

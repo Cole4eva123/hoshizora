@@ -56,8 +56,8 @@ export const removeServer = (s: Server) => invoke('emby_remove', which(s)).then(
 // Changes a kept server as its settings say; the Rust side works out what that takes (Emby::edit). One that fails
 // changes nothing and rejects with why (an EmbyError). What was kept of the server's answers goes, as nothing asks
 // for those under an old address again.
-export const editServer = (s: Server, typed: string, username: string, password: string, nickname: string) =>
-  invoke('emby_edit', { ...which(s), typed, username, password, nickname }).then(() => {
+export const editServer = (s: Server, form: Form) =>
+  invoke('emby_edit', { ...which(s), form }).then(() => {
     refresh(s)
     return reload()
   })
@@ -77,18 +77,20 @@ export const statusText = (status: Status, t: Translate) =>
     signIn: t('登录没成功', "Couldn't sign in"),
   })[status]
 
+// What the dialog that adds a server, or changes one, sends: the address as typed, the user, the password and the
+// 备注. Its inputs are named as emby-core's Form's fields are, so what's typed goes to the Rust side as it is.
+export type Form = { address: string; username: string; password: string; nickname: string }
+
 // The adds under way, shown at once as tiles of their own: one that signs in turns into its server, one that fails stays
 // with why until it's tried again or dismissed. Kept in this window only, as a failed add has nothing to keep. What was
-// typed goes with it, the password too, so trying again starts from it rather than from nothing; it's dropped with
-// the tile.
+// typed (`form`) goes with it, the password too, so trying again starts from it rather than from nothing; it's dropped
+// with the tile.
 export type Adding = Pick<Server, 'name' | 'userName' | 'address'> & {
   id: number
   status: Status
   // why it failed, as the Rust side said, to tell again when it's tried again
   error?: EmbyError
-  typed: string
-  password: string
-  nickname: string
+  form: Form
 }
 let adding: Adding[] = []
 let adds = 0
@@ -102,26 +104,24 @@ export const dismiss = (a: Adding) => setAdding(adding.filter((x) => x.id !== a.
 // Starts adding a server and returns at once, so the dialog can close. Only text that isn't an address throws (a
 // TypeError), before anything shows; the Rust side reads it the same way (both parse it as a URL), then finds where the
 // server answers and signs in. Trying again after a failed add (`instead`) takes that one's place.
-export function addServer(typed: string, username: string, password: string, nickname: string, instead?: Adding) {
-  const text = typed.trim()
+export function addServer(form: Form, instead?: Adding) {
+  const text = form.address.trim()
   const url = new URL(/^https?:\/\//i.test(text) ? text : `http://${text}`)
   const entry: Adding = {
     // a try again keeps the failed one's id, so its tile stays, and reads out how this one goes
     id: instead?.id ?? ++adds,
-    name: nickname.trim() || url.host,
-    userName: username,
+    name: form.nickname.trim() || url.host,
+    userName: form.username,
     address: url.origin,
     status: 'checking',
-    typed,
-    password,
-    nickname,
+    form,
   }
   // in the failed one's place if it's still there, as an add of the same host and user may have cleared it meanwhile
   const at = adding.findIndex((a) => a.id === instead?.id)
   setAdding(at < 0 ? [...adding, entry] : adding.with(at, entry))
   const fail = (status: Status, error?: EmbyError) =>
     setAdding(adding.map((a) => (a.id === entry.id ? { ...a, status, error } : a)))
-  invoke('emby_add', { typed, username, password, nickname })
+  invoke('emby_add', { form })
     .then(() => invoke<Server[]>('emby_servers'))
     .then((next) => {
       // not notified on its own (as reload would): setAdding below notifies once for both, so no frame shows the server
@@ -129,7 +129,7 @@ export function addServer(typed: string, username: string, password: string, nic
       servers = next
       // its tile goes, and so do earlier tries at the same host and user that failed, however its address was typed
       const host = (a: Adding) => new URL(a.address).hostname
-      const tried = (a: Adding) => host(a) === host(entry) && a.userName === username && a.status !== 'checking'
+      const tried = (a: Adding) => host(a) === host(entry) && a.userName === form.username && a.status !== 'checking'
       setAdding(adding.filter((a) => a.id !== entry.id && !tried(a)))
     })
     // the server answered but didn't sign in, or else red rather than grey for good (unreachable, or not kept), so

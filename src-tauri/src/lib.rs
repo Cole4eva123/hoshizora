@@ -1,6 +1,6 @@
 // The app's shell: the window over the web app, and Emby (emby-core) for its pages. Playback moves in here next
 // (docs/playback-plan.md).
-use emby_core::{Emby, Error, Library, Page, Server, Sort, Status};
+use emby_core::{Emby, Error, Form, Library, Page, Server, Sort, Status};
 use tauri::{Manager, State};
 
 // What the pages ask of Emby (src/lib/emby.ts), one command for each thing emby-core does, and nothing more: the
@@ -13,27 +13,13 @@ async fn emby_servers(emby: State<'_, Emby>) -> Result<Vec<Server>, Error> {
 }
 
 #[tauri::command]
-async fn emby_add(
-    emby: State<'_, Emby>,
-    typed: String,
-    username: String,
-    password: String,
-    nickname: String,
-) -> Result<Server, Error> {
-    emby.add(&typed, &username, &password, &nickname).await
+async fn emby_add(emby: State<'_, Emby>, form: Form) -> Result<Server, Error> {
+    emby.add(&form).await
 }
 
 #[tauri::command]
-async fn emby_edit(
-    emby: State<'_, Emby>,
-    server: String,
-    user: String,
-    typed: String,
-    username: String,
-    password: String,
-    nickname: String,
-) -> Result<Server, Error> {
-    emby.edit(&server, &user, &typed, &username, &password, &nickname).await
+async fn emby_edit(emby: State<'_, Emby>, server: String, user: String, form: Form) -> Result<Server, Error> {
+    emby.edit(&server, &user, &form).await
 }
 
 #[tauri::command]
