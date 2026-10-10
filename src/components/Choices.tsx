@@ -1,5 +1,5 @@
 import { type ReactNode, useId } from 'react'
-import { ArrowDownUp } from 'lucide-react'
+import { ArrowDownUp, ChevronDown } from 'lucide-react'
 import { Constellation, type Star } from '@/components/Constellation'
 import { useT } from '@/lib/i18n'
 import { choice, cn } from '@/lib/utils'
@@ -69,5 +69,45 @@ export function Choices<K extends string | number>({
       })}
       {children}
     </fieldset>
+  )
+}
+
+// A menu at the end of a Choices row, for the options past those the row shows (older seasons, more 字幕): one more
+// quiet word, `placeholder`, until one in it is picked, which it then shows, starred like a picked word. The star and
+// the focus ring go on its wrapper, as a select draws no ::after.
+export function ChoiceMenu<K extends string | number>({
+  label,
+  placeholder,
+  options,
+  value,
+  onChange,
+}: {
+  label: string
+  placeholder: string
+  options: { key: K; label: string }[]
+  value: K
+  onChange: (key: K) => void
+}) {
+  const picked = options.some((o) => o.key === value)
+  return (
+    <div className={choice(picked)}>
+      <select
+        aria-label={label}
+        value={picked ? value : ''}
+        onChange={(e) => onChange(options.find((o) => `${o.key}` === e.target.value)!.key)}
+        // as wide as what it shows, not as its longest option
+        className="cursor-pointer appearance-none bg-transparent pr-5 outline-none [field-sizing:content]"
+      >
+        <option value="" disabled hidden>
+          {placeholder}
+        </option>
+        {options.map((o) => (
+          <option key={o.key} value={o.key}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute top-1/2 right-0 size-4 -translate-y-1/2" />
+    </div>
   )
 }

@@ -57,6 +57,14 @@
       scale: 0 1;
     }
   }
+  /* a constellation's lines drawing themselves in (a dash of 1, its polylines' pathLength): the 播放 triangle as a 片源
+     opens, and over and over while the server reads the file */
+  --animate-trace: trace 0.9s ease-out both;
+  @keyframes trace {
+    from {
+      stroke-dashoffset: 1;
+    }
+  }
 }
 
 /* Dark only, in the logo's palette: its midnight sky behind everything, starlight as the one accent. */

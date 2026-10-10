@@ -123,11 +123,17 @@ export function Row({
     if (item) el.scrollTo({ left: item.offsetLeft - parseFloat(getComputedStyle(el).paddingLeft), behavior: 'instant' })
     measure() // a new list changes how far the row scrolls, without firing onScroll or the ResizeObserver
   }, [start, items])
-  // a row made wider or narrower can lose or gain its overflow
+  // a row made wider or narrower can lose or gain its overflow, and so can one whose items come in by themselves (a
+  // child that draws several, as the 片源 of a server that has just answered)
   useEffect(() => {
     const ro = new ResizeObserver(measure)
+    const mo = new MutationObserver(measure)
     ro.observe(ref.current!)
-    return () => ro.disconnect()
+    mo.observe(ref.current!, { childList: true })
+    return () => {
+      ro.disconnect()
+      mo.disconnect()
+    }
   }, [])
 
   // One click moves exactly one screenful of items.

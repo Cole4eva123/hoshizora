@@ -149,8 +149,9 @@ export const hrefOf = (m: Pick<Media, 'media_type' | 'id'>) => `/${m.media_type}
 export const lineupOf = (list: Media[]): Lineup =>
   list.map((m) => ({ media_type: m.media_type, id: m.id, title: titleOf(m) }))
 // Where a title page was opened from: the lineup, and for a list that pages on (a 分类, a search, a 服务器's 媒体库)
-// its request and the pages it showed, so stepping past the last one goes on into the next page.
-export type From = { lineup: Lineup; list?: { path: string; pages: number } | Shelf }
+// its request and the pages it showed, so stepping past the last one goes on into the next page. `item`: the 服务器's
+// id for the card clicked in a 媒体库, as one may keep a 作品 twice; a step drops it.
+export type From = { lineup: Lineup; list?: { path: string; pages: number } | Shelf; item?: string }
 export const originalTitleOf = (m: Media) => m.original_title ?? m.original_name ?? ''
 export const yearOf = (m: Media) => (m.release_date ?? m.first_air_date ?? '').slice(0, 4)
 export const img = (path: string | null, size: 'w300' | 'w342' | 'w500' | 'w1280') =>

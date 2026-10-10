@@ -39,6 +39,9 @@ export function forget(prefix: string) {
     }
 }
 
+// Whether `key` has been answered, for a hook that asks for it only later.
+export const has = (key: string) => answers.has(key)
+
 // The keys a joined key stands for; none for the empty key of a hook asked for nothing.
 const keysOf = (joined: string) => (joined ? joined.split('\n') : [])
 

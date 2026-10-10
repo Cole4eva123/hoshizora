@@ -1,12 +1,22 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useId, useMemo, useState } from 'react'
 import { Link, useLocation, useParams, useViewTransitionState } from 'react-router'
-import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
-import { Choices } from '@/components/Choices'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChoiceMenu, Choices } from '@/components/Choices'
 import { BackButton, Page } from '@/components/Page'
-import { Frame, Row } from '@/components/PosterRow'
+import { Failed, Frame, Row } from '@/components/PosterRow'
 import { PosterWall, TitleInfo } from '@/components/PosterWall'
-import { useLineupAfter } from '@/lib/emby'
-import { useT } from '@/lib/i18n'
+import { type Picked, Sources, Tracks } from '@/components/Sources'
+import {
+  type EpisodeSource,
+  type Server,
+  canConnect,
+  readAheadOn,
+  useEpisodes,
+  useSources,
+  useLineupAfter,
+  useServers,
+} from '@/lib/emby'
+import { type Translate, useT } from '@/lib/i18n'
 import {
   type Details,
   type Episode,
@@ -26,13 +36,14 @@ import {
   useSeason,
   useTitles,
 } from '@/lib/tmdb'
-import { choice, cn } from '@/lib/utils'
+import { cn, lit } from '@/lib/utils'
 
 export default function Detail({ type }: { type: MediaType }) {
   const t = useT()
   const { id } = useParams()
   const { details: m, backdrops, error } = useDetails(type, id!)
   const neighbors = useNeighbors(type, id!)
+  const preferred = preferredOf(useLocation().state as From | null)
 
   if (error)
     return (
@@ -60,14 +71,38 @@ export default function Detail({ type }: { type: MediaType }) {
       />
       <BackButton />
       <div className="space-y-12 pt-6 pb-(--page-bottom) md:space-y-14">
-        {!!m.seasons?.length && <Episodes tv={m} />}
+        <Watch m={m} preferred={preferred} />
         <Cast cast={m.credits.cast} />
       </div>
     </Fragment>
   )
 }
 
-const stepping = (from: From) => ({ state: from, replace: true, viewTransition: true })
+// the card clicked (`item`) is the one stepped from, not the one stepped to
+const stepping = (from: From) => ({ state: { ...from, item: undefined }, replace: true, viewTransition: true })
+
+// The 片源 a 作品 opened from a 服务器's 媒体库 starts on: the card clicked there, or for a step, which names none,
+// that server's first.
+const preferredOf = (from: From | null): Partial<Picked> | undefined =>
+  from?.list && 'library' in from.list ? { server: from.list.server, user: from.list.user, item: from.item } : undefined
+
+// Where to watch it: its 片源 on the kept 服务器 (the app only), and a series' 选集, showing which episodes the picked
+// 片源 has. Inside the page's keyed fragment, so another 作品 starts over on its own pick.
+function Watch({ m, preferred }: { m: Details; preferred?: Partial<Picked> }) {
+  const [wanted, setWanted] = useState(preferred)
+  const on = useServers().find((s) => s.id === wanted?.server && s.userId === wanted?.user)
+  // the copy wanted, once that server's 片源 are in; with none named, or one it doesn't find (a 媒体库's card for a copy
+  // it doesn't count), its first, a series' with episodes coming first
+  const found = useSources(on, m).sources
+  const item = (found?.find((x) => x.item === wanted?.item) ?? found?.[0])?.item
+  const picked = on && item ? { server: on.id, user: on.userId, item } : undefined
+  return (
+    <>
+      {canConnect && <Sources m={m} on={on} picked={picked} onPick={setWanted} />}
+      {!!m.seasons?.length && <Episodes tv={m} on={on && picked && { s: on, series: picked.item }} />}
+    </>
+  )
+}
 
 // The 作品 before and after this one in the list it was opened from (a 分类, a search, a home row or the wall, an
 // actor's 作品, a 服务器's 媒体库). Past the last one loaded from a list that pages on, the next page is asked for and the
@@ -145,97 +180,165 @@ function Neighbor({ to, from, side }: { to: Lineup[number]; from: From; side: 'p
   )
 }
 
-function Episodes({ tv }: { tv: Details }) {
+// A series' 选集. With a 片源 picked (`on`), each episode says whether it's there, and one that is can be picked, its
+// 清晰度, 音轨 and 字幕 showing under the row; pointing at it has the server read its file ahead.
+function Episodes({ tv, on }: { tv: Details; on?: { s: Server; series: string } }) {
   const t = useT()
   const seasons = tv.seasons!
   // open on the season that's airing, else the latest one
   const [season, setSeason] = useState(
     tv.next_episode_to_air?.season_number ?? tv.last_episode_to_air?.season_number ?? seasons.at(-1)!.season_number,
   )
+  // the episode picked on the 片源, by its server and that server's id for it (two servers may number their items
+  // alike), shown while the season shown has it
+  const [watching, setWatching] = useState<string>()
+  const at = (item: string) => `${on?.s.id}/${on?.s.userId}/${item}`
+  const there = useEpisodes(on?.s, on?.series, season)
+  const picked = there.episodes?.find((x) => at(x.item) === watching)
+  const name = useId()
   // the latest five seasons get a button each; older ones and specials go in the 更多 menu
   const latest = seasons.slice(-5)
   const older = seasons.slice(0, -5)
-  const olderPicked = older.some((s) => s.season_number === season)
   const { episodes, error } = useSeason(tv.id, season)
   // an airing season opens at its latest aired episode, with the next one beside it; a finished one at the start
   const next = episodes?.findIndex((e) => !e.air_date || daysUntil(e.air_date) >= 0) ?? -1
 
   return (
-    <Row
-      title={t('选集', 'Episodes')}
-      extra={
-        <>
-          <p className={cn('mt-1 text-sm', tv.next_episode_to_air ? 'text-primary' : 'text-muted-foreground')}>
-            {nextEpisodeText(tv, t)}
-          </p>
-          {seasons.length > 1 && (
-            <Choices
-              legend={t('选择一季', 'Season')}
-              options={latest.map((s) => ({ key: s.season_number, label: s.name }))}
-              value={season}
-              onChange={setSeason}
-              className="mt-5"
-            >
-              {older.length > 0 && (
-                // the star and the focus ring go on the wrapper, as a select draws no ::after
-                <div className={choice(olderPicked)}>
-                  <select
-                    aria-label={t('更多季', 'More seasons')}
-                    value={olderPicked ? season : ''}
-                    onChange={(e) => setSeason(Number(e.target.value))}
-                    className="cursor-pointer appearance-none bg-transparent pr-5 outline-none"
-                  >
-                    <option value="" disabled hidden>
-                      {t('更多', 'More')}
-                    </option>
-                    {older.map((s) => (
-                      <option key={s.id} value={s.season_number}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute top-1/2 right-0 size-4 -translate-y-1/2" />
-                </div>
-              )}
-            </Choices>
-          )}
-          {error && <p className="mt-4 text-sm text-muted-foreground">{error}</p>}
-          {episodes?.length === 0 && (
-            <p className="mt-4 text-sm text-muted-foreground">
-              {t('这一季还没有分集信息。', 'No episode details for this season yet.')}
+    <div>
+      <Row
+        title={t('选集', 'Episodes')}
+        extra={
+          <>
+            <p className={cn('mt-1 text-sm', tv.next_episode_to_air ? 'text-primary' : 'text-muted-foreground')}>
+              {nextEpisodeText(tv, t)}
             </p>
-          )}
-        </>
-      }
-      track="auto-cols-[85%] sm:auto-cols-[calc((100%-1rem)/2)] lg:auto-cols-[calc((100%-2*1rem)/3)] xl:auto-cols-[calc((100%-3*1rem)/4)]"
-      start={episodes && Math.max(0, next - 1)}
-    >
-      {episodes
-        ? episodes.map((e) => <EpisodeCard key={e.id} e={e} />)
-        : !error &&
-          Array.from({ length: 4 }, (_, i) => <div key={i} className="aspect-video animate-pulse rounded-lg bg-muted/70" />)}
-    </Row>
+            {seasons.length > 1 && (
+              <Choices
+                legend={t('选择一季', 'Season')}
+                options={latest.map((s) => ({ key: s.season_number, label: s.name }))}
+                value={season}
+                onChange={setSeason}
+                className="mt-5"
+              >
+                {older.length > 0 && (
+                  <ChoiceMenu
+                    label={t('更多季', 'More seasons')}
+                    placeholder={t('更多', 'More')}
+                    options={older.map((s) => ({ key: s.season_number, label: s.name }))}
+                    value={season}
+                    onChange={setSeason}
+                  />
+                )}
+              </Choices>
+            )}
+            {error && <p className="mt-4 text-sm text-muted-foreground">{error}</p>}
+            {on && there.error && <Failed error={there.error} retry={there.retry} className="mt-4" />}
+            {episodes?.length === 0 && (
+              <p className="mt-4 text-sm text-muted-foreground">
+                {t('这一季还没有分集信息。', 'No episode details for this season yet.')}
+              </p>
+            )}
+          </>
+        }
+        track="auto-cols-[85%] sm:auto-cols-[calc((100%-1rem)/2)] lg:auto-cols-[calc((100%-2*1rem)/3)] xl:auto-cols-[calc((100%-3*1rem)/4)]"
+        start={episodes && Math.max(0, next - 1)}
+      >
+        {episodes
+          ? episodes.map((e) => {
+              // the file of this episode, which may hold the next one too (S01E01-E02)
+              const { season_number: sn, episode_number: n } = e
+              const ep = there.episodes?.find((x) => x.season === sn && x.episode <= n && n <= (x.last ?? x.episode))
+              const id = ep && at(ep.item)
+              return (
+                <EpisodeCard
+                  key={e.id}
+                  e={e}
+                  there={on && ep && { s: on.s, ep, name, picked: id === watching, onPick: () => setWatching(id) }}
+                  // the 片源's episodes are in, and this one, aired, isn't one of them
+                  missing={!!there.episodes && !ep && !!e.air_date && daysUntil(e.air_date) < 0}
+                />
+              )
+            })
+          : !error &&
+            Array.from({ length: 4 }, (_, i) => (
+              <div key={i} className="aspect-video animate-pulse rounded-lg bg-muted/70" />
+            ))}
+      </Row>
+      {on && picked && (
+        <Tracks
+          key={watching}
+          s={on.s}
+          item={picked.item}
+          given={picked.versions}
+          title={episodesOf(picked, t)}
+        />
+      )}
+    </div>
   )
 }
 
-function EpisodeCard({ e }: { e: Episode }) {
+// What an episode on a 片源 is called, a file holding several (S01E01-E02) by all of them.
+const episodesOf = ({ season, episode, last }: EpisodeSource, t: Translate) => {
+  const n = last ? `${episode}–${last}` : episode
+  return t(`第 ${season} 季第 ${n} 集`, `Season ${season}, Episode${last ? 's' : ''} ${n}`)
+}
+
+// An episode as TMDB has it. On the picked 片源 (`there`), its title is a radio's label, whose box covers the card, so
+// the card takes the click and the radio its name, lit like a 片源 when picked; one not found on the 片源 by its
+// numbers (`missing`) is dimmed, and says so. The card's element stays the same as the 片源's episodes come in, so
+// the row isn't drawn afresh (its stills fading in again).
+// ponytail: matched by season and episode number, as the user's server has few episodes' TMDB ids; one numbered
+// otherwise (an anime as one long season) reads as not found. Match by ProviderIds.Tmdb where a server has them.
+function EpisodeCard({
+  e,
+  there,
+  missing,
+}: {
+  e: Episode
+  there?: { s: Server; ep: EpisodeSource; name: string; picked: boolean; onPick: () => void }
+  missing: boolean
+}) {
   const t = useT()
   const days = e.air_date ? daysUntil(e.air_date) : -1
+  const name = (
+    <>
+      <span className={cn(e.name && 'mr-1.5 text-muted-foreground')}>
+        {t(`第 ${e.episode_number} 集`, `Episode ${e.episode_number}`)}
+      </span>
+      {e.name}
+    </>
+  )
   return (
-    <div className="snap-start">
-      <Frame src={img(e.still_path, 'w500')} className="aspect-video text-3xl">
+    <div
+      {...(there ? readAheadOn(there.s, there.ep.item, there.ep.versions) : {})}
+      className={cn('group relative snap-start', missing && 'opacity-40')}
+    >
+      <Frame
+        src={img(e.still_path, 'w500')}
+        className={cn(
+          'aspect-video text-3xl',
+          there &&
+            'transition group-hover:outline-star/40 group-has-focus-visible:outline-2 group-has-focus-visible:outline-offset-2 group-has-focus-visible:outline-ring',
+          there?.picked && cn('outline-star/70 group-hover:outline-star/70', lit),
+        )}
+      >
         {e.episode_number}
       </Frame>
       <h3 className="mt-2 truncate text-sm font-medium">
-        <span className={cn(e.name && 'mr-1.5 text-muted-foreground')}>
-          {t(`第 ${e.episode_number} 集`, `Episode ${e.episode_number}`)}
-        </span>
-        {e.name}
+        {there ? (
+          <label className="cursor-pointer after:absolute after:inset-0">
+            <input type="radio" name={there.name} checked={there.picked} onChange={there.onPick} className="sr-only" />
+            {name}
+          </label>
+        ) : (
+          name
+        )}
       </h3>
       <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
         <span>{e.air_date ? airDateOf(e.air_date, t) : t('播出时间未定', 'Air date TBA')}</span>
         {days >= 0 && <span className="text-primary">{relativeDays(days, t)}</span>}
         {!!e.runtime && <span>{t(`${e.runtime} 分钟`, `${e.runtime} min`)}</span>}
+        {missing && <span>{t('片源里找不到这一集', 'Not found in this source')}</span>}
       </p>
       {e.overview && <p className="mt-1.5 line-clamp-2 text-sm leading-6 text-foreground/70">{e.overview}</p>}
     </div>

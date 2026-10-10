@@ -39,19 +39,20 @@ impl Emby {
         query: &[(&str, &str)],
         timeout: Duration,
     ) -> Result<T, Error> {
-        let answer = self
-            .ask(self.http.get(format!("{}/{path}", s.server.address)), &s.token)
-            .query(query)
-            .timeout(timeout)
-            .send()
-            .await
-            .map_err(|_| Error::Offline)?;
-        match answer.status() {
-            StatusCode::UNAUTHORIZED => Err(Error::SignedOut),
-            status if status.is_redirection() && within(&answer) => Err(Error::Moved),
-            status if !status.is_success() => Err(Error::Server { status: status.as_u16() }),
-            _ => answer.json().await.map_err(|_| Error::Offline),
-        }
+        let request = self.ask(self.http.get(format!("{}/{path}", s.server.address)), &s.token);
+        answer(request.query(query).timeout(timeout)).await
+    }
+
+    // As `get`, for what Emby asks to be posted to it, with an empty JSON body.
+    pub(crate) async fn post<T: DeserializeOwned>(
+        &self,
+        s: &Signed,
+        path: &str,
+        query: &[(&str, &str)],
+        timeout: Duration,
+    ) -> Result<T, Error> {
+        let request = self.ask(self.http.post(format!("{}/{path}", s.server.address)), &s.token);
+        answer(request.query(query).json(&serde_json::json!({})).timeout(timeout)).await
     }
 
     // Signs in as `username` to the server found at `address`; its entry has no 备注 yet.
@@ -117,6 +118,18 @@ impl Emby {
     // As the signed-in user. The token goes in a header rather than the URL, where a proxy's access log would keep it.
     fn ask(&self, request: RequestBuilder, token: &str) -> RequestBuilder {
         self.identify(request).header("X-Emby-Token", token)
+    }
+}
+
+// Sends a request asked as the signed-in user, and reads what Emby answered: `SignedOut` when it turned the token down,
+// `Moved` for a redirect on its own host, which isn't followed.
+async fn answer<T: DeserializeOwned>(request: RequestBuilder) -> Result<T, Error> {
+    let answer = request.send().await.map_err(|_| Error::Offline)?;
+    match answer.status() {
+        StatusCode::UNAUTHORIZED => Err(Error::SignedOut),
+        status if status.is_redirection() && within(&answer) => Err(Error::Moved),
+        status if !status.is_success() => Err(Error::Server { status: status.as_u16() }),
+        _ => answer.json().await.map_err(|_| Error::Offline),
     }
 }
 

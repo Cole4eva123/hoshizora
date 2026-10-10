@@ -17,7 +17,7 @@ import {
 } from '@/lib/emby'
 import { useT } from '@/lib/i18n'
 import { hrefOf } from '@/lib/tmdb'
-import { choice, cn, usePages } from '@/lib/utils'
+import { choice, cn, lit, usePages } from '@/lib/utils'
 
 // 11,392 in either language, whatever the browser's
 const count = (n: number) => n.toLocaleString('en-US')
@@ -122,7 +122,13 @@ function Browse({ server }: { server: Server }) {
       </div>
       <PagedGrid {...list} loading={!libraries || list.loading} count={items?.length}>
         {items?.map((i) => (
-          <Poster key={i.id} to={i.tmdb && hrefOf(i.tmdb)} state={from} src={i.poster} title={i.name}>
+          <Poster
+            key={i.id}
+            to={i.tmdb && hrefOf(i.tmdb)}
+            state={from && { ...from, item: i.id }}
+            src={i.poster}
+            title={i.name}
+          >
             {i.year}
           </Poster>
         ))}
@@ -141,7 +147,7 @@ function Cover({ library, picked, onPick }: { library: Library; picked: boolean;
         src={library.cover}
         className={cn(
           'aspect-video transition-opacity group-has-focus-visible:outline-2 group-has-focus-visible:outline-offset-2 group-has-focus-visible:outline-ring',
-          picked ? 'outline-star/70 shadow-[0_0_24px_-6px_var(--glow)]' : 'opacity-50 group-hover:opacity-100',
+          picked ? cn('outline-star/70', lit) : 'opacity-50 group-hover:opacity-100',
         )}
       />
       <span className={cn(choice(picked), 'mt-2 block w-fit group-hover:text-foreground')}>{library.name}</span>

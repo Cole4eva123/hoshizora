@@ -1,8 +1,8 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-import { arrivedOf, forget, useAnswers } from '@/lib/cache'
+import { arrivedOf, ask, forget, has, useAnswers } from '@/lib/cache'
 import { type Translate, useT } from '@/lib/i18n'
-import type { Lineup, MediaType } from '@/lib/tmdb'
+import type { Lineup, Media, MediaType } from '@/lib/tmdb'
 
 // Emby lives on the app's Rust side (src-tauri/emby-core): it finds where a 服务器 answers, signs in, keeps the token
 // where no page script can read it, and asks the server. This module hands its answers to the pages through cache.ts.
@@ -225,8 +225,10 @@ export const errorText = (e: unknown, t: Translate) => {
 }
 
 // A server's answers are kept in cache.ts under its own prefix, `emby/{server}/{user}/{address}/`, then what was
-// asked: `views`, or `items/{library}/{sort}/{page}`. The address is in it as its pictures' URLs carry it, so one
-// moved to another address asks again. The cache asks for a key it doesn't have by these, which read the key back.
+// asked: `views`, `items/{library}/{sort}/{page}`, a 作品's `sources/{type}/{tmdb}`, a series'
+// `episodes/{series}/{season}`, or what the server read of a file, `versions/{item}`. The address is in it as its
+// pictures' URLs carry it, so one moved to another address asks again. The cache asks for a key it doesn't have by
+// these, which read the key back.
 const keyOf = (s: Server) => `emby/${s.id}/${s.userId}/${encodeURIComponent(s.address)}/`
 const askViews = (key: string) => {
   const [, server, user] = key.split('/')
@@ -235,6 +237,18 @@ const askViews = (key: string) => {
 const askItems = (key: string) => {
   const [, server, user, , , library, sort, page] = key.split('/')
   return invoke<Page>('emby_items', { server, user, library, sort, start: Number(page) * pageSize, limit: pageSize })
+}
+const askSources = (key: string) => {
+  const [, server, user, , , mediaType, id] = key.split('/')
+  return invoke<Source[]>('emby_sources', { server, user, mediaType, id: Number(id) })
+}
+const askEpisodes = (key: string) => {
+  const [, server, user, , , series, season] = key.split('/')
+  return invoke<EpisodeSource[]>('emby_episodes', { server, user, series, season: Number(season) })
+}
+const askVersions = (key: string) => {
+  const [, server, user, , , item] = key.split('/')
+  return invoke<Version[]>('emby_versions', { server, user, item })
 }
 
 // How a 媒体库's 作品 are put in order (emby-core's Sort), which the server does, as only it has them all.
@@ -339,4 +353,94 @@ export type Shelf = { server: string; user: string; library: string; sort: Sort;
 export function useLineupAfter(shelf: Shelf | undefined) {
   const s = useServers().find((x) => x.id === shelf?.server && x.userId === shelf?.user)
   return useItems(s, shelf?.library, shelf?.sort ?? 'added', (shelf?.pages ?? 0) + 1)
+}
+
+// Where a 作品 can be played on a 服务器 (emby-core's sources): its 片源 there, the versions of each, and each version's
+// 音轨 and 字幕 by their index in the file. A version the server hasn't read yet (a .strm) has no `video` and no tracks.
+export type Track = {
+  index: number
+  language?: string
+  title?: string
+  codec?: string
+  channels?: number
+  default: boolean
+  forced: boolean
+}
+export type Version = {
+  id: string
+  name: string
+  size?: number
+  video?: { width: number; height: number; range?: string }
+  audio: Track[]
+  subtitles: Track[]
+}
+// a movie's comes with its versions; a series' with its seasons there, its episodes asked a season at a time
+export type Source = { item: string; name: string; seasons?: number; versions: Version[] }
+// an episode on a series' 片源, numbered as the server numbers it; `last` for a file holding several (S01E01-E02)
+export type EpisodeSource = { item: string; season: number; episode: number; last?: number; versions: Version[] }
+
+// The 片源 of a 作品 on one server, found by its TMDB entry; none when the server doesn't have it. Without a server it
+// asks for nothing.
+export function useSources(s: Server | undefined, m: Pick<Media, 'media_type' | 'id'>) {
+  const t = useT()
+  const keys = s ? [`${keyOf(s)}sources/${m.media_type}/${m.id}`] : []
+  const { data, failed, retry } = useAnswers<Source[]>(keys, askSources)
+  return { sources: data[0], error: failed && errorText(failed.error, t), retry }
+}
+
+// A season's episodes on a series' 片源; without one it asks for nothing.
+export function useEpisodes(s: Server | undefined, series: string | undefined, season: number) {
+  const t = useT()
+  const keys = s && series ? [`${keyOf(s)}episodes/${series}/${season}`] : []
+  const { data, failed, retry } = useAnswers<EpisodeSource[]>(keys, askEpisodes)
+  return { episodes: data[0], error: failed && errorText(failed.error, t), retry }
+}
+
+const versionsKey = (s: Server, item: string) => `${keyOf(s)}versions/${item}`
+// whether the server has yet to read a version's file, as for a .strm: its picture and tracks aren't in
+const unread = (versions: Version[]) => !versions.length || versions.some((v) => !v.video)
+const readAhead = (s: Server, item: string, versions: Version[]) => {
+  if (unread(versions)) ask(versionsKey(s, item), askVersions).catch(() => {}) // asked again on its pick
+}
+
+// A pick, a pointer or the focus resting on one, not passing over it on the way elsewhere, as arrow keys pick each
+// radio they pass in a row.
+const rest = 400
+
+// A 片源's or an episode's handlers that have the server read its file ahead of its pick, as a .strm takes it about
+// 5 s the first time: when the pointer or the focus rests on it. Only that one, never all a page shows, as the server
+// reads it from the cloud. One pointer and one focus, so one wait for each. One read already asks nothing.
+const resting: { pointer?: ReturnType<typeof setTimeout>; focus?: ReturnType<typeof setTimeout> } = {}
+const wait = (by: keyof typeof resting, s: Server, item: string, versions: Version[]) => () => {
+  clearTimeout(resting[by])
+  resting[by] = setTimeout(() => readAhead(s, item, versions), rest)
+}
+const stop = (by: keyof typeof resting) => () => clearTimeout(resting[by])
+export const readAheadOn = (s: Server, item: string, versions: Version[]) => ({
+  onPointerEnter: wait('pointer', s, item, versions),
+  onPointerLeave: stop('pointer'),
+  onFocus: wait('focus', s, item, versions),
+  onBlur: stop('focus'),
+})
+
+// A 片源's or an episode's versions, with their tracks: read by the server if it hasn't yet, `reading` meanwhile, and
+// `error` when it couldn't be, as when the server is down; one the server can't read stays as it was, without tracks.
+export function useVersions(s: Server, item: string, versions: Version[]) {
+  const t = useT()
+  // asked once the pick has rested, its hook mounted that long (it's keyed by the pick); read ahead already, at once
+  const [rested, setRested] = useState(false)
+  useEffect(() => {
+    const id = setTimeout(() => setRested(true), rest)
+    return () => clearTimeout(id)
+  }, [])
+  const key = versionsKey(s, item)
+  const keys = unread(versions) && (rested || has(key)) ? [key] : []
+  const { data, failed, retry } = useAnswers<Version[]>(keys, askVersions)
+  const read = data[0]
+  return {
+    versions: read?.length ? read : versions,
+    reading: unread(versions) && !read && !failed,
+    error: failed && errorText(failed.error, t),
+    retry,
+  }
 }

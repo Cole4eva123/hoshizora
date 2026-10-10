@@ -5,12 +5,12 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use emby_core::{Emby, Error, Form, Item, Library, Page, Server, Sort, Status, Tmdb};
+use emby_core::{Emby, Error, Form, Item, Library, Page, Server, Sort, Source, Status, Tmdb, Track, Version, Video};
 use serde_json::{Value, json};
 
 // What the stand-in server handed out and was told.
@@ -102,6 +102,32 @@ async fn items(State(seen): State<Shared>, headers: HeaderMap, Query(q): Query<H
         return StatusCode::UNAUTHORIZED.into_response();
     }
     seen.lock().unwrap().items_asked = q.clone();
+    // a 作品's 片源, by its TMDB entry
+    if let Some(id) = q.get("AnyProviderIdEquals") {
+        let items = match (id.as_str(), q["IncludeItemTypes"].as_str()) {
+            ("Tmdb.278236", "Movie") => vec![
+                json!({ "Id": "m1", "Name": "X加Y", "ProviderIds": { "Tmdb": "278236" },
+                        "MediaSources": [read_version()] }),
+            ],
+            ("Tmdb.596881", "Movie") => vec![
+                json!({ "Id": "m2", "Name": "春江水暖", "ProviderIds": { "Tmdb": "596881" },
+                        "MediaSources": [unread_version()] }),
+            ],
+            // a server that ignores AnyProviderIdEquals, its whole library answering
+            ("Tmdb.7", "Movie") => vec![json!({ "Id": "m9", "Name": "别的", "ProviderIds": { "Tmdb": "8" } })],
+            // kept twice, the copy with no episodes first; its seasons counted only with its user data, as Emby does
+            ("Tmdb.68507", "Series") => {
+                let seasons = if q.get("EnableUserData").map(String::as_str) == Some("false") { 0 } else { 3 };
+                let tmdb = json!({ "Tmdb": "68507" });
+                vec![
+                    json!({ "Id": "s0", "Name": "黑暗物质三部曲", "ProviderIds": tmdb, "ChildCount": 0 }),
+                    json!({ "Id": "s1", "Name": "黑暗物质", "ProviderIds": tmdb, "ChildCount": seasons }),
+                ]
+            }
+            _ => vec![],
+        };
+        return Json(json!({ "Items": items, "TotalRecordCount": items.len() })).into_response();
+    }
     let all = if q["ParentId"] == "1" {
         vec![
             json!({ "Id": "a", "Name": "三国", "Type": "Series", "ProductionYear": 2010, "ImageTags": { "Primary": "t" }, "ProviderIds": { "Tmdb": "40052" } }),
@@ -117,6 +143,82 @@ async fn items(State(seen): State<Shared>, headers: HeaderMap, Query(q): Query<H
     let total = if q["EnableTotalRecordCount"] == "true" { all.len() } else { 0 };
     let page: Vec<_> = all.into_iter().skip(start).take(limit).collect();
     Json(json!({ "Items": page, "TotalRecordCount": total })).into_response()
+}
+
+// A version the server has read: a 4K file with two 音轨 and two 字幕, and a cover picture, which isn't a track.
+fn read_version() -> Value {
+    json!({ "Id": "v1", "Name": "2160p - BluRay", "Size": 21_800_000_000u64, "MediaStreams": [
+        { "Type": "Video", "Index": 0, "Codec": "hevc", "Width": 3840, "Height": 1600, "VideoRange": "HDR 10" },
+        { "Type": "Audio", "Index": 1, "Codec": "dts", "Language": "eng", "Channels": 8, "IsDefault": true },
+        { "Type": "Audio", "Index": 2, "Codec": "ac3", "Language": "eng", "Title": "Commentary", "Channels": 2 },
+        { "Type": "Subtitle", "Index": 3, "Codec": "subrip", "Language": "eng", "Title": "Forced SRT",
+          "IsDefault": true, "IsForced": true },
+        { "Type": "Subtitle", "Index": 4, "Codec": "ass", "Language": "chi", "Title": "chs" },
+        { "Type": "EmbeddedImage", "Index": 5, "Codec": "mjpeg" },
+    ]})
+}
+
+// A .strm the server hasn't read: nothing known of it but its name, its size 0.
+fn unread_version() -> Value {
+    json!({ "Id": "v2", "Name": "1080p - BluRay", "Size": 0, "MediaStreams": [] })
+}
+
+// A season of a series' 片源, as Emby numbers it.
+async fn episodes(
+    State(seen): State<Shared>,
+    headers: HeaderMap,
+    Path(series): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
+    if !signed_in(&seen, &headers) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    seen.lock().unwrap().items_asked = q.clone();
+    let mut items = if series == "s1" && q.get("Season").map(String::as_str) == Some("2") {
+        // and one file holding two, and one the server hasn't numbered
+        vec![
+            json!({ "Id": "e21", "ParentIndexNumber": 2, "IndexNumber": 1, "MediaSources": [unread_version()] }),
+            json!({ "Id": "e24", "ParentIndexNumber": 2, "IndexNumber": 4, "IndexNumberEnd": 5,
+                    "MediaSources": [unread_version()] }),
+            json!({ "Id": "e2x", "ParentIndexNumber": 2 }),
+        ]
+    } else {
+        vec![]
+    };
+    // a server set to show missing episodes lists them, with no file, unless asked not to; and next week's, not yet
+    // missing, either way
+    if !items.is_empty() && q.get("IsMissing").map(String::as_str) != Some("false") {
+        items.push(json!({ "Id": "e22", "ParentIndexNumber": 2, "IndexNumber": 2, "LocationType": "Virtual" }));
+    }
+    if !items.is_empty() {
+        items.push(json!({ "Id": "e23", "ParentIndexNumber": 2, "IndexNumber": 3, "LocationType": "Virtual" }));
+    }
+    Json(json!({ "Items": items })).into_response()
+}
+
+// What a version holds: read from the file, as for playback, when the server hasn't yet; otherwise what it has.
+async fn playback_info(
+    State(seen): State<Shared>,
+    headers: HeaderMap,
+    Path(item): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
+    if !signed_in(&seen, &headers) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let is = |k: &str, v: &str| q.get(k).map(String::as_str) == Some(v);
+    let read = is("IsPlayback", "true") && is("AutoOpenLiveStream", "false") && is("UserId", "u1");
+    let version = if read {
+        json!({ "Id": "v2", "Name": "1080p - BluRay", "MediaStreams": [
+            { "Type": "Video", "Index": 0, "Codec": "hevc", "Width": 1920, "Height": 1080, "VideoRange": "SDR" },
+            { "Type": "Audio", "Index": 1, "Codec": "ac3", "Channels": 6, "IsDefault": true },
+            { "Type": "Subtitle", "Index": 2, "Codec": "PGSSUB", "Language": "chi", "Title": "chs", "IsDefault": true },
+        ]})
+    } else {
+        unread_version()
+    };
+    let sources = if item == "m2" { vec![version] } else { vec![] };
+    Json(json!({ "MediaSources": sources, "PlaySessionId": "p" })).into_response()
 }
 
 async fn logout(State(seen): State<Shared>, headers: HeaderMap) -> StatusCode {
@@ -140,6 +242,8 @@ async fn emby() -> (String, Shared) {
         .route("/emby/System/Info", get(system_info))
         .route("/emby/Users/u1/Views", get(views))
         .route("/emby/Users/u1/Items", get(items))
+        .route("/emby/Shows/{series}/Episodes", get(episodes))
+        .route("/emby/Items/{item}/PlaybackInfo", post(playback_info))
         .route("/emby/Sessions/Logout", post(logout))
         .with_state(seen.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -513,6 +617,94 @@ async fn changes_made_at_once_all_stand() {
         assert_eq!(nicknames(emby.servers()), both, "round {round}");
         assert_eq!(nicknames(Emby::open(path.clone()).servers()), both, "round {round}");
     }
+}
+
+// An 音轨 or a 字幕 as emby-core hands it out.
+fn track(
+    index: u32,
+    codec: &str,
+    language: Option<&str>,
+    title: Option<&str>,
+    channels: Option<u32>,
+    flags: (bool, bool),
+) -> Track {
+    let (default, forced) = flags;
+    Track {
+        index,
+        language: language.map(Into::into),
+        title: title.map(Into::into),
+        codec: Some(codec.into()),
+        channels,
+        default,
+        forced,
+    }
+}
+
+#[tokio::test]
+async fn a_movies_sources_are_found_by_its_tmdb_entry_with_their_versions_and_tracks() {
+    let (at, seen) = emby().await;
+    let emby = Emby::open(file("sources"));
+    emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
+    assert_eq!(
+        emby.sources("srv", "u1", "movie", 278236).await.unwrap(),
+        [Source {
+            item: "m1".into(),
+            name: "X加Y".into(),
+            seasons: None,
+            versions: vec![Version {
+                id: "v1".into(),
+                name: "2160p - BluRay".into(),
+                size: Some(21_800_000_000),
+                video: Some(Video { width: 3840, height: 1600, range: Some("HDR 10".into()) }),
+                audio: vec![
+                    track(1, "dts", Some("eng"), None, Some(8), (true, false)),
+                    track(2, "ac3", Some("eng"), Some("Commentary"), Some(2), (false, false)),
+                ],
+                subtitles: vec![
+                    track(3, "subrip", Some("eng"), Some("Forced SRT"), None, (true, true)),
+                    track(4, "ass", Some("chi"), Some("chs"), None, (false, false)),
+                ],
+            }],
+        }]
+    );
+    let asked = seen.lock().unwrap().items_asked.clone();
+    let asked = [&asked["AnyProviderIdEquals"], &asked["IncludeItemTypes"], &asked["Recursive"]];
+    assert_eq!(asked, ["Tmdb.278236", "Movie", "true"]);
+    assert_eq!(emby.sources("srv", "u1", "movie", 1).await.unwrap(), []);
+    assert_eq!(emby.sources("srv", "u1", "movie", 7).await.unwrap(), []);
+    // a .strm the server hasn't read: no picture, no tracks, and its size 0 is no size
+    let unread = &emby.sources("srv", "u1", "movie", 596881).await.unwrap()[0].versions[0];
+    assert_eq!((unread.size, &unread.video, unread.audio.len()), (None, &None, 0));
+    assert_eq!(emby.sources("gone", "u1", "movie", 278236).await, Err(Error::NoServer));
+}
+
+#[tokio::test]
+async fn a_series_kept_twice_has_the_copy_with_episodes_first_and_its_episodes_come_a_season_at_a_time() {
+    let (at, seen) = emby().await;
+    let emby = Emby::open(file("series"));
+    emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
+    let found = emby.sources("srv", "u1", "tv", 68507).await.unwrap();
+    let found: Vec<_> = found.iter().map(|s| (s.item.as_str(), s.seasons)).collect();
+    assert_eq!(found, [("s1", Some(3)), ("s0", Some(0))]);
+    let episodes = emby.episodes("srv", "u1", "s1", 2).await.unwrap();
+    // the one the server hasn't numbered is left out, and those with no file
+    let numbers: Vec<_> = episodes.iter().map(|e| (e.item.as_str(), e.season, e.episode, e.last)).collect();
+    assert_eq!(numbers, [("e21", 2, 1, None), ("e24", 2, 4, Some(5))]);
+    assert_eq!(seen.lock().unwrap().items_asked["Season"], "2");
+    // an id that isn't one Emby gives goes into no path
+    assert_eq!(emby.episodes("srv", "u1", "../Users", 2).await.unwrap(), []);
+}
+
+#[tokio::test]
+async fn versions_have_the_server_read_a_file_it_has_not_yet() {
+    let (at, _) = emby().await;
+    let emby = Emby::open(file("versions"));
+    emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
+    let read = emby.versions("srv", "u1", "m2").await.unwrap();
+    assert_eq!(read[0].video.as_ref().map(|v| v.height), Some(1080));
+    assert_eq!(read[0].audio, [track(1, "ac3", None, None, Some(6), (true, false))]);
+    assert_eq!(read[0].subtitles[0].title.as_deref(), Some("chs"));
+    assert_eq!(emby.versions("srv", "u1", "Items/x").await.unwrap(), []);
 }
 
 #[tokio::test]

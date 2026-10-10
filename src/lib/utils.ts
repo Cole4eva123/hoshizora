@@ -9,6 +9,10 @@ export { cn }
 export const star =
   'relative after:absolute after:-bottom-1 after:left-1/2 after:size-1 after:-translate-x-1/2 after:rounded-full after:bg-tone after:shadow-[0_0_6px_1px_var(--tone)]'
 
+// The glow of the picked one among pictures and tiles that are radios: a 媒体库's cover, a 片源, an episode, each
+// ringed in starlight its own way.
+export const lit = 'shadow-[0_0_24px_-6px_var(--glow)]'
+
 // One option of a Choices row, picked or not: a quiet word, and under the picked one the star. Also dresses a control
 // that sits in the row, like the menu of older seasons.
 export const choice = (picked: boolean) =>
@@ -43,6 +47,9 @@ export const server: Star[][] = [[[3, 7], [21, 7], [21, 17], [3, 17], [3, 7]], [
 export const lens: Star[][] = [
   [[15.5, 15.5], [8.7, 17.3], [3.7, 12.3], [5.5, 5.5], [12.3, 3.7], [17.3, 8.7], [15.5, 15.5], [21, 21]],
 ]
+
+// The logo's play triangle, three stars: the 播放 button under a 片源.
+export const play: Star[][] = [[[7, 4], [20, 12], [7, 20], [7, 4]]]
 
 // Two sliders, bigger stars for their knobs: the corner menu's 设置, and a 服务器's settings on its tile.
 export const sliders: Star[][] = [

@@ -52,11 +52,11 @@ pub struct Page {
     pub total: Option<u32>,
 }
 
-// The parts of Emby's lists read here.
+// The parts of Emby's lists read here, and in `sources`.
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct Listing<T> {
-    items: Vec<T>,
+pub(crate) struct Listing<T> {
+    pub(crate) items: Vec<T>,
     #[serde(default)]
     total_record_count: u32,
 }
@@ -93,8 +93,8 @@ struct Tags {
 
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct Ids {
-    tmdb: Option<String>,
+pub(crate) struct Ids {
+    pub(crate) tmdb: Option<String>,
 }
 
 impl Emby {
