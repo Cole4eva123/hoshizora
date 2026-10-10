@@ -22,8 +22,10 @@ struct Seen {
     // the tokens it still takes
     tokens: Vec<String>,
     logged_out: Vec<String>,
-    // where the 媒体库 have moved to, as a proxy might redirect them
+    // where the 媒体库 and System/Info have moved to, as a proxy might redirect them
     moved_to: Option<String>,
+    // whether what's in front of the server now turns the app away (403)
+    refused: bool,
     // what the last list of 作品 was asked with
     items_asked: HashMap<String, String>,
 }
@@ -66,6 +68,12 @@ async fn authenticate(State(seen): State<Shared>, headers: HeaderMap, Json(body)
 }
 
 async fn system_info(State(seen): State<Shared>, headers: HeaderMap) -> Response {
+    if let Some(to) = seen.lock().unwrap().moved_to.clone() {
+        return Redirect::temporary(&to).into_response();
+    }
+    if seen.lock().unwrap().refused {
+        return StatusCode::FORBIDDEN.into_response();
+    }
     if !signed_in(&seen, &headers) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
@@ -219,6 +227,58 @@ async fn an_unreadable_file_is_moved_aside_rather_than_written_over() {
     assert_eq!(std::fs::read_to_string(aside).unwrap(), "not json");
 }
 
+// One that can't be read now (no permission, a disk error) may read again on the next launch, so it stays where it is,
+// and nothing is written over it meanwhile.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_file_that_cannot_be_read_is_left_alone_and_not_written_over() {
+    use std::os::unix::fs::PermissionsExt;
+    let (at, _) = emby().await;
+    let path = file("locked");
+    Emby::open(path.clone()).add(&form(&at, "bin", "pw", "")).await.unwrap();
+    let kept = std::fs::read_to_string(&path).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+    // root reads it anyway, so there's nothing to see
+    if std::fs::read(&path).is_ok() {
+        return;
+    }
+    let emby = Emby::open(path.clone());
+    assert_eq!(emby.servers(), []);
+    assert_eq!(emby.add(&form(&at, "bin", "pw", "")).await, Err(Error::Storage));
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), kept);
+    assert_eq!(Emby::open(path).servers().len(), 1);
+}
+
+// A write waits on the disk (a fsync, which on a Mac flushes the drive's cache) away from the threads that answer the
+// pages. The temporary file is a pipe here, which opening to write waits on until something reads it: it's read once
+// something else has run meanwhile on the runtime's one thread, or after 5 s if nothing could.
+#[cfg(unix)]
+#[tokio::test(flavor = "current_thread")]
+async fn a_slow_write_does_not_hold_up_what_else_is_asked() {
+    let (at, _) = emby().await;
+    let path = file("slow");
+    let emby = Arc::new(Emby::open(path.clone()));
+    emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
+    let tmp = path.with_extension("tmp");
+    assert!(std::process::Command::new("mkfifo").arg(&tmp).status().unwrap().success());
+    let (ran, running) = std::sync::mpsc::channel();
+    let disk = std::thread::spawn(move || {
+        let ran_meanwhile = running.recv_timeout(Duration::from_secs(5)).is_ok();
+        // opened to read and write, which doesn't wait for a writer, and held till the write is done
+        (ran_meanwhile, std::fs::OpenOptions::new().read(true).write(true).open(tmp))
+    });
+    let writing = tokio::spawn({
+        let emby = emby.clone();
+        async move { emby.remove("srv", "u1").await }
+    });
+    // the write starts while this waits, and this runs again only if the write doesn't hold the thread
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    let _ = ran.send(());
+    let _ = writing.await;
+    assert!(disk.join().unwrap().0, "nothing else ran while the write waited on the disk");
+}
+
 #[tokio::test]
 async fn nothing_there_is_offline_and_text_that_is_not_an_address_is_turned_down() {
     // a port nothing listens on any more
@@ -262,6 +322,21 @@ async fn status_tells_a_token_turned_down_from_a_server_not_kept() {
 }
 
 #[tokio::test]
+async fn status_tells_an_address_that_redirects_from_a_user_turned_away() {
+    let (at, seen) = emby().await;
+    let emby = Emby::open(file("elsewhere"));
+    emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
+    seen.lock().unwrap().moved_to = Some(format!("https://{at}/emby/System/Info"));
+    assert_eq!(emby.status("srv", "u1").await, Status::Moved);
+    // to another host, as a café's Wi-Fi sends everything to its sign-in page, nothing Emby answered
+    seen.lock().unwrap().moved_to = Some("http://portal.example/login".into());
+    assert_eq!(emby.status("srv", "u1").await, Status::Offline);
+    // turned away before the token's looked at
+    *seen.lock().unwrap() = Seen { refused: true, ..Seen::default() };
+    assert_eq!(emby.status("srv", "u1").await, Status::Refused);
+}
+
+#[tokio::test]
 async fn libraries_are_those_of_movies_and_series_in_the_servers_order_with_covers() {
     let (at, seen) = emby().await;
     let emby = Emby::open(file("libraries"));
@@ -288,7 +363,7 @@ async fn a_signed_in_request_is_not_redirected_with_its_token() {
     emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
     seen.lock().unwrap().moved_to = Some(format!("http://{elsewhere}/emby/Users/u1/Views"));
     // followed, the other server would turn the token down (SignedOut); not followed, the redirect is the answer
-    assert_eq!(emby.libraries("srv", "u1").await, Err(Error::Server { status: 307 }));
+    assert_eq!(emby.libraries("srv", "u1").await, Err(Error::Moved));
 }
 
 #[tokio::test]
@@ -415,6 +490,29 @@ async fn a_sign_in_the_server_turned_down_is_renewed_even_for_a_user_with_no_pas
     assert_eq!(emby.status("srv", "u2").await, Status::SignedOut);
     emby.edit("srv", "u2", &form(&guest.address, "guest", "", "")).await.unwrap();
     assert_eq!(emby.status("srv", "u2").await, Status::Online);
+}
+
+// Changes made at once all stand, in the list and the file, as each starts from the one before it.
+#[tokio::test(flavor = "multi_thread")]
+async fn changes_made_at_once_all_stand() {
+    let (at, _) = emby().await;
+    let path = file("together");
+    let emby = Arc::new(Emby::open(path.clone()));
+    emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
+    emby.add(&form(&at, "guest", "", "")).await.unwrap();
+    let nicknames = |servers: Vec<Server>| servers.into_iter().map(|s| s.nickname).collect::<Vec<_>>();
+    for round in 0..20 {
+        let edits = [("u1", "bin"), ("u2", "guest")].map(|(user, name)| {
+            let (emby, form) = (emby.clone(), form(&format!("http://{at}/emby"), name, "", &format!("{name}{round}")));
+            tokio::spawn(async move { emby.edit("srv", user, &form).await })
+        });
+        for edit in edits {
+            edit.await.unwrap().unwrap();
+        }
+        let both = [Some(format!("bin{round}")), Some(format!("guest{round}"))];
+        assert_eq!(nicknames(emby.servers()), both, "round {round}");
+        assert_eq!(nicknames(Emby::open(path.clone()).servers()), both, "round {round}");
+    }
 }
 
 #[tokio::test]

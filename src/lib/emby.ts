@@ -26,7 +26,7 @@ export const nameOf = (s: Server) => s.nickname || s.name
 
 // Why the Rust side couldn't do what was asked (emby-core's Error).
 export type EmbyError =
-  | { kind: 'notAnAddress' | 'offline' | 'signIn' | 'signedOut' | 'noServer' | 'storage' }
+  | { kind: 'notAnAddress' | 'offline' | 'signIn' | 'signedOut' | 'moved' | 'noServer' | 'storage' }
   | { kind: 'server'; status: number }
 
 // The kept servers, read during render like the 界面语言, so a page draws them in its first frame (a 服务器's page,
@@ -63,9 +63,11 @@ export const editServer = (s: Server, form: Form) =>
   })
 
 // How a server's tile shows it: `checking` while it's asked (a grey light), `online`, `offline` when nothing Emby
-// answers, `signedOut` when the server turned a kept token down (revoked, or the user is gone); and for an add that
-// failed, `signIn` when the server answered the sign-in but didn't sign in (a wrong password, or an error of its own).
-export type Status = 'checking' | 'online' | 'offline' | 'signedOut' | 'signIn'
+// answers, `signedOut` when the server turned a kept token down (revoked, or the user is gone), `moved` when its
+// address redirects on its own host, `refused` when it turns the user away (a 403); and for an add that failed,
+// `signIn` when the server answered the sign-in but didn't sign in (a wrong password, or an error of its own),
+// `storage` when it couldn't be kept on this device.
+export type Status = 'checking' | 'online' | 'offline' | 'signedOut' | 'moved' | 'refused' | 'signIn' | 'storage'
 
 // A Status in words, beside its light for anyone who can't tell red from green, and for screen readers.
 export const statusText = (status: Status, t: Translate) =>
@@ -74,7 +76,10 @@ export const statusText = (status: Status, t: Translate) =>
     online: t('已连接', 'Connected'),
     offline: t('连接异常', 'Connection error'),
     signedOut: t('登录已失效', 'Signed out'),
+    moved: t('地址已失效', 'Address outdated'),
+    refused: t('拒绝访问', 'Access denied'),
     signIn: t('登录没成功', "Couldn't sign in"),
+    storage: t('没能保存', "Couldn't save"),
   })[status]
 
 // What the dialog that adds a server, or changes one, sends: the address as typed, the user, the password and the
@@ -100,6 +105,13 @@ const setAdding = (next: Adding[]) => {
 }
 export const useAdding = () => useSyncExternalStore(subscribe, () => adding)
 export const dismiss = (a: Adding) => setAdding(adding.filter((x) => x.id !== a.id))
+
+// How a failed add's tile shows why; anything else is `offline`.
+const failedAs: Partial<Record<EmbyError['kind'], Status>> = {
+  signIn: 'signIn',
+  server: 'signIn',
+  storage: 'storage',
+}
 
 // Starts adding a server and returns at once, so the dialog can close. Only text that isn't an address throws (a
 // TypeError), before anything shows; the Rust side reads it the same way (both parse it as a URL), then finds where the
@@ -132,9 +144,8 @@ export function addServer(form: Form, instead?: Adding) {
       const tried = (a: Adding) => host(a) === host(entry) && a.userName === form.username && a.status !== 'checking'
       setAdding(adding.filter((a) => a.id !== entry.id && !tried(a)))
     })
-    // the server answered but didn't sign in, or else red rather than grey for good (unreachable, or not kept), so
-    // the tile can be tried again or removed
-    .catch((e?: EmbyError) => fail(e?.kind === 'signIn' || e?.kind === 'server' ? 'signIn' : 'offline', e))
+    // red rather than grey for good, so the tile can be tried again or removed
+    .catch((e?: EmbyError) => fail((e && failedAs[e.kind]) ?? 'offline', e))
 }
 
 // Whether a kept server answers its signed-in user now. Asked when the page opens, on coming back to it, and when the
@@ -189,14 +200,25 @@ export const errorText = (e: unknown, t: Translate) => {
         '登录已失效。在媒体库里打开这台服务器的设置，输入密码重新登录。',
         "Signed out. Open this server's settings in Library and enter the password to sign in again.",
       )
+    case 'moved':
+      return t(
+        '服务器已经不在这个地址了。在媒体库里打开这台服务器的设置，改成它现在的地址。',
+        "The server isn't at this address any more. Open its settings in Library and change it to where it is now.",
+      )
     case 'server':
-      return t(`服务器返回错误 ${error.status}`, `The server answered with error ${error.status}`)
+      // 403 as the tile says it (`refused`)
+      return error.status === 403
+        ? t('服务器拒绝了访问（403）', 'The server refused access (403)')
+        : t(`服务器返回错误 ${error.status}`, `The server answered with error ${error.status}`)
     case 'notAnAddress':
       return t('这不是一个服务器地址', "That isn't a server address")
     case 'signIn':
       return t('登录没成功，检查一下用户名和密码', "Couldn't sign in, check the username and password")
     case 'storage':
-      return t('没能存到这台设备上', "Couldn't save it on this device")
+      return t(
+        '没能存到这台设备上。看看磁盘是不是满了、放映室的数据文件夹能不能读写，再重开放映室。',
+        "Couldn't save it on this device. Check the disk isn't full and Hoshizora's data folder is writable, then reopen.",
+      )
     default:
       return t('连接异常，检查一下网络和服务器地址', "Connection error, check your network and the server's address")
   }

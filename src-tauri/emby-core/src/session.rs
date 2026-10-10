@@ -3,7 +3,8 @@
 
 use std::time::Duration;
 
-use reqwest::{RequestBuilder, StatusCode};
+use reqwest::header::LOCATION;
+use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
@@ -47,6 +48,7 @@ impl Emby {
             .map_err(|_| Error::Offline)?;
         match answer.status() {
             StatusCode::UNAUTHORIZED => Err(Error::SignedOut),
+            status if status.is_redirection() && within(&answer) => Err(Error::Moved),
             status if !status.is_success() => Err(Error::Server { status: status.as_u16() }),
             _ => answer.json().await.map_err(|_| Error::Offline),
         }
@@ -116,4 +118,12 @@ impl Emby {
     fn ask(&self, request: RequestBuilder, token: &str) -> RequestBuilder {
         self.identify(request).header("X-Emby-Token", token)
     }
+}
+
+// Whether a redirect stays on the host asked, on any port, as when what's in front of the server moves it to https
+// (8096 to 443) or another path. One to another host is an error of its own, as a captive portal or an SSO gate sends
+// there too, not only a new domain.
+fn within(answer: &Response) -> bool {
+    let to = answer.headers().get(LOCATION).and_then(|to| to.to_str().ok());
+    to.and_then(|to| answer.url().join(to).ok()).is_some_and(|to| to.host() == answer.url().host())
 }

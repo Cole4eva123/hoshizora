@@ -13,7 +13,7 @@ mod kept;
 mod session;
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reqwest::Client;
@@ -84,6 +84,9 @@ pub enum Error {
     SignIn,
     /// The server turned the kept token down: revoked, or the user is gone.
     SignedOut,
+    /// The address answers with a redirect on its own host, not followed as the token would go along: what's in front
+    /// of the server moved it, to https or another path. A new address in its settings is the way back.
+    Moved,
     /// The server answered with another error.
     Server { status: u16 },
     /// No such server is kept here (removed meanwhile).
@@ -99,6 +102,8 @@ pub enum Status {
     Online,
     Offline,
     SignedOut,
+    Moved,
+    Refused,
 }
 
 /// Emby as this app reaches it: the servers kept on this device, and everything asked of them. Opened once and
@@ -108,24 +113,28 @@ pub struct Emby {
     // or the password on a 307, to wherever it points. The probes follow redirects, to learn where the server answers.
     http: Client,
     probing: Client,
-    file: PathBuf,
+    // where the servers are written; none when the file there couldn't be read, which stays as it is till next launch
+    file: Option<PathBuf>,
     device: String,
-    servers: Mutex<Vec<Signed>>,
-    // one change written at a time, without holding `servers` through the write, so readers don't wait out a fsync
-    writing: Mutex<()>,
+    // shared with a write, which the list takes the change from (`keep`)
+    servers: Arc<Mutex<Vec<Signed>>>,
+    // One change written at a time, without holding `servers` through the write, so readers don't wait out a fsync.
+    // Waited for without holding a thread, as the write it waits out is a fsync too; held by the write till it's done.
+    writing: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Emby {
-    /// The servers kept at `file` (`kept::read`), written on each change to them.
+    /// The servers kept at `file` (`kept::read`), written on each change to them; none, and no change, when the file
+    /// is there but can't be read now.
     pub fn open(file: PathBuf) -> Emby {
-        let kept = kept::read(&file);
+        let (kept, file) = kept::read(file);
         let client = || Client::builder().user_agent(concat!("Hoshizora/", env!("CARGO_PKG_VERSION")));
         Emby {
             http: client().redirect(reqwest::redirect::Policy::none()).build().expect("no TLS backend"),
             probing: client().build().expect("no TLS backend"),
             device: kept.device,
-            servers: Mutex::new(kept.servers),
-            writing: Mutex::new(()),
+            servers: Arc::new(Mutex::new(kept.servers)),
+            writing: Arc::default(),
             file,
         }
     }
@@ -138,6 +147,8 @@ impl Emby {
     /// Finds where the server typed answers (`find`), signs in there and keeps it. Signing in again as the same user
     /// (after 登录已失效) replaces the entry, keeps its 备注 unless a new one is typed, and ends the old sign-in.
     pub async fn add(&self, form: &Form) -> Result<Server, Error> {
+        // nothing can be kept this launch (`kept::read`), so nothing is asked of the server either
+        self.file.as_ref().ok_or(Error::Storage)?;
         let (address, info) = self.find(&form.address).await?;
         let mut signed = self.sign_in(address, info, &form.username, &form.password).await?;
         signed.server.nickname = nickname_of(&form.nickname);
@@ -148,7 +159,8 @@ impl Emby {
                 signed.server.nickname.take().or_else(|| old.as_ref().and_then(|o| o.server.nickname.clone()));
             servers.push(signed.clone());
             old
-        });
+        })
+        .await;
         let old = match old {
             Ok(old) => old,
             Err(e) => {
@@ -205,7 +217,8 @@ impl Emby {
             // one kept already as the server and user it now is goes, as this one stands for it
             let twin = servers.iter().enumerate().position(|(j, s)| j != i && s.is(&next.server.id, &next.server.user_id));
             Some([Some(edited), twin.map(|j| servers.remove(j))])
-        });
+        })
+        .await;
         match replaced.and_then(|replaced| replaced.ok_or(Error::NoServer)) {
             Ok(replaced) => {
                 for old in replaced.into_iter().flatten().filter(|o| o.token != next.token) {
@@ -220,26 +233,29 @@ impl Emby {
         }
     }
 
-    /// Forgets a kept server, and ends its sign-in on the server in the background. Async though it awaits nothing, as
-    /// that sign-out is spawned on the caller's runtime.
+    /// Forgets a kept server, and ends its sign-in on the server in the background, spawned on the caller's runtime.
     pub async fn remove(&self, server: &str, user: &str) -> Result<(), Error> {
         let gone = self.keep(|servers| {
             let i = servers.iter().position(|s| s.is(server, user))?;
             Some(servers.remove(i))
-        })?;
+        })
+        .await?;
         if let Some(gone) = gone {
             self.sign_out(gone);
         }
         Ok(())
     }
 
-    /// Whether the server answers its signed-in user now: `SignedOut` when it turns the token down, `Offline` when
-    /// nothing answers or no such server is kept.
+    /// Whether the server answers its signed-in user now: `SignedOut` when it turns the token down, `Moved` when its
+    /// address redirects, `Refused` when it turns the user away (403: the account disabled, or barred from where the
+    /// app is or at this hour, or a proxy's rule), `Offline` when nothing answers or no such server is kept.
     pub async fn status(&self, server: &str, user: &str) -> Status {
         let Ok(s) = self.signed(server, user) else { return Status::Offline };
         match self.get::<IgnoredAny>(&s, "System/Info", &[], CHECK).await {
             Ok(_) => Status::Online,
             Err(Error::SignedOut) => Status::SignedOut,
+            Err(Error::Moved) => Status::Moved,
+            Err(Error::Server { status: 403 }) => Status::Refused,
             Err(_) => Status::Offline,
         }
     }
