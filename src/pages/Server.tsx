@@ -3,7 +3,7 @@ import { Navigate, useParams, useSearchParams } from 'react-router'
 import { Choices } from '@/components/Choices'
 import { ServerMark } from '@/components/Constellation'
 import { EmptyState, Page } from '@/components/Page'
-import { Failed, Frame, PagedGrid, Poster, Row } from '@/components/PosterRow'
+import { Failed, Frame, PagedGrid, Poster, Row, StillSkeletons } from '@/components/PosterRow'
 import {
   type Library,
   type Server,
@@ -17,13 +17,16 @@ import {
 } from '@/lib/emby'
 import { useT } from '@/lib/i18n'
 import { hrefOf } from '@/lib/tmdb'
-import { choice, cn, lit, usePages } from '@/lib/utils'
+import { choice, cn, lit, mostCols, usePages } from '@/lib/utils'
 
 // 11,392 in either language, whatever the browser's
 const count = (n: number) => n.toLocaleString('en-US')
 
 // A 服务器 opened from the 媒体库 page, by its id and its user's, as one server can be signed in as two users. One
 // removed meanwhile, or another device's link, goes back to the 媒体库 page.
+// a 媒体库's cover, with the next one peeking in on a phone; then three to five to a row
+const coverTrack = 'auto-cols-[42%] sm:auto-cols-(--span) sm:[--cols:3] lg:[--cols:4] xl:[--cols:5]'
+
 export default function ServerPage() {
   const { server, user } = useParams()
   const s = useServers().find((x) => x.id === server && x.userId === user)
@@ -102,13 +105,11 @@ function Browse({ server }: { server: Server }) {
             </p>
           }
           start={start}
-          track="auto-cols-[42%] sm:auto-cols-[calc((100%-2*1rem)/3)] lg:auto-cols-[calc((100%-3*1rem)/4)] xl:auto-cols-[calc((100%-4*1rem)/5)]"
+          track={coverTrack}
         >
           {libraries
             ? libraries.map((l) => <Cover key={l.id} library={l} picked={l === library} onPick={() => choose('lib', l.id)} />)
-            : Array.from({ length: 4 }, (_, i) => (
-                <div key={i} className="aspect-video animate-pulse rounded-lg bg-muted/70" />
-              ))}
+            : <StillSkeletons n={mostCols(coverTrack)} />}
         </Row>
       </div>
       <div className="my-8">

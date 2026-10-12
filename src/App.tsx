@@ -81,9 +81,10 @@ export default function App() {
           aria-expanded={open}
           // 点一下切换展开/收起：手机没有悬停，只能靠点
           onClick={() => setOpen(!open)}
-          // size-10：40×40；shrink-0：菜单栏展开时不被挤小；rounded-xl：圆角，键盘聚焦的描边也跟着圆
+          // size-(--logo)：logo 的大小，菜单行和返回按钮都按它留位置；shrink-0：菜单栏展开时不被挤小
+          // rounded-xl：圆角，键盘聚焦的描边也跟着圆
           // pointer-events-auto：nav 本身不接鼠标，只有 logo 接，指到它才打开菜单
-          className="pointer-events-auto size-10 shrink-0 rounded-xl"
+          className="pointer-events-auto size-(--logo) shrink-0 rounded-xl"
         >
           {/* 午夜星辰播放三角.png cropped to the constellation, with its navy background made transparent */}
           <img
@@ -95,7 +96,7 @@ export default function App() {
         {/* The row stops at the right gutter: on a phone the links don't all fit, so it scrolls sideways, its end
             fading while there's more. Scrolling sideways clips it top and bottom too, so it has room for the glow of
             the star under the current page's word. */}
-        <div className="no-scrollbar scroll-hint -my-1 flex max-w-[calc(100vw-2*var(--gutter)-2.5rem)] overflow-x-auto overscroll-x-contain py-1 menu-open:pointer-events-auto">
+        <div className="no-scrollbar scroll-hint -my-1 flex max-w-[calc(var(--content)-var(--logo))] overflow-x-auto overscroll-x-contain py-1 menu-open:pointer-events-auto">
           {nav.map(({ to, label, icon }, i) => (
             <NavLink
               key={to}

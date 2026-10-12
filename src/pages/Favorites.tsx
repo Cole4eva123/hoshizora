@@ -45,7 +45,7 @@ export default function Favorites() {
       { replace: true, preventScrollReset: true, flushSync: true },
     )
   // The 收藏夹 scroll sideways when they don't fit (a phone, or many), and start at the picked one when, back from a
-  // 作品, it would sit past the edge or under the fade there (scroll-hint's 2.5rem). Sideways only, so the page keeps
+  // 作品, it would sit past the edge or under scroll-hint's fade there. Sideways only, so the page keeps
   // the scroll it's given back; the row is `relative`, so a name's offsetLeft counts from it.
   // ponytail: no paging buttons, as home rows have: a mouse without a trackpad reaches 收藏夹 past the edge with shift
   // and the wheel. Give the row Row's if 收藏夹 ever run that many.
@@ -54,8 +54,10 @@ export default function Favorites() {
   useLayoutEffect(() => {
     const el = lists.current!
     const picked = el.querySelectorAll('label')[start]
-    const padding = parseFloat(getComputedStyle(el).paddingLeft)
-    if (picked && picked.offsetLeft + picked.offsetWidth > el.clientWidth - 40) el.scrollLeft = picked.offsetLeft - padding
+    const style = getComputedStyle(el)
+    const fade = parseFloat(style.getPropertyValue('--scroll-hint-size'))
+    if (picked && picked.offsetLeft + picked.offsetWidth > el.clientWidth - fade)
+      el.scrollLeft = picked.offsetLeft - parseFloat(style.paddingLeft)
   }, [start])
 
   return (

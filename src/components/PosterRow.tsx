@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { sectionTitle } from '@/components/Page'
 import { Button } from '@/components/ui/button'
 import { useT } from '@/lib/i18n'
-import { cn, reveal, usePages } from '@/lib/utils'
+import { cn, mostCols, reveal, usePages } from '@/lib/utils'
 import { type Card, type Category, type From, hrefOf, img, lineupOf, titleOf, useTitles, yearOf } from '@/lib/tmdb'
 
 // A picture in the cards' rounded frame. `children` (an episode number, an initial) sit under it, in the same grid
@@ -76,8 +76,14 @@ export function PosterCard({ m, role, from }: { m: Card; role?: string; from?: F
   )
 }
 
+// The gap between posters, a row's and a grid's line's alike, as a var: a row's items take it out of their widths.
+const gap = '[--gap:0.75rem] sm:[--gap:1rem]'
+// As many posters to a line as a screen holds, the home rows and the grids alike.
+const posterCols = '[--cols:3] sm:[--cols:4] lg:[--cols:5] xl:[--cols:6]'
+const widest = mostCols(posterCols)
+
 // A grid of posters, as many to a line as the home rows show on a screen.
-export const posterGrid = 'grid grid-cols-3 gap-x-3 gap-y-6 sm:grid-cols-4 sm:gap-x-4 sm:gap-y-8 lg:grid-cols-5 xl:grid-cols-6'
+export const posterGrid = `grid grid-cols-[repeat(var(--cols),minmax(0,1fr))] gap-x-(--gap) gap-y-6 sm:gap-y-8 ${gap} ${posterCols}`
 
 // `n` placeholder cards while titles load; they stop pulsing once loading has failed.
 export function PosterSkeletons({ n, pulse }: { n: number; pulse: boolean }) {
@@ -89,7 +95,13 @@ export function PosterSkeletons({ n, pulse }: { n: number; pulse: boolean }) {
   ))
 }
 
-// A titled, horizontally scrolling row. `track` sets how wide its items are and `extra` sits under the title.
+// `n` placeholder stills while a row's 16:9 pictures load: episodes, a 服务器's 媒体库.
+export const StillSkeletons = ({ n }: { n: number }) =>
+  Array.from({ length: n }, (_, i) => <div key={i} className="aspect-video animate-pulse rounded-lg bg-muted/70" />)
+
+// A titled, horizontally scrolling row. `track` sets how wide its items are: a width of their own, or
+// `auto-cols-(--span)`, `--cols` of them to the row's width less the gaps between, where it sets `--cols` too.
+// `extra` sits under the title.
 export function Row({
   title,
   extra,
@@ -165,7 +177,9 @@ export function Row({
         ref={ref}
         onScroll={measure}
         className={cn(
-          'no-scrollbar relative mt-4 grid snap-x snap-mandatory scroll-px-(--gutter) grid-flow-col gap-3 overflow-x-auto overscroll-x-contain scroll-smooth px-(--gutter) motion-reduce:scroll-auto sm:gap-4',
+          'no-scrollbar relative mt-4 grid snap-x snap-mandatory scroll-px-(--gutter) grid-flow-col gap-(--gap) overflow-x-auto overscroll-x-contain scroll-smooth px-(--gutter) motion-reduce:scroll-auto',
+          gap,
+          '[--span:calc((100%-(var(--cols)-1)*var(--gap))/var(--cols))]',
           track,
         )}
       >
@@ -191,9 +205,13 @@ export function PosterRow({ category }: { category: Category }) {
           <ChevronRight className="size-5 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-star" />
         </Link>
       }
-      track="auto-cols-[calc((100%-2*0.75rem)/3)] sm:auto-cols-[calc((100%-3*1rem)/4)] lg:auto-cols-[calc((100%-4*1rem)/5)] xl:auto-cols-[calc((100%-5*1rem)/6)]"
+      track={`auto-cols-(--span) ${posterCols}`}
     >
-      {titles ? titles.map((m) => <PosterCard key={hrefOf(m)} m={m} from={from} />) : <PosterSkeletons n={6} pulse={!error} />}
+      {titles ? (
+        titles.map((m) => <PosterCard key={hrefOf(m)} m={m} from={from} />)
+      ) : (
+        <PosterSkeletons n={widest} pulse={!error} />
+      )}
     </Row>
   )
 }
@@ -269,7 +287,8 @@ export function PagedGrid({
     <>
       <div className={posterGrid}>
         {children}
-        {loading && <PosterSkeletons n={count ? 6 : 12} pulse={!error} />}
+        {/* a line's worth at its widest while the next page comes, two before the first */}
+        {loading && <PosterSkeletons n={count ? widest : 2 * widest} pulse={!error} />}
       </div>
       <div ref={end} />
       <p className="sr-only" aria-live="polite">

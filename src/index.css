@@ -106,18 +106,19 @@
 
   /* page gutter, shared by the corner menu, hero and rows; clears the notch in landscape */
   --gutter: max(1.25rem, env(safe-area-inset-left));
+  @variant md {
+    --gutter: max(2.5rem, env(safe-area-inset-left));
+  }
+  /* the width between the gutters, which menus and dialogs keep within */
+  --content: calc(100vw - 2 * var(--gutter));
+  /* the corner logo's size, which its row of pages and the back button beside it leave room for */
+  --logo: 2.5rem;
   /* the corner menu's top, which the back button and page titles line up under; clears the notch in portrait */
   --menu-top: max(var(--gutter), env(safe-area-inset-top));
   /* where a page without a poster wall starts, its title or the search field clear of the corner menu */
   --page-top: calc(var(--menu-top) + 5rem);
   /* room below a page's last row, clear of the home indicator */
   --page-bottom: max(4rem, env(safe-area-inset-bottom));
-}
-
-@media (width >= 48rem) {
-  :root {
-    --gutter: max(2.5rem, env(safe-area-inset-left));
-  }
 }
 
 /* in the Mac app the window's buttons sit over the top-left corner, so the corner menu starts below them */
@@ -181,7 +182,15 @@
   inherits: false;
   initial-value: 0px;
 }
+/* the fade's width before the row scrolls, registered so Favorites reads it in px: the animated --scroll-hint reads
+   0 till the first frame, which a background tab doesn't draw */
+@property --scroll-hint-size {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
 @utility scroll-hint {
+  --scroll-hint-size: 2.5rem;
   mask-image: linear-gradient(to left, transparent, black var(--scroll-hint));
   @supports (animation-timeline: scroll()) {
     animation: scroll-hint linear both;
@@ -190,7 +199,7 @@
 }
 @keyframes scroll-hint {
   from {
-    --scroll-hint: 2.5rem;
+    --scroll-hint: var(--scroll-hint-size);
   }
 }
 

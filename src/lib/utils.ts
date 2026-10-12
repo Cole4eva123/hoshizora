@@ -54,7 +54,7 @@ export const pentagram: Star[][] = [[[12, 3.3], [17.6, 20.5], [3, 9.9], [21, 9.9
 // A dialog's box, a patch of the card colour over the page dimmed and blurred: a 服务器's settings, a 收藏夹's. Tailwind
 // zeroes every margin, the dialog's centring included, so m-auto puts it back.
 export const dialogBox =
-  'm-auto w-[min(26rem,calc(100vw-2*var(--gutter)))] rounded-2xl bg-card p-6 text-foreground inset-ring inset-ring-star/15 backdrop:bg-night/70 backdrop:backdrop-blur-sm'
+  'm-auto w-[min(26rem,var(--content))] rounded-2xl bg-card p-6 text-foreground inset-ring inset-ring-star/15 backdrop:bg-night/70 backdrop:backdrop-blur-sm'
 
 // The logo's play triangle, three stars: the 播放 button on a 作品's 画报墙.
 export const play: Star[][] = [[[7, 4], [20, 12], [7, 20], [7, 4]]]
@@ -72,6 +72,10 @@ export const toneOf = (status: Status) =>
     : status === 'checking'
       ? '[--tone:var(--muted-foreground)]'
       : '[--tone:var(--destructive)]'
+
+// The most items a row or grid's line shows: the largest `--cols` its classes set (PosterRow's), for as many
+// placeholders as fill it.
+export const mostCols = (classes: string) => Math.max(...[...classes.matchAll(/--cols:(\d+)/g)].map((c) => Number(c[1])))
 
 // The pages of a list a PagedGrid shows, from the URL (?pages=N), so coming back from a title brings back as many as
 // there were, and the scroll position with them.

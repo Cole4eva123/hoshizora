@@ -410,7 +410,7 @@ export function Menu({
         }}
         onChange={(e) => arrows.current || (e.target as HTMLInputElement).type !== 'radio' || e.currentTarget.hidePopover()}
         className={cn(
-          'inset-auto m-0 mt-2.5 max-h-[min(22rem,40vh)] w-max max-w-[min(26rem,calc(100vw-2rem))] min-w-48 overflow-y-auto overscroll-contain rounded-xl border-0 bg-night/75 p-1 text-foreground shadow-2xl shadow-night backdrop-blur-xl [position-area:bottom_span-right] [position-try-fallbacks:flip-block,flip-inline,flip-block_flip-inline]',
+          'inset-auto m-0 mt-2.5 max-h-[min(22rem,40vh)] w-max max-w-[min(26rem,var(--content))] min-w-48 overflow-y-auto overscroll-contain rounded-xl border-0 bg-night/75 p-1 text-foreground shadow-2xl shadow-night backdrop-blur-xl [position-area:bottom_span-right] [position-try-fallbacks:flip-block,flip-inline,flip-block_flip-inline]',
           // centred in the window where WebKit places nothing by anchors (before Safari 26)
           'not-supports-[anchor-name:--a]:inset-0 not-supports-[anchor-name:--a]:m-auto',
           'open:animate-in open:fade-in open:slide-in-from-top-1',
@@ -461,12 +461,10 @@ export function Option({
       )}
     >
       <input type={type} name={name} checked={picked} onChange={onPick} className="sr-only" />
-      <span
-        className={cn(
-          'mt-[7px] size-1.5 shrink-0 rounded-full bg-star shadow-[0_0_6px_1px_var(--glow)]',
-          !picked && 'opacity-0',
-        )}
-      />
+      {/* the star, centred on the name's line (leading-5) */}
+      <span className="flex h-5 shrink-0 items-center">
+        <span className={cn('size-1.5 rounded-full bg-star shadow-[0_0_6px_1px_var(--glow)]', !picked && 'opacity-0')} />
+      </span>
       <span className="min-w-0">
         <span title={label} className="flex items-center gap-1.5 text-[13px] leading-5 whitespace-nowrap">
           {mark}

@@ -42,7 +42,7 @@ export function BackButton() {
     <Button
       variant="ghost"
       onClick={() => (window.history.state?.idx > 0 ? navigate(-1) : navigate('/'))}
-      className="absolute top-(--menu-top) left-[calc(var(--gutter)+3rem)] h-10 menu-open:opacity-0"
+      className="absolute top-(--menu-top) left-[calc(var(--gutter)+var(--logo)+0.5rem)] h-(--logo) menu-open:opacity-0"
     >
       <ChevronLeft />
       {t('返回', 'Back')}

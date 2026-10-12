@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { ChoiceMenu, Choices } from '@/components/Choices'
 import { Favorite } from '@/components/Favorite'
 import { BackButton, EmptyState, Page } from '@/components/Page'
-import { Failed, Frame, Row } from '@/components/PosterRow'
+import { Failed, Frame, Row, StillSkeletons } from '@/components/PosterRow'
 import { PosterWall, TitleInfo } from '@/components/PosterWall'
 import { type Picked, Sources, Tracks } from '@/components/Sources'
 import {
@@ -39,7 +39,7 @@ import {
   useSeason,
   useTitles,
 } from '@/lib/tmdb'
-import { cn, lit } from '@/lib/utils'
+import { cn, lit, mostCols } from '@/lib/utils'
 
 export default function Detail({ type }: { type: MediaType }) {
   const t = useT()
@@ -275,7 +275,7 @@ function Episodes({ tv, on }: { tv: Details; on?: { s: Server; series: string } 
             )}
           </>
         }
-        track="auto-cols-[85%] sm:auto-cols-[calc((100%-1rem)/2)] lg:auto-cols-[calc((100%-2*1rem)/3)] xl:auto-cols-[calc((100%-3*1rem)/4)]"
+        track={episodeTrack}
         start={episodes && Math.max(0, next - 1)}
       >
         {episodes
@@ -294,10 +294,7 @@ function Episodes({ tv, on }: { tv: Details; on?: { s: Server; series: string } 
                 />
               )
             })
-          : !error &&
-            Array.from({ length: 4 }, (_, i) => (
-              <div key={i} className="aspect-video animate-pulse rounded-lg bg-muted/70" />
-            ))}
+          : !error && <StillSkeletons n={mostCols(episodeTrack)} />}
       </Row>
       {on && picked && (
         <div className="mt-6 px-(--gutter)">
@@ -308,6 +305,9 @@ function Episodes({ tv, on }: { tv: Details; on?: { s: Server; series: string } 
     </div>
   )
 }
+
+// most of an episode's still on a phone, so the next one peeks in; then two to four to a row
+const episodeTrack = 'auto-cols-[85%] sm:auto-cols-(--span) sm:[--cols:2] lg:[--cols:3] xl:[--cols:4]'
 
 // What an episode on a 片源 is called, a file holding several (S01E01-E02) by all of them.
 const episodesOf = ({ season, episode, last }: EpisodeSource, t: Translate) => {
