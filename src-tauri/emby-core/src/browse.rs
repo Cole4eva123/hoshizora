@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{BROWSE, Emby, Error};
+use crate::{BROWSE, Emby, Error, Kind};
 
 /// A 媒体库 of movies or series, with the 16:9 cover the server draws for it.
 #[derive(Debug, PartialEq, Serialize)]
@@ -29,7 +29,7 @@ pub struct Item {
 /// A TMDB entry, named as the 作品 pages' routes name it.
 #[derive(Debug, PartialEq, Serialize)]
 pub struct Tmdb {
-    pub media_type: &'static str,
+    pub media_type: Kind,
     pub id: u64,
 }
 
@@ -98,15 +98,17 @@ pub(crate) struct Ids {
 }
 
 impl Emby {
-    /// The 媒体库 a server shows its user, in the order set on the server: only those of movies, series or both, as
-    /// music, photos and the like can't be played here.
+    /// The 媒体库 a server shows its user, in the order set on the server: only those of the kinds of 作品 there are
+    /// (movies, series) or of several, as music, photos and the like can't be played here.
     pub async fn libraries(&self, server: &str, user: &str) -> Result<Vec<Library>, Error> {
         let s = self.signed(server, user)?;
         let views: Listing<View> = self.get(&s, &format!("Users/{}/Views", s.server.user_id), &[], BROWSE).await?;
         Ok(views
             .items
             .into_iter()
-            .filter(|v| v.collection_type.as_deref().is_none_or(|t| ["movies", "tvshows", "mixed"].contains(&t)))
+            .filter(|v| {
+                v.collection_type.as_deref().is_none_or(|t| t == "mixed" || Kind::ALL.map(Kind::collection).contains(&t))
+            })
             .map(|v| Library { cover: image(&s.server.address, &v.id, v.image_tags.primary, 480), id: v.id, name: v.name })
             .collect())
     }
@@ -124,6 +126,7 @@ impl Emby {
     ) -> Result<Page, Error> {
         let s = self.signed(server, user)?;
         let (from, count) = (start.to_string(), limit.to_string());
+        let types = Kind::ALL.map(Kind::item_type).join(",");
         // an order for each field: the sort's, then A to Z, for a batch added at once (a library scan) or a tie
         let (by, order) = match sort {
             Sort::Added => ("DateCreated,SortName", "Descending,Ascending"),
@@ -134,7 +137,7 @@ impl Emby {
         let mut query = vec![
             ("ParentId", library),
             ("Recursive", "true"),
-            ("IncludeItemTypes", "Movie,Series"),
+            ("IncludeItemTypes", &types),
             ("SortBy", by),
             ("SortOrder", order),
             ("Fields", "ProviderIds,ProductionYear"),
@@ -168,12 +171,13 @@ fn image(address: &str, id: &str, tag: Option<String>, width: u32) -> Option<Str
     tag.map(|tag| format!("{address}/Items/{id}/Images/Primary?tag={tag}&maxWidth={width}&quality=90"))
 }
 
-// A 作品 as listed, linked to its TMDB entry when the server knows it.
+// A 作品 as listed, linked to its TMDB entry when the server knows it and it's of a kind there's a page for.
 fn item(address: &str, i: Listed) -> Item {
     let tmdb = i.provider_ids.tmdb.and_then(|id| id.parse::<u64>().ok()).filter(|&id| id > 0);
+    let kind = Kind::ALL.into_iter().find(|k| k.item_type() == i.kind);
     Item {
         poster: image(address, &i.id, i.image_tags.primary, 342),
-        tmdb: tmdb.map(|id| Tmdb { media_type: if i.kind == "Series" { "tv" } else { "movie" }, id }),
+        tmdb: kind.zip(tmdb).map(|(media_type, id)| Tmdb { media_type, id }),
         year: i.production_year,
         id: i.id,
         name: i.name,

@@ -10,7 +10,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use emby_core::{Emby, Error, Form, Item, Library, Page, Server, Sort, Source, Status, Tmdb, Track, Version, Video};
+use emby_core::{Emby, Error, Form, Item, Kind, Library, Page, Server, Sort, Source, Status, Tmdb, Track, Version, Video};
 use serde_json::{Value, json};
 
 // What the stand-in server handed out and was told.
@@ -106,22 +106,28 @@ async fn items(State(seen): State<Shared>, headers: HeaderMap, Query(q): Query<H
     if let Some(id) = q.get("AnyProviderIdEquals") {
         let items = match (id.as_str(), q["IncludeItemTypes"].as_str()) {
             ("Tmdb.278236", "Movie") => vec![
-                json!({ "Id": "m1", "Name": "X加Y", "ProviderIds": { "Tmdb": "278236" },
+                json!({ "Id": "m1", "Name": "X加Y", "Type": "Movie", "ProviderIds": { "Tmdb": "278236" },
                         "MediaSources": [read_version()] }),
             ],
             ("Tmdb.596881", "Movie") => vec![
-                json!({ "Id": "m2", "Name": "春江水暖", "ProviderIds": { "Tmdb": "596881" },
+                json!({ "Id": "m2", "Name": "春江水暖", "Type": "Movie", "ProviderIds": { "Tmdb": "596881" },
                         "MediaSources": [unread_version()] }),
             ],
             // a server that ignores AnyProviderIdEquals, its whole library answering
-            ("Tmdb.7", "Movie") => vec![json!({ "Id": "m9", "Name": "别的", "ProviderIds": { "Tmdb": "8" } })],
+            ("Tmdb.7", "Movie") => vec![json!({ "Id": "m9", "Name": "别的", "Type": "Movie", "ProviderIds": { "Tmdb": "8" } })],
+            // one that ignores IncludeItemTypes: a movie and a series that TMDB gave one number, as it numbers each
+            // kind apart
+            ("Tmdb.1399", _) => vec![
+                json!({ "Id": "m5", "Name": "同号电影", "Type": "Movie", "ProviderIds": { "Tmdb": "1399" } }),
+                json!({ "Id": "s5", "Name": "权力的游戏", "Type": "Series", "ProviderIds": { "Tmdb": "1399" }, "ChildCount": 8 }),
+            ],
             // kept twice, the copy with no episodes first; its seasons counted only with its user data, as Emby does
             ("Tmdb.68507", "Series") => {
                 let seasons = if q.get("EnableUserData").map(String::as_str) == Some("false") { 0 } else { 3 };
                 let tmdb = json!({ "Tmdb": "68507" });
                 vec![
-                    json!({ "Id": "s0", "Name": "黑暗物质三部曲", "ProviderIds": tmdb, "ChildCount": 0 }),
-                    json!({ "Id": "s1", "Name": "黑暗物质", "ProviderIds": tmdb, "ChildCount": seasons }),
+                    json!({ "Id": "s0", "Name": "黑暗物质三部曲", "Type": "Series", "ProviderIds": tmdb, "ChildCount": 0 }),
+                    json!({ "Id": "s1", "Name": "黑暗物质", "Type": "Series", "ProviderIds": tmdb, "ChildCount": seasons }),
                 ]
             }
             _ => vec![],
@@ -475,7 +481,7 @@ async fn a_signed_in_request_is_not_redirected_with_its_token() {
 
 #[tokio::test]
 async fn items_come_a_page_at_a_time_linked_to_tmdb_with_the_count_on_the_first() {
-    let (at, _) = emby().await;
+    let (at, seen) = emby().await;
     let emby = Emby::open(file("items"));
     emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
     assert_eq!(
@@ -487,7 +493,7 @@ async fn items_come_a_page_at_a_time_linked_to_tmdb_with_the_count_on_the_first(
                     name: "三国".into(),
                     year: Some(2010),
                     poster: Some(format!("http://{at}/emby/Items/a/Images/Primary?tag=t&maxWidth=342&quality=90")),
-                    tmdb: Some(Tmdb { media_type: "tv", id: 40052 }),
+                    tmdb: Some(Tmdb { media_type: Kind::Tv, id: 40052 }),
                 },
                 Item { id: "b".into(), name: "戒灵".into(), year: None, poster: None, tmdb: None },
             ],
@@ -496,7 +502,16 @@ async fn items_come_a_page_at_a_time_linked_to_tmdb_with_the_count_on_the_first(
     );
     let next = emby.items("srv", "u1", "1", Sort::Added, 2, 2).await.unwrap();
     assert_eq!(next.total, None);
-    assert_eq!(next.items[0].tmdb, Some(Tmdb { media_type: "movie", id: 438631 }));
+    assert_eq!(next.items[0].tmdb, Some(Tmdb { media_type: Kind::Movie, id: 438631 }));
+    // every kind there's a page for, by Emby's name for it
+    assert_eq!(seen.lock().unwrap().items_asked["IncludeItemTypes"], "Movie,Series");
+}
+
+#[test]
+fn kinds_go_by_the_pages_names_and_one_they_dont_share_is_refused() {
+    assert_eq!(serde_json::to_value(Kind::Tv).unwrap(), json!("tv"));
+    assert_eq!(serde_json::from_value::<Kind>(json!("movie")).unwrap(), Kind::Movie);
+    assert!(serde_json::from_value::<Kind>(json!("collection")).is_err());
 }
 
 #[tokio::test]
@@ -649,7 +664,7 @@ async fn a_movies_sources_are_found_by_its_tmdb_entry_with_their_versions_and_tr
     let emby = Emby::open(file("sources"));
     emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
     assert_eq!(
-        emby.sources("srv", "u1", "movie", 278236).await.unwrap(),
+        emby.sources("srv", "u1", Kind::Movie, 278236).await.unwrap(),
         [Source {
             item: "m1".into(),
             name: "X加Y".into(),
@@ -674,13 +689,13 @@ async fn a_movies_sources_are_found_by_its_tmdb_entry_with_their_versions_and_tr
     let asked = seen.lock().unwrap().items_asked.clone();
     let asked = [&asked["AnyProviderIdEquals"], &asked["IncludeItemTypes"], &asked["Recursive"]];
     assert_eq!(asked, ["Tmdb.278236", "Movie", "true"]);
-    assert_eq!(emby.sources("srv", "u1", "movie", 1).await.unwrap(), []);
-    assert_eq!(emby.sources("srv", "u1", "movie", 7).await.unwrap(), []);
+    assert_eq!(emby.sources("srv", "u1", Kind::Movie, 1).await.unwrap(), []);
+    assert_eq!(emby.sources("srv", "u1", Kind::Movie, 7).await.unwrap(), []);
     // a .strm the server hasn't read: no picture, bitrate or tracks; its link's name without the drive's signature
-    let unread = &emby.sources("srv", "u1", "movie", 596881).await.unwrap()[0].versions[0];
+    let unread = &emby.sources("srv", "u1", Kind::Movie, 596881).await.unwrap()[0].versions[0];
     assert_eq!((unread.bitrate, &unread.video, unread.audio.len()), (None, &None, 0));
     assert_eq!(unread.file.as_deref(), Some("%E6%98%A5%E6%B1%9F.1080p.BluRay.mkv"));
-    assert_eq!(emby.sources("gone", "u1", "movie", 278236).await, Err(Error::NoServer));
+    assert_eq!(emby.sources("gone", "u1", Kind::Movie, 278236).await, Err(Error::NoServer));
 }
 
 #[tokio::test]
@@ -688,9 +703,14 @@ async fn a_series_kept_twice_has_the_copy_with_episodes_first_and_its_episodes_c
     let (at, seen) = emby().await;
     let emby = Emby::open(file("series"));
     emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
-    let found = emby.sources("srv", "u1", "tv", 68507).await.unwrap();
+    let found = emby.sources("srv", "u1", Kind::Tv, 68507).await.unwrap();
     let found: Vec<_> = found.iter().map(|s| (s.item.as_str(), s.seasons)).collect();
     assert_eq!(found, [("s1", Some(3)), ("s0", Some(0))]);
+    // only the series of that number, not the movie of it a server sends along
+    let found = emby.sources("srv", "u1", Kind::Tv, 1399).await.unwrap();
+    assert_eq!(found.iter().map(|s| s.item.as_str()).collect::<Vec<_>>(), ["s5"]);
+    let found = emby.sources("srv", "u1", Kind::Movie, 1399).await.unwrap();
+    assert_eq!(found.iter().map(|s| s.item.as_str()).collect::<Vec<_>>(), ["m5"]);
     let episodes = emby.episodes("srv", "u1", "s1", 2).await.unwrap();
     // the one the server hasn't numbered is left out, and those with no file
     let numbers: Vec<_> = episodes.iter().map(|e| (e.item.as_str(), e.season, e.episode, e.last)).collect();

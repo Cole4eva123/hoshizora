@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::browse::{Ids, Listing};
-use crate::{BROWSE, Emby, Error};
+use crate::{BROWSE, Emby, Error, Kind};
 
 // How long a server may take to read a file it hasn't yet: a .strm's start comes from the cloud, about 5 s the first
 // time on the user's server.
@@ -85,6 +85,8 @@ pub struct Track {
 struct Found {
     id: String,
     name: String,
+    #[serde(rename = "Type")]
+    kind: String,
     #[serde(default)]
     provider_ids: Ids,
     child_count: Option<u32>,
@@ -142,19 +144,19 @@ struct Stream {
 }
 
 impl Emby {
-    /// The 片源 of a 作品 on a server, found by its TMDB entry (`kind` as the 作品 pages' routes name it, `movie` or
-    /// `tv`): none when the server doesn't have it. A series kept twice, with its episodes in one copy only, has that
-    /// one first.
-    pub async fn sources(&self, server: &str, user: &str, kind: &str, tmdb: u64) -> Result<Vec<Source>, Error> {
+    /// The 片源 of a 作品 on a server, found by its kind and TMDB entry: none when the server doesn't have it. A series
+    /// kept twice, with its episodes in one copy only, has that one first.
+    pub async fn sources(&self, server: &str, user: &str, kind: Kind, tmdb: u64) -> Result<Vec<Source>, Error> {
         let s = self.signed(server, user)?;
-        let series = kind == "tv";
+        let series = kind.episodic();
         let id = format!("Tmdb.{tmdb}");
-        // A few at most, and only those that are this TMDB entry: a server that doesn't know AnyProviderIdEquals
-        // (Jellyfin answers under /emby too) would otherwise send its whole library.
+        // A few at most, and only those that are this TMDB entry of this kind: a server that doesn't know
+        // AnyProviderIdEquals (Jellyfin answers under /emby too) would otherwise send its whole library, and one that
+        // doesn't know IncludeItemTypes a movie with a series' number, as TMDB numbers each kind apart.
         let query = [
             ("AnyProviderIdEquals", id.as_str()),
             ("Recursive", "true"),
-            ("IncludeItemTypes", if series { "Series" } else { "Movie" }),
+            ("IncludeItemTypes", kind.item_type()),
             ("Fields", if series { "ProviderIds,ChildCount" } else { "ProviderIds,MediaSources" }),
             ("Limit", "20"),
             // no pictures, but its user data, unlike `episodes`: without it Emby counts a series' seasons as 0 (as the
@@ -166,7 +168,7 @@ impl Emby {
         let mut sources: Vec<Source> = found
             .items
             .into_iter()
-            .filter(|f| f.provider_ids.tmdb.as_ref() == Some(&tmdb))
+            .filter(|f| f.kind == kind.item_type() && f.provider_ids.tmdb.as_ref() == Some(&tmdb))
             .map(|f| Source {
                 seasons: series.then(|| f.child_count.unwrap_or(0)),
                 versions: f.media_sources.into_iter().map(version).collect(),

@@ -1,6 +1,6 @@
 // The app's shell: the window over the web app, and Emby (emby-core) for its pages. Playback moves in here next
 // (docs/playback-plan.md).
-use emby_core::{Emby, Episode, Error, Form, Library, Page, Server, Sort, Source, Status, Version};
+use emby_core::{Emby, Episode, Error, Form, Kind, Library, Page, Server, Sort, Source, Status, Version};
 use tauri::{Manager, State};
 
 // What the pages ask of Emby (src/lib/emby.ts), one command for each thing emby-core does, and nothing more: the
@@ -55,10 +55,10 @@ async fn emby_sources(
     emby: State<'_, Emby>,
     server: String,
     user: String,
-    media_type: String,
+    media_type: Kind,
     id: u64,
 ) -> Result<Vec<Source>, Error> {
-    emby.sources(&server, &user, &media_type, id).await
+    emby.sources(&server, &user, media_type, id).await
 }
 
 #[tauri::command]

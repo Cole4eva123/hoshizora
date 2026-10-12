@@ -33,6 +33,44 @@ const CHECK: Duration = Duration::from_secs(5);
 const RECHECK: Duration = Duration::from_secs(2);
 const BROWSE: Duration = Duration::from_secs(15);
 
+/// A kind of 作品, as TMDB and the pages' routes name it (`movie`, `tv`), so the pages' `mediaTypes` and this agree
+/// on the wire. A kind added here (and to `ALL`) is listed in the 媒体库 and found by its TMDB entry; each `match`
+/// below asks for what Emby calls it. One the pages send that isn't here fails at the command, not as a movie.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    Movie,
+    Tv,
+}
+
+impl Kind {
+    const ALL: [Kind; 2] = [Kind::Movie, Kind::Tv];
+
+    /// Emby's item type for it
+    fn item_type(self) -> &'static str {
+        match self {
+            Kind::Movie => "Movie",
+            Kind::Tv => "Series",
+        }
+    }
+
+    /// Emby's type for a 媒体库 of it
+    fn collection(self) -> &'static str {
+        match self {
+            Kind::Movie => "movies",
+            Kind::Tv => "tvshows",
+        }
+    }
+
+    /// whether it plays by the episode: its 片源 has seasons, and its versions are its episodes'
+    fn episodic(self) -> bool {
+        match self {
+            Kind::Movie => false,
+            Kind::Tv => true,
+        }
+    }
+}
+
 /// A 服务器 kept on this device, as the pages see it: where it answers, who signed in and when (ms since 1970), and its
 /// 备注 if the user gave one. One server signed in as two users is two entries.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
