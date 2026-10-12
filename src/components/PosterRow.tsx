@@ -76,9 +76,9 @@ export function PosterCard({ m, role, from }: { m: Card; role?: string; from?: F
   )
 }
 
-// A row of 16:9 covers to pick from: a 服务器's 媒体库, the 收藏夹.
-export const coverRow =
-  'auto-cols-[42%] sm:auto-cols-[calc((100%-2*1rem)/3)] lg:auto-cols-[calc((100%-3*1rem)/4)] xl:auto-cols-[calc((100%-4*1rem)/5)]'
+// A row of posters' columns: as many to a screen as `posterGrid` has to a line. The home rows, the 收藏夹's covers.
+export const posterRow =
+  'auto-cols-[calc((100%-2*0.75rem)/3)] sm:auto-cols-[calc((100%-3*1rem)/4)] lg:auto-cols-[calc((100%-4*1rem)/5)] xl:auto-cols-[calc((100%-5*1rem)/6)]'
 
 // A grid of posters, as many to a line as the home rows show on a screen.
 export const posterGrid = 'grid grid-cols-3 gap-x-3 gap-y-6 sm:grid-cols-4 sm:gap-x-4 sm:gap-y-8 lg:grid-cols-5 xl:grid-cols-6'
@@ -93,8 +93,7 @@ export function PosterSkeletons({ n, pulse }: { n: number; pulse: boolean }) {
   ))
 }
 
-// A horizontally scrolling row under its title, if it has one. `track` sets how wide its items are and `extra` sits
-// under the title.
+// A titled, horizontally scrolling row. `track` sets how wide its items are and `extra` sits under the title.
 export function Row({
   title,
   extra,
@@ -102,7 +101,7 @@ export function Row({
   start,
   children,
 }: {
-  title?: ReactNode
+  title: ReactNode
   extra?: ReactNode
   track: string
   start?: number
@@ -153,7 +152,7 @@ export function Row({
     <section>
       <div className="flex items-end justify-between gap-4 px-(--gutter)">
         <div className="min-w-0">
-          {title && <h2 className={sectionTitle}>{title}</h2>}
+          <h2 className={sectionTitle}>{title}</h2>
           {extra}
         </div>
         {/* aria-disabled, not disabled, which would drop keyboard focus at the row's end; a click there scrolls nowhere */}
@@ -196,7 +195,7 @@ export function PosterRow({ category }: { category: Category }) {
           <ChevronRight className="size-5 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-star" />
         </Link>
       }
-      track="auto-cols-[calc((100%-2*0.75rem)/3)] sm:auto-cols-[calc((100%-3*1rem)/4)] lg:auto-cols-[calc((100%-4*1rem)/5)] xl:auto-cols-[calc((100%-5*1rem)/6)]"
+      track={posterRow}
     >
       {titles ? titles.map((m) => <PosterCard key={hrefOf(m)} m={m} from={from} />) : <PosterSkeletons n={6} pulse={!error} />}
     </Row>

@@ -1,15 +1,11 @@
 import { useId } from 'react'
 import { Plus } from 'lucide-react'
-import { Constellation } from '@/components/Constellation'
+import { Constellation, Filled } from '@/components/Constellation'
 import { Menu, Option } from '@/components/Sources'
 import { addFolder, has, toggleIn, useFavorites } from '@/lib/favorites'
 import { useT } from '@/lib/i18n'
 import type { Card } from '@/lib/tmdb'
 import { cn, pentagram } from '@/lib/utils'
-
-// The pentagram's stars as one closed shape: filled (nonzero, SVG's default), its middle too, the star filled with
-// light.
-const filled = pentagram[0].map(([x, y]) => `${x},${y}`).join(' ')
 
 // 收藏, on a 作品's 画报墙 after 字幕 (a series', after 片源): its list has the 收藏夹 as checkboxes, and a field for a
 // new one the 作品 goes straight into. Once it's in one, the star is filled with light and the word under it names the
@@ -32,9 +28,7 @@ export function Favorite({ m }: { m: Card }) {
       current={inside.map((f) => f.name).join(t('、', ', ')) || undefined}
       icon={(className) =>
         inside.length ? (
-          <svg viewBox="0 0 24 24" aria-hidden="true" className={cn('shrink-0', className)}>
-            <polygon points={filled} fill="currentColor" stroke="currentColor" strokeLinejoin="round" />
-          </svg>
+          <Filled line={pentagram[0]} className={className} />
         ) : (
           <Constellation lines={pentagram} className={className} />
         )
@@ -56,8 +50,19 @@ export function Favorite({ m }: { m: Card }) {
   )
 }
 
-// A field that names a new 收藏夹, made on Enter: with `m`, the 作品 goes in it; `onAdd` gets its id.
-export function NewFolder({ m, onAdd, className }: { m?: Card; onAdd?: (id: string) => void; className?: string }) {
+// A field that names a new 收藏夹, made on Enter: with `m`, the 作品 goes in it; `onAdd` gets its id. `id` is the
+// field's, for a label elsewhere.
+export function NewFolder({
+  m,
+  onAdd,
+  id,
+  className,
+}: {
+  m?: Card
+  onAdd?: (id: string) => void
+  id?: string
+  className?: string
+}) {
   const t = useT()
   return (
     <form
@@ -66,8 +71,8 @@ export function NewFolder({ m, onAdd, className }: { m?: Card; onAdd?: (id: stri
         const name = String(new FormData(e.currentTarget).get('name')).trim()
         // not onAdd?.(addFolder(…)): without onAdd, `?.` would skip making it
         if (name) {
-          const id = addFolder(name, m)
-          onAdd?.(id)
+          const folder = addFolder(name, m)
+          onAdd?.(folder)
         }
         e.currentTarget.reset()
       }}
@@ -75,6 +80,7 @@ export function NewFolder({ m, onAdd, className }: { m?: Card; onAdd?: (id: stri
     >
       <Plus className="size-4 shrink-0" strokeWidth={1.5} />
       <input
+        id={id}
         name="name"
         aria-label={t('新建收藏夹', 'New list')}
         placeholder={t('新建收藏夹', 'New list')}

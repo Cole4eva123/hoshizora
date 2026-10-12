@@ -35,6 +35,21 @@ export function Constellation({ lines, className }: { lines: Star[][]; className
   )
 }
 
+// A constellation's line as a shape filled with light, its middle too (SVG's nonzero rule, which fills a pentagram's):
+// a 作品 in a 收藏夹 (the pentagram), one 看过 (the play triangle). Sized as a Constellation is.
+export function Filled({ line, className }: { line: Star[]; className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={cn('size-4.5 shrink-0', className)}>
+      <polygon
+        points={line.map(([x, y]) => `${x},${y}`).join(' ')}
+        fill="currentColor"
+        stroke="currentColor"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 // A 服务器: the `server` constellation, its star the light, in the server's tone; it glows once there's an answer. On
 // its tile on the 媒体库 page, and by its name on its own page. Sized by `className`.
 export function ServerMark({ status, className }: { status: Status; className: string }) {
