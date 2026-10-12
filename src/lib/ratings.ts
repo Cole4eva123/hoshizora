@@ -1,22 +1,48 @@
 import axios from 'axios'
 import { useEffect, useState } from 'react'
-import { type Media, originalTitleOf, titleOf, yearOf } from '@/lib/tmdb'
+import type { Copy } from '@/lib/i18n'
+import { type Media, type MediaType, originalTitleOf, titleOf, yearOf } from '@/lib/tmdb'
 
 const mdblistKey: string | undefined = import.meta.env.VITE_MDBLIST_KEY
 export const hasMdblistKey = Boolean(mdblistKey)
 
-export type Ratings = { imdb?: number; tomatoes?: number; douban?: number; mal?: number }
+// The 评分来源, in the order the wall shows them: what each is called, and for those MDBList aggregates, its name for
+// the source there and, where it scores only some 作品, which (`only`). TMDB's own score comes with the 作品, and
+// Douban's is looked up below. A source added here needs its icon in Ratings.tsx, which the compiler asks for.
+export const ratingSources = {
+  tmdb: { label: ['TMDB', 'TMDB'] },
+  imdb: { label: ['IMDb', 'IMDb'], mdblist: 'imdb' },
+  tomatoes: { label: ['烂番茄', 'Rotten Tomatoes'], mdblist: 'tomatoes' },
+  douban: { label: ['豆瓣', 'Douban'] },
+  // Japanese anime only
+  mal: { label: ['MyAnimeList', 'MyAnimeList'], mdblist: 'myanimelist', only: (m: Media) => m.original_language === 'ja' },
+} satisfies Record<string, { label: Copy; mdblist?: string; only?: (m: Media) => boolean }>
+
+export type Source = keyof typeof ratingSources
+export type Ratings = Partial<Record<Source, number>>
+
+// the sources MDBList gives, for the settings page to name
+export const fromMdblist = Object.values(ratingSources).filter((s) => 'mdblist' in s)
 
 type MdbList = { ratings: { source: string; value: number | null }[] }
+// MDBList's name for each kind of 作品
+const mdblistTypes: Record<MediaType, string> = { movie: 'movie', tv: 'show' }
 
-// MDBList aggregates IMDb, Rotten Tomatoes and MyAnimeList: one request per title.
-async function mdblist(m: Media): Promise<Ratings> {
-  if (!mdblistKey) return {}
-  const type = m.media_type === 'tv' ? 'show' : 'movie'
-  const { data } = await axios.get<MdbList>(`https://api.mdblist.com/tmdb/${type}/${m.id}`, { params: { apikey: mdblistKey } })
-  const value = (source: string) => data.ratings.find((r) => r.source === source)?.value ?? undefined
-  // MAL only for Japanese anime
-  return { imdb: value('imdb'), tomatoes: value('tomatoes'), mal: m.original_language === 'ja' ? value('myanimelist') : undefined }
+// MDBList's answer for a path; without a key, there's none to ask for.
+const mdblistGet = (path: string): Promise<MdbList> =>
+  mdblistKey
+    ? axios.get(`https://api.mdblist.com/${path}`, { params: { apikey: mdblistKey } }).then((r) => r.data)
+    : Promise.resolve({ ratings: [] })
+
+// MDBList's scores for a title, from all its sources at once: one request per title.
+export async function mdblist(m: Media, get = mdblistGet): Promise<Ratings> {
+  const data = await get(`tmdb/${mdblistTypes[m.media_type]}/${m.id}`)
+  const value = (name: string) => data.ratings.find((r) => r.source === name)?.value ?? undefined
+  return Object.fromEntries(
+    Object.entries(ratingSources).flatMap(([key, s]) =>
+      'mdblist' in s && (!('only' in s) || s.only(m)) ? [[key, value(s.mdblist)]] : [],
+    ),
+  )
 }
 
 // ponytail: douban.com sends no CORS headers, so this goes through the Vite dev proxy (/douban) and only

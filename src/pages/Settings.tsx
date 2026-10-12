@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { Page } from '@/components/Page'
 import { useT } from '@/lib/i18n'
-import { hasMdblistKey } from '@/lib/ratings'
+import { fromMdblist, hasMdblistKey } from '@/lib/ratings'
 import { hasToken } from '@/lib/tmdb'
 
 function Status({ label, ok, value }: { label: string; ok: boolean; value?: string }) {
@@ -28,6 +28,9 @@ function Group({ title, note, children }: { title: string; note?: string; childr
 
 export default function Settings() {
   const t = useT()
+  // "IMDb、烂番茄、MyAnimeList", "IMDb, Rotten Tomatoes, and MyAnimeList"
+  const names = fromMdblist.map((s) => t(...s.label))
+  const mdblist = t(names.join('、'), new Intl.ListFormat('en').format(names))
   return (
     <Page title={t('设置', 'Settings')}>
       <div className="max-w-2xl space-y-8">
@@ -50,12 +53,12 @@ export default function Settings() {
             hasMdblistKey
               ? undefined
               : t(
-                  '到 mdblist.com 免费申请 API 密钥，写进 .env.local 的 VITE_MDBLIST_KEY，就能显示 IMDb、烂番茄和 MAL 评分。',
-                  'Get a free API key at mdblist.com and put it in .env.local as VITE_MDBLIST_KEY to show IMDb, Rotten Tomatoes and MAL ratings.',
+                  `到 mdblist.com 免费申请 API 密钥，写进 .env.local 的 VITE_MDBLIST_KEY，就能显示 ${mdblist} 的评分。`,
+                  `Get a free API key at mdblist.com and put it in .env.local as VITE_MDBLIST_KEY to show ratings from ${mdblist}.`,
                 )
           }
         >
-          <Status label={t('MDBList 密钥（IMDb、烂番茄、MAL）', 'MDBList key (IMDb, Rotten Tomatoes, MAL)')} ok={hasMdblistKey} />
+          <Status label={t(`MDBList 密钥（${mdblist}）`, `MDBList key (${mdblist})`)} ok={hasMdblistKey} />
           <Status
             label={t('豆瓣', 'Douban')}
             ok={import.meta.env.DEV}

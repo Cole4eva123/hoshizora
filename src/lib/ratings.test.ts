@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { douban } from './ratings'
+import { douban, mdblist } from './ratings'
 import type { Media } from './tmdb'
 
 // Fake Douban: only the original title is known, two entries share the name, the rating comes from subject_abstract.
@@ -20,4 +20,19 @@ test('douban falls back to the original title and matches on year', async () => 
   expect(calls).toEqual(['subject_suggest 伊甸之东', 'subject_suggest East of Eden', 'subject_abstract 35936742'])
   // a title with too few votes has no score yet
   expect(await douban(m, fake('').get)).toBeUndefined()
+})
+
+test('MDBList: each source by its name there, a series as a show, MAL for Japanese titles only', async () => {
+  const asked: string[] = []
+  const get = async (path: string) => {
+    asked.push(path)
+    // no Rotten Tomatoes score for the movie: MDBList sends null
+    const ratings = { imdb: 8.1, tomatoes: path.includes('movie') ? null : 93, myanimelist: 8.52, metacritic: 70 }
+    return { ratings: Object.entries(ratings).map(([source, value]) => ({ source, value })) }
+  }
+  const anime = { media_type: 'tv', id: 1, original_language: 'ja' } as Media
+  const film = { media_type: 'movie', id: 2, original_language: 'en' } as Media
+  expect(await mdblist(anime, get)).toEqual({ imdb: 8.1, tomatoes: 93, mal: 8.52 })
+  expect(await mdblist(film, get)).toEqual({ imdb: 8.1, tomatoes: undefined })
+  expect(asked).toEqual(['tmdb/show/1', 'tmdb/movie/2'])
 })
