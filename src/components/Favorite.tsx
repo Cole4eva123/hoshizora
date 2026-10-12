@@ -50,19 +50,8 @@ export function Favorite({ m }: { m: Card }) {
   )
 }
 
-// A field that names a new 收藏夹, made on Enter: with `m`, the 作品 goes in it; `onAdd` gets its id. `id` is the
-// field's, for a label elsewhere.
-export function NewFolder({
-  m,
-  onAdd,
-  id,
-  className,
-}: {
-  m?: Card
-  onAdd?: (id: string) => void
-  id?: string
-  className?: string
-}) {
+// A field that names a new 收藏夹, made on Enter: with `m`, the 作品 goes in it; `onAdd` gets its id.
+export function NewFolder({ m, onAdd, className }: { m?: Card; onAdd?: (id: string) => void; className?: string }) {
   const t = useT()
   return (
     <form
@@ -80,7 +69,6 @@ export function NewFolder({
     >
       <Plus className="size-4 shrink-0" strokeWidth={1.5} />
       <input
-        id={id}
         name="name"
         aria-label={t('新建收藏夹', 'New list')}
         placeholder={t('新建收藏夹', 'New list')}

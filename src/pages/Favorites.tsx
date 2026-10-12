@@ -1,25 +1,25 @@
-import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { Choices } from '@/components/Choices'
 import { Constellation, Filled } from '@/components/Constellation'
 import { NewFolder } from '@/components/Favorite'
 import { Page } from '@/components/Page'
-import { PosterCard, posterGrid, posterRow } from '@/components/PosterRow'
+import { PosterCard, posterGrid } from '@/components/PosterRow'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { type Folder, isWatched, removeFolder, renameFolder, toggleWatched, useFavorites } from '@/lib/favorites'
 import { useT } from '@/lib/i18n'
-import { type Card, type From, hrefOf, img, lineupOf, titleOf } from '@/lib/tmdb'
-import { choice, cn, dialogBox, lit, play, reveal, sliders } from '@/lib/utils'
+import { type Card, type From, hrefOf, lineupOf, titleOf } from '@/lib/tmdb'
+import { choice, cn, dialogBox, play, sliders } from '@/lib/utils'
 
 // 看过: the logo's play triangle, filled with light once the 作品 has been watched.
 const Played = ({ on, className }: { on: boolean; className: string }) =>
   on ? <Filled line={play[0]} className={className} /> : <Constellation lines={play} className={className} />
 
-// The 收藏夹 as a shelf of covers, each one column of the poster grid wide, its name and count on one line above it,
-// the last a field for a new one; under them the 作品 of the one picked (?list=, else the first), all of them, those
-// not 看过 or those 看过 (?show=). No title over it: the corner menu's star says where this is. Both picks live in the
-// URL, so coming back from a 作品 finds the same list.
+// The 收藏夹 on one line, each its name and counts, starred when picked, and a field for a new one at their end; then
+// 全部 / 没看过 / 看过 (?show=) and the picked one's settings. Under them its 作品 (?list=, else the first). No title,
+// and no covers, as the user asked: the corner menu's star says where this is. Both picks live in the URL, so coming
+// back from a 作品 finds the same list.
 export default function Favorites() {
   const t = useT()
   const fav = useFavorites()
@@ -44,78 +44,71 @@ export default function Favorites() {
       },
       { replace: true, preventScrollReset: true, flushSync: true },
     )
-  // The shelf starts at the picked cover, which, back from a 作品, may sit past the screen's edge. Sideways only, so
-  // the page keeps the scroll it's given back; the shelf is `relative`, so a cover's offsetLeft counts from it.
-  // ponytail: no paging buttons, as home rows have: once the 收藏夹 and the field after them outrun the screen (three
-  // columns on a phone, six on a wide one), a mouse without a trackpad scrolls with shift and the wheel. Give the shelf
-  // Row's if that ever bites.
-  const shelf = useRef<HTMLDivElement>(null)
-  const field = useId()
+  // The 收藏夹 scroll sideways when they don't fit (a phone, or many), and start at the picked one when, back from a
+  // 作品, it would sit past the edge or under the fade there (scroll-hint's 2.5rem). Sideways only, so the page keeps
+  // the scroll it's given back; the row is `relative`, so a name's offsetLeft counts from it.
+  // ponytail: no paging buttons, as home rows have: a mouse without a trackpad reaches 收藏夹 past the edge with shift
+  // and the wheel. Give the row Row's if 收藏夹 ever run that many.
+  const lists = useRef<HTMLDivElement>(null)
   const [start] = useState(() => (folder ? fav.folders.indexOf(folder) : 0))
   useLayoutEffect(() => {
-    const el = shelf.current!
-    const cover = el.children[start] as HTMLElement
-    el.scrollLeft = cover.offsetLeft - parseFloat(getComputedStyle(el).paddingLeft)
+    const el = lists.current!
+    const picked = el.querySelectorAll('label')[start]
+    const padding = parseFloat(getComputedStyle(el).paddingLeft)
+    if (picked && picked.offsetLeft + picked.offsetWidth > el.clientWidth - 40) el.scrollLeft = picked.offsetLeft - padding
   }, [start])
 
   return (
     <Page title={t('收藏', 'Favorites')} hideTitle>
-      {/* it runs to the screen's edges, past the page's gutter, its columns the grid's under it; room under it for the
-          picked cover's glow, which the scrolling box would clip */}
-      <div
-        ref={shelf}
-        className={cn(
-          'no-scrollbar relative -mx-(--gutter) grid snap-x snap-mandatory scroll-px-(--gutter) grid-flow-col gap-3 overflow-x-auto overscroll-x-contain px-(--gutter) pt-1 pb-5 sm:gap-4',
-          posterRow,
-        )}
-      >
-        {fav.folders.map((f) => (
-          <Cover
-            key={f.id}
-            f={f}
-            seen={f.titles.filter((m) => isWatched(fav, m)).length}
-            picked={f === folder}
-            onPick={() => choose('list', f.id)}
-          />
-        ))}
-        {/* the field where a name would be, and where the cover would be a dashed frame that's its label, lit while it's
-            typed in; a new 收藏夹 pushes the field on, so the shelf follows it to the end */}
-        <div className="group snap-start">
+      {/* 全部 / 没看过 / 看过 go under the 收藏夹 when the line can't hold both, as on a phone */}
+      <div className="flex flex-wrap items-center justify-between gap-x-10 gap-y-3">
+        {/* room all round for a name's focus ring and the star's glow under it, which the scrolling box would clip */}
+        {/* a div, not a fieldset, as browsers scroll a fieldset's content through a box of their own */}
+        <div
+          ref={lists}
+          role="radiogroup"
+          aria-label={t('收藏夹', 'Lists')}
+          className="no-scrollbar scroll-hint relative -mx-3 -my-4 flex min-w-0 items-center gap-6 overflow-x-auto overscroll-x-contain px-3 py-4"
+        >
+          {fav.folders.map((f) => (
+            <List
+              key={f.id}
+              f={f}
+              seen={f.titles.filter((m) => isWatched(fav, m)).length}
+              picked={f === folder}
+              onPick={() => choose('list', f.id)}
+            />
+          ))}
           <NewFolder
-            id={field}
             onAdd={(id) => {
               choose('list', id)
-              // once the new cover is drawn
-              requestAnimationFrame(() => shelf.current?.scrollTo({ left: shelf.current.scrollWidth }))
+              // once the new one is drawn, as it pushes the field on
+              requestAnimationFrame(() => lists.current?.scrollTo({ left: lists.current.scrollWidth }))
             }}
-            className="mb-2.5 h-5"
-          />
-          <label
-            htmlFor={field}
-            aria-hidden="true"
-            className="block aspect-2/1 cursor-text rounded-lg border border-dashed border-star/20 transition-colors group-focus-within:border-star/60 group-hover:border-star/40"
+            // underlined while it's typed in, its only frame
+            className="w-32 shrink-0 border-b border-transparent pb-0.5 focus-within:border-star/40"
           />
         </div>
+        {folder && (
+          <div className="flex items-center gap-4">
+            <Choices legend={t('看过没有', 'Watched or not')} options={shows} value={show.key} onChange={(s) => choose('show', s)} />
+            {/* a 收藏夹 removed, the first is the one shown, and the row goes back to it */}
+            <FolderSettings key={folder.id} f={folder} onRemove={() => lists.current?.scrollTo({ left: 0 })} />
+          </div>
+        )}
       </div>
       {folder ? (
-        <>
-          <div className="mt-2 flex items-center justify-between gap-6">
-            <Choices legend={t('看过没有', 'Watched or not')} options={shows} value={show.key} onChange={(s) => choose('show', s)} />
-            {/* a 收藏夹 removed, the first is the one shown, and the shelf goes back to it */}
-            <FolderSettings key={folder.id} f={folder} onRemove={() => shelf.current?.scrollTo({ left: 0 })} />
+        titles.length ? (
+          <div className={cn(posterGrid, 'mt-6')}>
+            {titles.map((m) => (
+              <Saved key={hrefOf(m)} m={m} watched={isWatched(fav, m)} from={from} />
+            ))}
           </div>
-          {titles.length ? (
-            <div className={cn(posterGrid, 'mt-5')}>
-              {titles.map((m) => (
-                <Saved key={hrefOf(m)} m={m} watched={isWatched(fav, m)} from={from} />
-              ))}
-            </div>
-          ) : (
-            <p className="mt-5 text-sm text-muted-foreground">{show.empty}</p>
-          )}
-        </>
+        ) : (
+          <p className="mt-6 text-sm text-muted-foreground">{show.empty}</p>
+        )
       ) : (
-        <p className="mt-2 max-w-md text-[15px] leading-7 text-muted-foreground">
+        <p className="mt-6 max-w-md text-[15px] leading-7 text-muted-foreground">
           {t(
             '还没有收藏夹。在上面给它起个名字，或者在作品页点「收藏」新建一个。',
             'No lists yet. Name one above, or start one from Save on a title.',
@@ -126,52 +119,28 @@ export default function Favorites() {
   )
 }
 
-// A 收藏夹's cover, a radio among them: over a strip of its latest three posters, on one line, its name, starred when
-// picked, how many it holds and how many of those are 看过. The others are dimmed until pointed at.
-function Cover({ f, seen, picked, onPick }: { f: Folder; seen: number; picked: boolean; onPick: () => void }) {
+// A 收藏夹 among them, a radio: its name, starred when picked, then how many it holds and how many of those are 看过.
+// The star goes under the name alone, so the radio sits in the name's box, which shows its focus; a long name is cut
+// short inside it, as cutting the box would clip the star. Pointing anywhere on it lights the name.
+function List({ f, seen, picked, onPick }: { f: Folder; seen: number; picked: boolean; onPick: () => void }) {
   const t = useT()
   const n = f.titles.length
   return (
-    <label className="group min-w-0 snap-start cursor-pointer">
-      <input type="radio" name="list" checked={picked} onChange={onPick} className="sr-only" />
-      <span className="mb-2.5 flex items-baseline gap-1.5">
-        {/* the star goes on the name's own box, as the name's truncation would clip it */}
-        <span className={cn(choice(picked), 'min-w-0 py-0 text-[13px] leading-5 group-hover:text-foreground sm:text-sm')}>
-          <span className="block truncate">{f.name}</span>
-        </span>
-        <span aria-hidden="true" className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground tabular-nums">
-          {n}
-          {seen > 0 && (
-            <span className="flex items-center gap-0.5">
-              <Played on className="size-3" />
-              {seen}
-            </span>
-          )}
-        </span>
-        <span className="sr-only">{t(`，${n} 部，看过 ${seen} 部`, `, ${n} title${n === 1 ? '' : 's'}, ${seen} watched`)}</span>
+    <label className="group flex shrink-0 cursor-pointer items-baseline gap-1.5">
+      <span className={cn(choice(picked), 'group-hover:text-foreground')}>
+        <input type="radio" name="list" checked={picked} onChange={onPick} className="sr-only" />
+        <span className="block max-w-[12em] truncate">{f.name}</span>
       </span>
-      <span
-        className={cn(
-          'grid aspect-2/1 grid-cols-3 overflow-hidden rounded-lg bg-muted outline -outline-offset-1 outline-white/8 transition-opacity group-has-focus-visible:outline-2 group-has-focus-visible:outline-offset-2 group-has-focus-visible:outline-ring',
-          picked ? cn('outline-star/70', lit) : 'opacity-55 group-hover:opacity-100',
+      <span aria-hidden="true" className="flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
+        {n}
+        {seen > 0 && (
+          <span className="flex items-center gap-0.5">
+            <Played on className="size-3" />
+            {seen}
+          </span>
         )}
-      >
-        {f.titles
-          .filter((m) => m.poster_path)
-          .slice(0, 3)
-          .map((m) => (
-            <img
-              key={hrefOf(m)}
-              src={img(m.poster_path, 'w342')}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              ref={reveal}
-              onLoad={(e) => reveal(e.currentTarget)}
-              className="size-full object-cover opacity-0 transition-opacity duration-500 data-loaded:opacity-100"
-            />
-          ))}
       </span>
+      <span className="sr-only">{t(`，${n} 部，看过 ${seen} 部`, `, ${n} title${n === 1 ? '' : 's'}, ${seen} watched`)}</span>
     </label>
   )
 }
