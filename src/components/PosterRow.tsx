@@ -5,7 +5,7 @@ import { sectionTitle } from '@/components/Page'
 import { Button } from '@/components/ui/button'
 import { useT } from '@/lib/i18n'
 import { cn, reveal, usePages } from '@/lib/utils'
-import { type Category, type From, type Media, hrefOf, img, lineupOf, titleOf, useTitles, yearOf } from '@/lib/tmdb'
+import { type Card, type Category, type From, hrefOf, img, lineupOf, titleOf, useTitles, yearOf } from '@/lib/tmdb'
 
 // A picture in the cards' rounded frame. `children` (an episode number, an initial) sit under it, in the same grid
 // cell: they show while it loads, if it fails, and when there's none.
@@ -52,7 +52,8 @@ export function Poster({
     <>
       <Frame src={src} className="aspect-2/3 transition group-hover:outline-star/60 group-active:scale-[.97]" />
       <p className="mt-2.5 truncate text-sm transition-colors group-hover:text-star">{title}</p>
-      <p className="mt-0.5 flex gap-x-2 text-xs text-muted-foreground">{children}</p>
+      {/* a line high even when empty (a 作品 with no date yet), as what sits at its end in a 收藏夹 (看过) needs it */}
+      <p className="mt-0.5 flex min-h-4 gap-x-2 text-xs text-muted-foreground">{children}</p>
     </>
   )
   return to ? (
@@ -65,7 +66,7 @@ export function Poster({
 }
 
 // A TMDB 作品. `role`, on an actor's page, is the part they played in it; `from` is the list it sits in.
-export function PosterCard({ m, role, from }: { m: Media; role?: string; from?: From }) {
+export function PosterCard({ m, role, from }: { m: Card; role?: string; from?: From }) {
   const t = useT()
   return (
     <Poster to={hrefOf(m)} state={from} src={img(m.poster_path, 'w342')} title={titleOf(m)}>
@@ -74,6 +75,10 @@ export function PosterCard({ m, role, from }: { m: Media; role?: string; from?: 
     </Poster>
   )
 }
+
+// A row of 16:9 covers to pick from: a 服务器's 媒体库, the 收藏夹.
+export const coverRow =
+  'auto-cols-[42%] sm:auto-cols-[calc((100%-2*1rem)/3)] lg:auto-cols-[calc((100%-3*1rem)/4)] xl:auto-cols-[calc((100%-4*1rem)/5)]'
 
 // A grid of posters, as many to a line as the home rows show on a screen.
 export const posterGrid = 'grid grid-cols-3 gap-x-3 gap-y-6 sm:grid-cols-4 sm:gap-x-4 sm:gap-y-8 lg:grid-cols-5 xl:grid-cols-6'
@@ -88,7 +93,8 @@ export function PosterSkeletons({ n, pulse }: { n: number; pulse: boolean }) {
   ))
 }
 
-// A titled, horizontally scrolling row. `track` sets how wide its items are and `extra` sits under the title.
+// A horizontally scrolling row under its title, if it has one. `track` sets how wide its items are and `extra` sits
+// under the title.
 export function Row({
   title,
   extra,
@@ -96,7 +102,7 @@ export function Row({
   start,
   children,
 }: {
-  title: ReactNode
+  title?: ReactNode
   extra?: ReactNode
   track: string
   start?: number
@@ -147,7 +153,7 @@ export function Row({
     <section>
       <div className="flex items-end justify-between gap-4 px-(--gutter)">
         <div className="min-w-0">
-          <h2 className={sectionTitle}>{title}</h2>
+          {title && <h2 className={sectionTitle}>{title}</h2>}
           {extra}
         </div>
         {/* aria-disabled, not disabled, which would drop keyboard focus at the row's end; a click there scrolls nowhere */}

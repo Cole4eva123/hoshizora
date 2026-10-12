@@ -25,7 +25,7 @@ import {
   useStatus,
 } from '@/lib/emby'
 import { useT } from '@/lib/i18n'
-import { cn, sliders, toneOf } from '@/lib/utils'
+import { cn, dialogBox, sliders, toneOf } from '@/lib/utils'
 
 // The servers and the tile that adds one, as many to a row as fit: two on a phone.
 const tile = 'min-h-44 rounded-2xl p-5'
@@ -53,8 +53,8 @@ export default function Library() {
       {empty && (
         <EmptyState title={t('还没有连接 Emby 服务器', 'No Emby server connected')}>
           {t(
-            '服务器和它们的媒体库会列在这里。添加地址并登录后，首页、收藏和搜索都会用到里面的作品。',
-            'Your servers and their libraries are listed here. Once you add one and sign in, Home, Favorites and Search draw on its titles.',
+            '服务器和它们的媒体库会列在这里。添加地址并登录后，首页和搜索都会用到里面的作品。',
+            'Your servers and their libraries are listed here. Once you add one and sign in, Home and Search draw on its titles.',
           )}
         </EmptyState>
       )}
@@ -249,8 +249,7 @@ function ServerDialog({
         e.currentTarget.querySelector('form')?.reset()
       }}
       aria-label={server ? t('服务器设置', 'Server settings') : adding ? t('修改后重试', 'Edit and try again') : t('添加服务器', 'Add server')}
-      // Tailwind zeroes every margin, the dialog's centring included
-      className="m-auto w-[min(26rem,calc(100vw-2*var(--gutter)))] rounded-2xl bg-card p-6 text-foreground inset-ring inset-ring-star/15 backdrop:bg-night/70 backdrop:backdrop-blur-sm"
+      className={dialogBox}
     >
       <form onSubmit={submit}>
         <fieldset disabled={saving} className="min-w-0 space-y-4">

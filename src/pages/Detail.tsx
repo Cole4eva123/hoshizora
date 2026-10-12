@@ -2,6 +2,7 @@ import { useId, useMemo, useState } from 'react'
 import { Link, useLocation, useParams, useViewTransitionState } from 'react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { ChoiceMenu, Choices } from '@/components/Choices'
+import { Favorite } from '@/components/Favorite'
 import { BackButton, Page } from '@/components/Page'
 import { Failed, Frame, Row } from '@/components/PosterRow'
 import { PosterWall, TitleInfo } from '@/components/PosterWall'
@@ -57,7 +58,7 @@ export default function Detail({ type }: { type: MediaType }) {
   return <TitlePage key={`${type}/${id}`} m={m} backdrops={backdrops} neighbors={neighbors} preferred={preferred} />
 }
 
-// A 作品's page once its details are in: the 画报墙, where to watch it under its overview (the app only), then a
+// A 作品's page once its details are in: the 画报墙, where to watch it under its overview (the app only) and 收藏, then a
 // series' 选集, which show which episodes the picked 片源 has, and the cast.
 function TitlePage({
   m,
@@ -89,7 +90,7 @@ function TitlePage({
             <p className="mt-4 max-w-xl text-[15px] leading-7 text-foreground/80">
               {m.overview || t('TMDB 上还没有这部作品的中文简介。', 'TMDB has no English overview of this title yet.')}
             </p>
-            {canConnect && (
+            {canConnect ? (
               <Sources
                 m={m}
                 found={found}
@@ -99,7 +100,12 @@ function TitlePage({
                 retry={retry}
                 onPick={setWanted}
                 eager={!!exact}
+                extra={<Favorite m={m} />}
               />
+            ) : (
+              <div className="pointer-events-auto mt-6 flex">
+                <Favorite m={m} />
+              </div>
             )}
             {neighbors && <Neighbors {...neighbors} />}
           </TitleInfo>

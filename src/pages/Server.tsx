@@ -3,7 +3,7 @@ import { Navigate, useParams, useSearchParams } from 'react-router'
 import { Choices } from '@/components/Choices'
 import { ServerMark } from '@/components/Constellation'
 import { EmptyState, Page } from '@/components/Page'
-import { Failed, Frame, PagedGrid, Poster, Row } from '@/components/PosterRow'
+import { Failed, Frame, PagedGrid, Poster, Row, coverRow } from '@/components/PosterRow'
 import {
   type Library,
   type Server,
@@ -102,7 +102,7 @@ function Browse({ server }: { server: Server }) {
             </p>
           }
           start={start}
-          track="auto-cols-[42%] sm:auto-cols-[calc((100%-2*1rem)/3)] lg:auto-cols-[calc((100%-3*1rem)/4)] xl:auto-cols-[calc((100%-4*1rem)/5)]"
+          track={coverRow}
         >
           {libraries
             ? libraries.map((l) => <Cover key={l.id} library={l} picked={l === library} onPick={() => choose('lib', l.id)} />)

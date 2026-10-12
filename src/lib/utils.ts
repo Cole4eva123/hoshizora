@@ -48,6 +48,14 @@ export const lens: Star[][] = [
   [[15.5, 15.5], [8.7, 17.3], [3.7, 12.3], [5.5, 5.5], [12.3, 3.7], [17.3, 8.7], [15.5, 15.5], [21, 21]],
 ]
 
+// A pentagram: the corner menu's 收藏, and a 作品's 收藏 button.
+export const pentagram: Star[][] = [[[12, 3.3], [17.6, 20.5], [3, 9.9], [21, 9.9], [6.4, 20.5], [12, 3.3]]]
+
+// A dialog's box, a patch of the card colour over the page dimmed and blurred: a 服务器's settings, a 收藏夹's. Tailwind
+// zeroes every margin, the dialog's centring included, so m-auto puts it back.
+export const dialogBox =
+  'm-auto w-[min(26rem,calc(100vw-2*var(--gutter)))] rounded-2xl bg-card p-6 text-foreground inset-ring inset-ring-star/15 backdrop:bg-night/70 backdrop:backdrop-blur-sm'
+
 // The logo's play triangle, three stars: the 播放 button on a 作品's 画报墙.
 export const play: Star[][] = [[[7, 4], [20, 12], [7, 20], [7, 4]]]
 

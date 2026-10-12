@@ -36,25 +36,27 @@ const captions: Star[][] = [
 ]
 
 // Where each list opens from, by CSS anchor names written out whole for Tailwind; a page shows one list of each.
-type Kind = 'source' | 'version' | 'audio' | 'subtitle'
+type Kind = 'source' | 'version' | 'audio' | 'subtitle' | 'favorite'
 const anchor: Record<Kind, string> = {
   source: '[anchor-name:--source]',
   version: '[anchor-name:--version]',
   audio: '[anchor-name:--audio]',
   subtitle: '[anchor-name:--subtitle]',
+  favorite: '[anchor-name:--favorite]',
 }
 const anchored: Record<Kind, string> = {
   source: '[position-anchor:--source]',
   version: '[position-anchor:--version]',
   audio: '[position-anchor:--audio]',
   subtitle: '[position-anchor:--subtitle]',
+  favorite: '[position-anchor:--favorite]',
 }
 
 // Where to watch a 作品, on the 画报墙 under its overview: its 片源 on the kept 服务器 (`found`, as each server answers;
 // `searching` while some haven't, and those `down` that couldn't be asked, each with why), one of them picked (`pick`);
 // for a movie, 播放 and the picked one's 版本, 音频 and 字幕 too (a series' are its picked episode's, under 选集). The
 // list shows only the servers that have the 作品. `eager` when the 片源 was picked, not merely the first found: its file
-// is read at once then.
+// is read at once then. `extra` (收藏) goes after the icons, or under the line saying there's no server.
 export function Sources({
   m,
   found,
@@ -64,6 +66,7 @@ export function Sources({
   retry,
   onPick,
   eager,
+  extra,
 }: {
   m: Pick<Media, 'media_type'>
   found: ServerSource[]
@@ -73,19 +76,23 @@ export function Sources({
   retry: () => void
   onPick: (p: Picked) => void
   eager: boolean
+  extra?: ReactNode
 }) {
   const t = useT()
   const servers = useServers()
   const name = useId()
   if (!servers.length)
     return (
-      <p className="pointer-events-auto mt-5 text-sm text-muted-foreground">
-        {t('还没有服务器。', 'No servers yet. ')}
-        <Link to="/library" viewTransition className="text-star hover:underline">
-          {t('到媒体库里添加一台', 'Add one in Library')}
-        </Link>
-        {t('，就能在这里找到片源。', ' to find sources here.')}
-      </p>
+      <>
+        <p className="pointer-events-auto mt-5 text-sm text-muted-foreground">
+          {t('还没有服务器。', 'No servers yet. ')}
+          <Link to="/library" viewTransition className="text-star hover:underline">
+            {t('到媒体库里添加一台', 'Add one in Library')}
+          </Link>
+          {t('，就能在这里找到片源。', ' to find sources here.')}
+        </p>
+        {extra && <div className="pointer-events-auto mt-5 flex">{extra}</div>}
+      </>
     )
   // why there's none to pick, and what the list says besides its 片源
   const none = searching
@@ -135,9 +142,12 @@ export function Sources({
   return (
     <div className="pointer-events-auto mt-6">
       {mediaTypes[m.media_type].episodic ? (
-        list
+        <div className="flex items-start gap-5">
+          {list}
+          {extra}
+        </div>
       ) : (
-        <Tracks s={pick?.s} item={pick?.src.item} given={pick?.src.versions ?? []} eager={eager} why={none}>
+        <Tracks s={pick?.s} item={pick?.src.item} given={pick?.src.versions ?? []} eager={eager} why={none} after={extra}>
           {list}
         </Tracks>
       )}
@@ -192,7 +202,8 @@ function SourceOption({
 // 播放, then what a movie's 片源 or an episode plays: its 版本, 音频 and 字幕, each an icon opening its list, with
 // `children` (the 片源's list, on the 画报墙) before them. A file the server hasn't read is read once its tracks are
 // wanted: at once when `eager` (a 片源 or an episode picked), else once one of these is pointed at or opened; till then,
-// and if it can't be, they're picked in the player. Without an item the three don't open, and say `why`.
+// and if it can't be, they're picked in the player. Without an item the three don't open, and say `why`. `after` (收藏,
+// on the 画报墙) follows 字幕.
 export function Tracks({
   s,
   item,
@@ -200,6 +211,7 @@ export function Tracks({
   eager,
   why,
   children,
+  after,
 }: {
   s?: Server
   item?: string
@@ -207,6 +219,7 @@ export function Tracks({
   eager: boolean
   why?: string
   children?: ReactNode
+  after?: ReactNode
 }) {
   const t = useT()
   const at = `${s?.id}/${s?.userId}/${item}`
@@ -319,6 +332,7 @@ export function Tracks({
             </>
           )}
         </Menu>
+        {after}
       </div>
     </div>
   )
@@ -327,9 +341,10 @@ export function Tracks({
 // An icon on the 画报墙 that opens its list under it: the constellation bare, its word small under it, starlight and a
 // glow on hover and while the list is out, when the star under the word lights too. The list is a patch of night with
 // no edge, its options radios (Option). A pick puts it away, though not one made with the arrow keys, which move through
-// the list (Enter or Escape puts it away then). One that can't open says `why`, in its title, and stays focusable to
-// say it; `intent` goes on its wrapper, to read a file ahead.
-function Menu({
+// the list (Enter or Escape puts it away then), nor a checkbox ticked, as another may be. One that can't open says
+// `why`, in its title, and stays focusable to say it; `intent` goes on its wrapper, to read a file ahead. `lit` keeps it
+// lit as while open (a saved 作品's 收藏), and `word`, when given, is said under it in place of its `label`.
+export function Menu({
   kind,
   label,
   icon,
@@ -337,6 +352,8 @@ function Menu({
   why,
   onOpen,
   intent,
+  lit,
+  word,
   children,
 }: {
   kind: Kind
@@ -346,6 +363,8 @@ function Menu({
   why?: string
   onOpen?: () => void
   intent?: ReturnType<typeof readAheadOn>
+  lit?: boolean
+  word?: string
   children: ReactNode
 }) {
   const t = useT()
@@ -365,11 +384,13 @@ function Menu({
           star,
           'after:-bottom-2 after:opacity-0 after:transition-opacity',
           '[&:has(+:popover-open)]:text-star [&:has(+:popover-open)]:after:opacity-100 [&:has(+:popover-open)_svg]:drop-shadow-[0_0_6px_var(--glow)]',
+          lit && 'text-star after:opacity-100 [&_svg]:drop-shadow-[0_0_6px_var(--glow)]',
           anchor[kind],
         )}
       >
         {icon('size-6')}
-        {label}
+        {/* a 收藏夹's name can run long; its title shows it whole */}
+        <span className="max-w-24 truncate">{word ?? label}</span>
       </button>
       <div
         id={id}
@@ -378,13 +399,15 @@ function Menu({
         onPointerDown={() => (arrows.current = false)}
         onKeyDown={(e) => {
           arrows.current = e.key.startsWith('Arrow')
-          if (e.key !== 'Enter' || !(e.target instanceof HTMLInputElement)) return // not a 重试 button's
+          // an option's: not a 重试 button's, nor a field's, which submits its form
+          const option = e.target instanceof HTMLInputElement && (e.target.type === 'radio' || e.target.type === 'checkbox')
+          if (e.key !== 'Enter' || !option) return
           e.preventDefault() // or the focus, back on the button, takes the Enter and opens the list again
           e.currentTarget.hidePopover()
         }}
-        onChange={(e) => arrows.current || e.currentTarget.hidePopover()}
+        onChange={(e) => arrows.current || (e.target as HTMLInputElement).type !== 'radio' || e.currentTarget.hidePopover()}
         className={cn(
-          'inset-auto m-0 mt-2.5 max-h-[min(22rem,40vh)] w-max max-w-[min(26rem,calc(100vw-2rem))] min-w-48 overflow-y-auto overscroll-contain rounded-xl border-0 bg-night/75 p-1 text-foreground shadow-2xl shadow-night backdrop-blur-xl [position-area:bottom_span-right] [position-try-fallbacks:flip-block]',
+          'inset-auto m-0 mt-2.5 max-h-[min(22rem,40vh)] w-max max-w-[min(26rem,calc(100vw-2rem))] min-w-48 overflow-y-auto overscroll-contain rounded-xl border-0 bg-night/75 p-1 text-foreground shadow-2xl shadow-night backdrop-blur-xl [position-area:bottom_span-right] [position-try-fallbacks:flip-block,flip-inline,flip-block_flip-inline]',
           // centred in the window where WebKit places nothing by anchors (before Safari 26)
           'not-supports-[anchor-name:--a]:inset-0 not-supports-[anchor-name:--a]:m-auto',
           'open:animate-in open:fade-in open:slide-in-from-top-1',
@@ -403,9 +426,10 @@ function Menu({
   )
 }
 
-// One option in a Menu's list: a radio drawn as its name, a word `aside` it and a line of `detail` under it (what a
-// 版本 plays at), the picked one starred and brighter.
-function Option({
+// One option in a Menu's list: a radio (or of `type` checkbox, one of several ticked) drawn as its name, a word `aside`
+// it and a line of `detail` under it (what a 版本 plays at), the picked one starred and brighter.
+export function Option({
+  type = 'radio',
   name,
   picked,
   onPick,
@@ -415,6 +439,7 @@ function Option({
   aside,
   detail,
 }: {
+  type?: 'radio' | 'checkbox'
   name: string
   picked: boolean
   onPick: () => void
@@ -432,7 +457,7 @@ function Option({
         picked ? 'text-foreground' : 'text-foreground/60',
       )}
     >
-      <input type="radio" name={name} checked={picked} onChange={onPick} className="sr-only" />
+      <input type={type} name={name} checked={picked} onChange={onPick} className="sr-only" />
       <span
         className={cn(
           'mt-[7px] size-1.5 shrink-0 rounded-full bg-star shadow-[0_0_6px_1px_var(--glow)]',

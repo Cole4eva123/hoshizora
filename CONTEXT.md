@@ -86,6 +86,21 @@ _Avoid_: 类别（和分类太像）、题材、标签
 给作品打分的网站：TMDB、IMDb、烂番茄、豆瓣，以及只用于日本动画的 MyAnimeList。
 _English_: rating sources
 
+### 收藏
+
+**收藏**:
+用户挑出来放进收藏夹的作品，记在这台设备上，和服务器无关，TMDB 上的任何作品都能收藏。
+_English_: Favorites (the page), Save (the action)
+
+**收藏夹**:
+用户起了名字的一组收藏，如「想看」「周末一起看」；一部作品可以同时在几个收藏夹里。
+_English_: list
+_Avoid_: 文件夹、片单、合集（Emby 的合集是服务器上的 Collection）
+
+**看过**:
+用户给作品做的标记，跟着作品走，不分收藏夹：在一个收藏夹里标了看过，在别的收藏夹里也是看过。
+_English_: watched
+
 ### 自己的服务器
 
 **服务器**:
@@ -123,10 +138,6 @@ _English_: audio (the row), audio track (one of them)
 **字幕**:
 片源里的一路字幕，按语言区分，简体和繁体中文按字幕的标题分开。只翻译不是原声语言那几句的，叫强制字幕。
 _English_: subtitles; forced
-
-**收藏**:
-用户在任一台服务器上收藏的作品。
-_English_: Favorites
 
 **继续观看**:
 在任一台服务器上看了一部分、还没看完的电影或集。

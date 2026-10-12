@@ -4,17 +4,13 @@ import { NavLink, Outlet, ScrollRestoration, useLocation } from 'react-router'
 import { isTauri } from '@tauri-apps/api/core'
 import { Constellation, type Star } from '@/components/Constellation'
 import { type Copy, type Translate, en, setLang, useT, zh } from '@/lib/i18n'
-import { cn, lens, sliders, star } from '@/lib/utils'
+import { cn, lens, pentagram, sliders, star } from '@/lib/utils'
 
 // Each page's icon is a small constellation, drawn like the logo beside them: a house, a star, two frames stacked, a
 // lens and its handle, two sliders.
 const nav: { to: string; label: Copy; icon: Star[][] }[] = [
   { to: '/', label: ['首页', 'Home'], icon: [[[12, 3], [20, 10], [20, 20], [4, 20], [4, 10], [12, 3]]] },
-  {
-    to: '/favorites',
-    label: ['收藏', 'Favorites'],
-    icon: [[[12, 3.3], [17.6, 20.5], [3, 9.9], [21, 9.9], [6.4, 20.5], [12, 3.3]]],
-  },
+  { to: '/favorites', label: ['收藏', 'Favorites'], icon: pentagram },
   {
     to: '/library',
     label: ['媒体库', 'Library'],

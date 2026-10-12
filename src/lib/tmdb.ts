@@ -42,6 +42,9 @@ export type Media = {
   first_air_date?: string
 }
 
+// What a poster card shows of a 作品, and so what a 收藏夹 keeps of one.
+export type Card = Pick<Media, 'id' | 'media_type' | 'title' | 'name' | 'poster_path' | 'release_date' | 'first_air_date'>
+
 // The 分类: each is a home row (the first page of its request, 20 titles) and a /category page that pages on.
 // `votes` is how many ratings a title needs to rank under 高分; without a floor, 10/10 from a single vote tops every
 // list. Set per 分类 since TMDB's audience is uneven: in Oct 2026 a floor of 200 left 国产剧 5 titles and 美剧 904.
@@ -148,20 +151,20 @@ export function withGenres(path: string, ids: number[]) {
   return `${base}?${params}`
 }
 
-export const titleOf = (m: Media) => m.title ?? m.name ?? ''
+export const titleOf = (m: Card) => m.title ?? m.name ?? ''
 // The 作品 of the list a card was opened from, in the order shown, so the title page can step to the ones before and
 // after. It rides along in the history entry, so it keeps only what that needs.
 export type Lineup = { media_type: MediaType; id: number; title: string }[]
 // a 作品's own page
 export const hrefOf = (m: Pick<Media, 'media_type' | 'id'>) => `/${m.media_type}/${m.id}`
-export const lineupOf = (list: Media[]): Lineup =>
+export const lineupOf = (list: Card[]): Lineup =>
   list.map((m) => ({ media_type: m.media_type, id: m.id, title: titleOf(m) }))
 // Where a title page was opened from: the lineup, and for a list that pages on (a 分类, a search, a 服务器's 媒体库)
 // its request and the pages it showed, so stepping past the last one goes on into the next page. `item`: the 服务器's
 // id for the card clicked in a 媒体库, as one may keep a 作品 twice; a step drops it.
 export type From = { lineup: Lineup; list?: { path: string; pages: number } | Shelf; item?: string }
 export const originalTitleOf = (m: Media) => m.original_title ?? m.original_name ?? ''
-export const yearOf = (m: Media) => (m.release_date ?? m.first_air_date ?? '').slice(0, 4)
+export const yearOf = (m: Card) => (m.release_date ?? m.first_air_date ?? '').slice(0, 4)
 export const img = (path: string | null, size: 'w300' | 'w342' | 'w500' | 'w1280') =>
   path ? `https://image.tmdb.org/t/p/${size}${path}` : undefined
 
