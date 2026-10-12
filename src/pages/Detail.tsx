@@ -3,7 +3,7 @@ import { Link, useLocation, useParams, useViewTransitionState } from 'react-rout
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { ChoiceMenu, Choices } from '@/components/Choices'
 import { Favorite } from '@/components/Favorite'
-import { BackButton, Page } from '@/components/Page'
+import { BackButton, EmptyState, Page } from '@/components/Page'
 import { Failed, Frame, Row } from '@/components/PosterRow'
 import { PosterWall, TitleInfo } from '@/components/PosterWall'
 import { type Picked, Sources, Tracks } from '@/components/Sources'
@@ -30,6 +30,7 @@ import {
   hrefOf,
   img,
   lineupOf,
+  mediaTypes,
   nextEpisodeText,
   prefetchPerson,
   relativeDays,
@@ -113,7 +114,17 @@ function TitlePage({
       />
       <BackButton />
       <div className="space-y-12 pb-(--page-bottom) md:space-y-14">
-        {!!m.seasons?.length && <Episodes tv={m} on={pick ? { s: pick.s, series: pick.src.item } : undefined} />}
+        {mediaTypes[m.media_type].episodic &&
+          (m.seasons?.length ? (
+            <Episodes tv={m} on={pick ? { s: pick.s, series: pick.src.item } : undefined} />
+          ) : (
+            // a series TMDB has no seasons of yet (one just announced): its 选集 says so rather than going missing
+            <section className="px-(--gutter)">
+              <EmptyState title={t('选集', 'Episodes')}>
+                {t('TMDB 上还没有这部剧集的分季信息。', 'TMDB has no seasons of this series yet.')}
+              </EmptyState>
+            </section>
+          ))}
         <Cast cast={m.credits.cast} />
       </div>
     </>

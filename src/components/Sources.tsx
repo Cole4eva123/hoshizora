@@ -81,6 +81,7 @@ export function Sources({
   const t = useT()
   const servers = useServers()
   const name = useId()
+  const { episodic } = mediaTypes[m.media_type]
   if (!servers.length)
     return (
       <>
@@ -121,6 +122,7 @@ export function Sources({
           name={name}
           picked={s === pick?.s && src === pick.src}
           onPick={() => onPick({ server: s.id, user: s.userId, item: src.item })}
+          episodic={episodic}
           // its own name too, where a server keeps the 作品 twice
           twice={twice({ s, src })}
         />
@@ -141,7 +143,7 @@ export function Sources({
   )
   return (
     <div className="pointer-events-auto mt-6">
-      {mediaTypes[m.media_type].episodic ? (
+      {episodic ? (
         <div className="flex items-start gap-5">
           {list}
           {extra}
@@ -155,8 +157,8 @@ export function Sources({
   )
 }
 
-// A 片源 as an option, by its server: a movie's says what it plays at, or how many versions it has; a series' its
-// seasons there. Resting on a movie's has the server read its file ahead (readAheadOn).
+// A 片源 as an option, by its server: a movie's says what it plays at, or how many versions it has; a series' (one of an
+// `episodic` kind) its seasons there. Resting on a movie's has the server read its file ahead (readAheadOn).
 // ponytail: it says what the server first answered, so after a read it still lacks what it plays at, till the next
 // launch; have it peek at the read (versions/{item} in cache.ts) if that ever misleads.
 function SourceOption({
@@ -165,6 +167,7 @@ function SourceOption({
   name,
   picked,
   onPick,
+  episodic,
   twice,
 }: {
   s: Server
@@ -172,22 +175,22 @@ function SourceOption({
   name: string
   picked: boolean
   onPick: () => void
+  episodic: boolean
   twice: boolean
 }) {
   const t = useT()
-  const series = src.seasons !== undefined
   const v = src.versions[0]
   return (
     <Option
       name={name}
       picked={picked}
       onPick={onPick}
-      intent={series ? undefined : readAheadOn(s, src.item, src.versions)}
+      intent={episodic ? undefined : readAheadOn(s, src.item, src.versions)}
       mark={<ServerMark status="online" className="size-4" />}
       label={nameOf(s)}
       aside={twice ? src.name : undefined}
       detail={
-        series
+        episodic
           ? src.seasons
             ? t(`${src.seasons} 季`, `${src.seasons} season${src.seasons === 1 ? '' : 's'}`)
             : t('没有分集', 'No episodes')

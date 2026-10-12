@@ -45,8 +45,9 @@ export async function mdblist(m: Media, get = mdblistGet): Promise<Ratings> {
   )
 }
 
-// ponytail: douban.com sends no CORS headers, so this goes through the Vite dev proxy (/douban) and only
-// works under `bun run dev`; for the Tauri build switch to @tauri-apps/plugin-http's fetch.
+// ponytail: douban.com sends no CORS headers, so this goes through the Vite dev proxy (/douban, vite.config.ts) and only
+// works under the dev server; for the Tauri build switch to @tauri-apps/plugin-http's fetch.
+export const hasDouban = import.meta.env.DEV
 type DoubanGet = <T>(path: string, params: Record<string, string>) => Promise<T>
 const doubanGet: DoubanGet = (path, params) => axios.get(`/douban/j/${path}`, { params }).then((r) => r.data)
 
@@ -71,7 +72,7 @@ function lookups(m: Media) {
   const key = `${m.media_type}/${m.id}/${titleOf(m)}`
   let sources = cache.get(key)
   if (!sources) {
-    sources = [mdblist(m), douban(m).then((rate) => ({ douban: rate }))]
+    sources = [mdblist(m), ...(hasDouban ? [douban(m).then((rate) => ({ douban: rate }))] : [])]
     cache.set(key, sources)
   }
   return sources

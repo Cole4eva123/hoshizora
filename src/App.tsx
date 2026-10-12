@@ -4,6 +4,7 @@ import { NavLink, Outlet, ScrollRestoration, useLocation } from 'react-router'
 import { isTauri } from '@tauri-apps/api/core'
 import { Constellation, type Star } from '@/components/Constellation'
 import { type Copy, type Translate, en, setLang, useT, zh } from '@/lib/i18n'
+import { mediaTypes } from '@/lib/tmdb'
 import { cn, lens, pentagram, sliders, star } from '@/lib/utils'
 
 // Each page's icon is a small constellation, drawn like the logo beside them: a house, a star, two frames stacked, a
@@ -38,6 +39,9 @@ const draw =
 const appear =
   '-translate-x-1 opacity-0 transition-[opacity,translate] menu-open:translate-x-0 menu-open:opacity-100 menu-open:delay-(--stagger) menu-open:duration-500 motion-reduce:transition-none'
 
+// The pages opened from Home (its 分类, their 作品, and their actors), which keep it highlighted
+const fromHome = ['category', 'person', ...Object.keys(mediaTypes)]
+
 // The Mac app draws the page under a see-through title bar (tauri.conf.json), its window buttons over the top-left
 // corner. A strip across the top moves the window, as the title bar did.
 const inApp = isTauri()
@@ -46,8 +50,7 @@ document.documentElement.toggleAttribute('data-app', inApp) // index.css moves t
 export default function App() {
   const t = useT()
   const { pathname } = useLocation()
-  // categories, titles and their actors are opened from Home, so Home stays highlighted there
-  const underHome = /^\/(category|movie|tv|person)\//.test(pathname)
+  const underHome = fromHome.includes(pathname.split('/')[1])
   // Hover and keyboard focus open the menu in CSS (menu-open:, index.css); `open` is for taps, which have no hover.
   const [open, setOpen] = useState(false)
 

@@ -16,7 +16,8 @@ const api = axios.create({
 // TMDB's discover orders it by and what that date is (上映, 开播), and whether it plays by the episode. A kind added
 // here gets its route, its sorts and its place in lists. A module with facts of its own about the kinds (MDBList's
 // name for each, in ratings.ts) keys them by MediaType, so the compiler asks it for the new one's; emby-core's Kind,
-// the Rust side's, goes by the same names.
+// the Rust side's, goes by the same names and knows the same `episodic`, which decides there whether a 片源 comes with
+// seasons or versions.
 export const mediaTypes = {
   movie: { label: ['电影', 'Movie'], date: 'primary_release_date', debut: ['上映', 'releases'], episodic: false },
   tv: { label: ['剧集', 'Series'], date: 'first_air_date', debut: ['开播', 'premieres'], episodic: true },

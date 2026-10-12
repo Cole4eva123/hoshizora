@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { Page } from '@/components/Page'
 import { useT } from '@/lib/i18n'
-import { fromMdblist, hasMdblistKey } from '@/lib/ratings'
+import { fromMdblist, hasDouban, hasMdblistKey, ratingSources } from '@/lib/ratings'
 import { hasToken } from '@/lib/tmdb'
 
 function Status({ label, ok, value }: { label: string; ok: boolean; value?: string }) {
@@ -60,12 +60,12 @@ export default function Settings() {
         >
           <Status label={t(`MDBList 密钥（${mdblist}）`, `MDBList key (${mdblist})`)} ok={hasMdblistKey} />
           <Status
-            label={t('豆瓣', 'Douban')}
-            ok={import.meta.env.DEV}
+            label={t(...ratingSources.douban.label)}
+            ok={hasDouban}
             value={
-              import.meta.env.DEV
+              hasDouban
                 ? t('经开发服务器获取', 'Through the dev server')
-                : t('网页版暂不支持', 'Not on the web version yet')
+                : t('打包后的网页版和 App 暂不支持', 'Not in the built site or app yet')
             }
           />
         </Group>

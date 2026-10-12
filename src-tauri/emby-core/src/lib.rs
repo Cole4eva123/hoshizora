@@ -71,7 +71,8 @@ impl Kind {
         }
     }
 
-    /// whether it plays by the episode: its 片源 has seasons, and its versions are its episodes'
+    /// whether it plays by the episode: its 片源 has seasons, and its versions are its episodes'; the pages' `mediaTypes`
+    /// say the same of it, and draw its 片源 and 选集 by that
     fn episodic(self) -> bool {
         match self {
             Kind::Movie => false,
