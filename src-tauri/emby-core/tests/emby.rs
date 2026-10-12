@@ -290,6 +290,15 @@ async fn eventually(done: impl Fn() -> bool) -> bool {
 async fn adds_a_server_over_http_when_it_has_no_https_and_keeps_it_across_launches() {
     let (at, _) = emby().await;
     let path = file("adds");
+    // a temporary file a crash left, readable by anyone, doesn't hand the tokens its mode
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = path.with_extension("tmp");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&tmp, "").unwrap();
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o644)).unwrap();
+    }
     let added = Emby::open(path.clone()).add(&form(&at, "bin", "pw", " 家里 ")).await.unwrap();
     assert_eq!(
         added,
@@ -399,6 +408,36 @@ async fn nothing_there_is_offline_and_text_that_is_not_an_address_is_turned_down
     let emby = Emby::open(file("offline"));
     assert_eq!(emby.add(&form(&closed.to_string(), "bin", "pw", "")).await, Err(Error::Offline));
     assert_eq!(emby.add(&form("not an address", "bin", "pw", "")).await, Err(Error::NotAnAddress));
+}
+
+#[tokio::test]
+async fn an_https_whose_certificate_is_not_trusted_is_turned_down_and_not_asked_over_http() {
+    use tokio_rustls::rustls::ServerConfig;
+    use tokio_rustls::rustls::pki_types::pem::PemObject;
+    use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
+    let pem = include_bytes!("self-signed.pem");
+    let certificate = CertificateDer::pem_slice_iter(pem).collect::<Result<Vec<_>, _>>().unwrap();
+    let key = PrivateKeyDer::from_pem_slice(pem).unwrap();
+    let config = ServerConfig::builder().with_no_client_auth().with_single_cert(certificate, key).unwrap();
+    let tls = tokio_rustls::TlsAcceptor::from(Arc::new(config));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let at = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            let _ = tls.accept(stream).await;
+        }
+    });
+    let emby = Emby::open(file("untrusted"));
+    assert_eq!(emby.add(&form(&format!("https://{at}"), "bin", "pw", "")).await, Err(Error::Untrusted));
+    // typed without a scheme: https comes first there, and turned down, http isn't tried, which would have been Offline
+    assert_eq!(emby.add(&form(&at.to_string(), "bin", "pw", "")).await, Err(Error::Untrusted));
+    // and a server kept there, whose certificate has gone bad since, says so
+    let kept = file("untrusted-kept");
+    std::fs::create_dir_all(kept.parent().unwrap()).unwrap();
+    let server = json!({ "id": "srv", "name": "宸澄", "address": format!("https://{at}/emby"), "userId": "u1",
+        "userName": "bin", "signedIn": 1, "token": "t" });
+    std::fs::write(&kept, json!({ "device": "d", "servers": [server] }).to_string()).unwrap();
+    assert_eq!(Emby::open(kept).status("srv", "u1").await, Status::Untrusted);
 }
 
 #[tokio::test]

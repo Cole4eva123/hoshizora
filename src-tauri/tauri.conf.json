@@ -6,7 +6,7 @@
     "frontendDist": "../dist-app",
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "bun run dev --port 1420 --strictPort",
-    "beforeBuildCommand": "bunx tsc -b && bunx vite build --outDir dist-app"
+    "beforeBuildCommand": "bun run build --outDir dist-app"
   },
   "app": {
     "windows": [
@@ -22,7 +22,15 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self'",
+        "connect-src": "'self' ipc: http://ipc.localhost https://api.themoviedb.org https://api.mdblist.com",
+        "img-src": "'self' data: https: http:",
+        "font-src": "'self' data:",
+        "object-src": "'none'",
+        "base-uri": "'self'"
+      },
+      "devCsp": null
     }
   },
   "bundle": {

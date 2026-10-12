@@ -8,9 +8,11 @@ use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
-use crate::find::Info;
-use crate::{Emby, Error, Server, Signed, now};
+use crate::find::{Info, unsent};
+use crate::{APP, Emby, Error, Server, Signed, VERSION, now};
 
+// a sign-in, which the user waits on as a grey tile: time for the server to start a session for this device, and a
+// stuck one turns red rather than staying grey
 const SIGN_IN: Duration = Duration::from_secs(10);
 // a sign-out goes on in the background, so nobody waits on it
 const SIGN_OUT: Duration = Duration::from_secs(15);
@@ -69,7 +71,7 @@ impl Emby {
             .timeout(SIGN_IN)
             .send()
             .await
-            .map_err(|_| Error::Offline)?;
+            .map_err(unsent)?;
         match answer.status() {
             StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => return Err(Error::SignIn),
             status if !status.is_success() => return Err(Error::Server { status: status.as_u16() }),
@@ -107,11 +109,11 @@ impl Emby {
         }
     }
 
-    // Who's asking, in the authorization header every Emby version reads: the app, and this device, whose id is kept
-    // across launches.
+    // Who's asking, in the authorization header every Emby version reads: the app, and this device by its name and its
+    // id, which is kept across launches.
     fn identify(&self, request: RequestBuilder) -> RequestBuilder {
-        let (device, version) = (&self.device, env!("CARGO_PKG_VERSION"));
-        let who = format!(r#"Emby Client="Hoshizora", Device="Hoshizora", DeviceId="{device}", Version="{version}""#);
+        let (name, device) = (&self.name, &self.device);
+        let who = format!(r#"Emby Client="{APP}", Device="{name}", DeviceId="{device}", Version="{VERSION}""#);
         request.header("X-Emby-Authorization", who)
     }
 
@@ -121,12 +123,32 @@ impl Emby {
     }
 }
 
+// This Mac's name as its owner set it (Bin 的 MacBook Pro), for a server's 设备 list to tell it from others; the
+// app's where there's none.
+// ponytail: whether Emby decodes what `header_safe` encodes is unchecked (Jellyfin does); if its 设备 list shows
+// %E7…, send `scutil --get LocalHostName` (ASCII already, as Bin-MacBook-Pro) instead.
+pub(crate) fn device_name() -> String {
+    let named = std::process::Command::new("scutil").args(["--get", "ComputerName"]).output().ok();
+    let name = named.filter(|o| o.status.success()).and_then(|o| String::from_utf8(o.stdout).ok());
+    // macOS names a Mac with a typographic apostrophe (Bin’s MacBook Pro), which ASCII has its own of
+    header_safe(&name.as_deref().map(str::trim).filter(|n| !n.is_empty()).unwrap_or(APP).replace('’', "'"))
+}
+
+// A name as the authorization header can carry it: ASCII only, and none of the quote and comma Emby splits its fields
+// at, or the % that encodes the rest, as Jellyfin asks of its values.
+fn header_safe(name: &str) -> String {
+    let keep = |b: u8| b == b' ' || (b.is_ascii_graphic() && !b"\",%".contains(&b));
+    name.bytes().map(|b| if keep(b) { char::from(b).to_string() } else { format!("%{b:02X}") }).collect()
+}
+
 // Sends a request asked as the signed-in user, and reads what Emby answered: `SignedOut` when it turned the token down,
-// `Moved` for a redirect on its own host, which isn't followed.
+// `Refused` when it turned the user away, `Moved` for a redirect on its own host, which isn't followed; `Untrusted` when
+// its certificate no longer is (expired, say).
 async fn answer<T: DeserializeOwned>(request: RequestBuilder) -> Result<T, Error> {
-    let answer = request.send().await.map_err(|_| Error::Offline)?;
+    let answer = request.send().await.map_err(unsent)?;
     match answer.status() {
         StatusCode::UNAUTHORIZED => Err(Error::SignedOut),
+        StatusCode::FORBIDDEN => Err(Error::Refused),
         status if status.is_redirection() && within(&answer) => Err(Error::Moved),
         status if !status.is_success() => Err(Error::Server { status: status.as_u16() }),
         _ => answer.json().await.map_err(|_| Error::Offline),
@@ -139,4 +161,15 @@ async fn answer<T: DeserializeOwned>(request: RequestBuilder) -> Result<T, Error
 fn within(answer: &Response) -> bool {
     let to = answer.headers().get(LOCATION).and_then(|to| to.to_str().ok());
     to.and_then(|to| answer.url().join(to).ok()).is_some_and(|to| to.host() == answer.url().host())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_name_goes_in_the_header_as_ascii_with_its_quotes_and_commas_encoded() {
+        assert_eq!(header_safe("Bin 的 MacBook Pro"), "Bin %E7%9A%84 MacBook Pro");
+        assert_eq!(header_safe(r#"a"b,c%d"#), "a%22b%2Cc%25d");
+    }
 }

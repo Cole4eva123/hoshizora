@@ -206,7 +206,22 @@ function ServerDialog({
   const [sure, setSure] = useState(false)
   const unsure = useRef<ReturnType<typeof setTimeout>>(undefined)
   const shown = failed ?? adding?.error
-  const why = shown && errorText(shown, t)
+  // An add typed without a scheme that met an untrusted https: what to type for a server with no https. Never for
+  // https typed, or a kept server, whose certificate gone bad is no reason to go over http.
+  const typedBare = !!adding && !failed && !/^https?:\/\//i.test(adding.form.address.trim())
+  const why =
+    shown &&
+    [
+      errorText(shown, t),
+      shown.kind === 'untrusted' &&
+        typedBare &&
+        t(
+          '服务器只开了 http 的话，地址写成 http://地址:端口，Emby 默认是 8096，比如 http://192.168.1.5:8096。',
+          "If the server only has http, write the address as http://address:port; Emby's default is 8096, as in http://192.168.1.5:8096.",
+        ),
+    ]
+      .filter(Boolean)
+      .join(' ')
   const remove = server ? () => removeServer(server) : adding && (() => dismiss(adding))
   const submit = (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()

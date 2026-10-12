@@ -2,7 +2,13 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{BROWSE, Emby, Error, Kind};
+use crate::{BROWSE, Emby, Error, Kind, Signed};
+
+// How wide the pictures the server is asked for are: a 媒体库's 16:9 cover, three or more to a row, and a 海报, as
+// wide as TMDB's w342 the pages ask TMDB for theirs; at a JPEG quality where they look the same as the original.
+const COVER: u32 = 480;
+const POSTER: u32 = 342;
+const QUALITY: u32 = 90;
 
 /// A 媒体库 of movies or series, with the 16:9 cover the server draws for it.
 #[derive(Debug, PartialEq, Serialize)]
@@ -71,6 +77,8 @@ struct View {
     image_tags: Tags,
 }
 
+// What `Listed` reads that Emby leaves out of a list unless its `Fields` asks for it
+const LISTED: &str = "ProviderIds,ProductionYear";
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct Listed {
@@ -107,9 +115,9 @@ impl Emby {
             .items
             .into_iter()
             .filter(|v| {
-                v.collection_type.as_deref().is_none_or(|t| t == "mixed" || Kind::ALL.map(Kind::collection).contains(&t))
+                v.collection_type.as_deref().is_none_or(|t| t == Kind::MIXED || Kind::ALL.map(Kind::collection).contains(&t))
             })
-            .map(|v| Library { cover: image(&s.server.address, &v.id, v.image_tags.primary, 480), id: v.id, name: v.name })
+            .map(|v| Library { cover: image(&s.server.address, &v.id, v.image_tags.primary, COVER), id: v.id, name: v.name })
             .collect())
     }
 
@@ -140,7 +148,7 @@ impl Emby {
             ("IncludeItemTypes", &types),
             ("SortBy", by),
             ("SortOrder", order),
-            ("Fields", "ProviderIds,ProductionYear"),
+            ("Fields", LISTED),
             ("EnableImageTypes", "Primary"),
             ("ImageTypeLimit", "1"),
             ("EnableUserData", "false"),
@@ -155,7 +163,7 @@ impl Emby {
         if matches!(sort, Sort::Latest | Sort::Oldest) {
             query.extend([("IsUnaired", "false"), ("MinPremiereDate", "1800-01-01T00:00:00Z")]);
         }
-        let listing: Listing<Listed> = self.get(&s, &format!("Users/{}/Items", s.server.user_id), &query, BROWSE).await?;
+        let listing: Listing<Listed> = self.get(&s, &items_of(&s), &query, BROWSE).await?;
         Ok(Page {
             items: listing.items.into_iter().map(|i| item(&s.server.address, i)).collect(),
             total: (start == 0).then_some(listing.total_record_count),
@@ -168,7 +176,12 @@ impl Emby {
 // ponytail: an http server's pictures may be blocked in the bundled app (its page is tauri://, and macOS's ATS); hand
 // them over through a URI scheme of the app's own if that turns up.
 fn image(address: &str, id: &str, tag: Option<String>, width: u32) -> Option<String> {
-    tag.map(|tag| format!("{address}/Items/{id}/Images/Primary?tag={tag}&maxWidth={width}&quality=90"))
+    tag.map(|tag| format!("{address}/Items/{id}/Images/Primary?tag={tag}&maxWidth={width}&quality={QUALITY}"))
+}
+
+// Where a signed-in user's 作品 are asked for, a 媒体库's or one found by its TMDB entry (`sources`).
+pub(crate) fn items_of(s: &Signed) -> String {
+    format!("Users/{}/Items", s.server.user_id)
 }
 
 // A 作品 as listed, linked to its TMDB entry when the server knows it and it's of a kind there's a page for.
@@ -176,7 +189,7 @@ fn item(address: &str, i: Listed) -> Item {
     let tmdb = i.provider_ids.tmdb.and_then(|id| id.parse::<u64>().ok()).filter(|&id| id > 0);
     let kind = Kind::ALL.into_iter().find(|k| k.item_type() == i.kind);
     Item {
-        poster: image(address, &i.id, i.image_tags.primary, 342),
+        poster: image(address, &i.id, i.image_tags.primary, POSTER),
         tmdb: kind.zip(tmdb).map(|(media_type, id)| Tmdb { media_type, id }),
         year: i.production_year,
         id: i.id,

@@ -31,7 +31,14 @@ use find::Info;
 const CHECK: Duration = Duration::from_secs(5);
 // an edit's look at whether a kept sign-in still works, short as one that doesn't answer is kept anyway
 const RECHECK: Duration = Duration::from_secs(2);
+// a 媒体库's page or a 作品's lookup, which a large 媒体库 on a NAS's disks may take seconds over; past it, the page
+// offers 重试
 const BROWSE: Duration = Duration::from_secs(15);
+
+// The app as a server's logs and 设备 list name it, and its version, which the workspace gives this crate and the app
+// alike (src-tauri/Cargo.toml).
+const APP: &str = "Hoshizora";
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// A kind of 作品, as TMDB and the pages' routes name it (`movie`, `tv`), so the pages' `mediaTypes` and this agree
 /// on the wire. A kind added here (and to `ALL`) is listed in the 媒体库 and found by its TMDB entry; each `match`
@@ -45,6 +52,8 @@ pub enum Kind {
 
 impl Kind {
     const ALL: [Kind; 2] = [Kind::Movie, Kind::Tv];
+    /// Emby's type for a 媒体库 of several kinds, listed with those of each
+    const MIXED: &str = "mixed";
 
     /// Emby's item type for it
     fn item_type(self) -> &'static str {
@@ -113,7 +122,8 @@ impl Signed {
     }
 }
 
-/// Why something asked of a server didn't happen. The pages get it as `{ kind, status? }`.
+/// Why something asked of a server didn't happen. The pages get it as `{ kind, status? }`, and name each kind
+/// (`EmbyError` in src/lib/emby.ts, which a kind added here goes into).
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Error {
@@ -121,6 +131,9 @@ pub enum Error {
     NotAnAddress,
     /// Nothing Emby answered: the server is off, or the network is.
     Offline,
+    /// The address answers over https with a certificate this Mac doesn't trust (self-signed, expired, another
+    /// name's). Nothing more is asked of it, over http neither, where the password would go in the clear.
+    Untrusted,
     /// The server turned the sign-in down (401, 403): a wrong password, or a disabled user.
     SignIn,
     /// The server turned the kept token down: revoked, or the user is gone.
@@ -128,6 +141,9 @@ pub enum Error {
     /// The address answers with a redirect on its own host, not followed as the token would go along: what's in front
     /// of the server moved it, to https or another path. A new address in its settings is the way back.
     Moved,
+    /// The server, or what's in front of it, turned the signed-in user away (403): the account disabled, or barred from
+    /// where the app is or at this hour, or a proxy's rule.
+    Refused,
     /// The server answered with another error.
     Server { status: u16 },
     /// No such server is kept here (removed meanwhile).
@@ -145,6 +161,7 @@ pub enum Status {
     SignedOut,
     Moved,
     Refused,
+    Untrusted,
 }
 
 /// Emby as this app reaches it: the servers kept on this device, and everything asked of them. Opened once and
@@ -157,6 +174,8 @@ pub struct Emby {
     // where the servers are written; none when the file there couldn't be read, which stays as it is till next launch
     file: Option<PathBuf>,
     device: String,
+    // this Mac's name, as a header carries it (`session::device_name`)
+    name: String,
     // shared with a write, which the list takes the change from (`keep`)
     servers: Arc<Mutex<Vec<Signed>>>,
     // One change written at a time, without holding `servers` through the write, so readers don't wait out a fsync.
@@ -169,11 +188,12 @@ impl Emby {
     /// is there but can't be read now.
     pub fn open(file: PathBuf) -> Emby {
         let (kept, file) = kept::read(file);
-        let client = || Client::builder().user_agent(concat!("Hoshizora/", env!("CARGO_PKG_VERSION")));
+        let client = || Client::builder().user_agent(format!("{APP}/{VERSION}"));
         Emby {
             http: client().redirect(reqwest::redirect::Policy::none()).build().expect("no TLS backend"),
             probing: client().build().expect("no TLS backend"),
             device: kept.device,
+            name: session::device_name(),
             servers: Arc::new(Mutex::new(kept.servers)),
             writing: Arc::default(),
             file,
@@ -244,7 +264,7 @@ impl Emby {
             // the same user, whatever the case of the name, as Emby has it
             && username.trim().to_lowercase() == kept.server.user_name.to_lowercase()
             && (address.starts_with("https:") || !kept.server.address.starts_with("https:"))
-            && !matches!(self.get::<IgnoredAny>(&moved, "System/Info", &[], RECHECK).await, Err(Error::SignedOut));
+            && !matches!(self.check(&moved, RECHECK).await, Err(Error::SignedOut));
         let mut next = if keeps { moved } else { self.sign_in(address, info, username, password).await? };
         next.server.nickname = nickname_of(nickname);
         let replaced = self.keep(|servers| {
@@ -288,17 +308,23 @@ impl Emby {
     }
 
     /// Whether the server answers its signed-in user now: `SignedOut` when it turns the token down, `Moved` when its
-    /// address redirects, `Refused` when it turns the user away (403: the account disabled, or barred from where the
-    /// app is or at this hour, or a proxy's rule), `Offline` when nothing answers or no such server is kept.
+    /// address redirects, `Refused` when it turns the user away, `Untrusted` when its certificate no longer is, `Offline`
+    /// when nothing answers or no such server is kept.
     pub async fn status(&self, server: &str, user: &str) -> Status {
         let Ok(s) = self.signed(server, user) else { return Status::Offline };
-        match self.get::<IgnoredAny>(&s, "System/Info", &[], CHECK).await {
+        match self.check(&s, CHECK).await {
             Ok(_) => Status::Online,
             Err(Error::SignedOut) => Status::SignedOut,
             Err(Error::Moved) => Status::Moved,
-            Err(Error::Server { status: 403 }) => Status::Refused,
+            Err(Error::Refused) => Status::Refused,
+            Err(Error::Untrusted) => Status::Untrusted,
             Err(_) => Status::Offline,
         }
+    }
+
+    // Whether a kept sign-in works there now: a signed-in ask for the server's own info, which any user may read.
+    async fn check(&self, s: &Signed, timeout: Duration) -> Result<IgnoredAny, Error> {
+        self.get(s, "System/Info", &[], timeout).await
     }
 }
 

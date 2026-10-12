@@ -1,20 +1,23 @@
 [package]
 name = "emby-core"
-version = "0.1.0"
 description = "放映室的 Emby 客户端：找到服务器、登录、保存，列出媒体库和作品"
-authors = ["Bin"]
-edition = "2024"
-rust-version = "1.90"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 # rustls, checked against macOS's own certificates; the system proxy is followed, as the browser does
 reqwest = { version = "0.13", features = ["json", "query"] }
+# reqwest's own, only to tell a certificate turned down (find.rs) from no https at all
+rustls = { version = "0.23", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "sync"] }
 url = "2"
 
 [dev-dependencies]
-# a stand-in Emby server for the tests
+# a stand-in Emby server for the tests, and one over https whose certificate isn't trusted
 axum = "0.8"
+tokio-rustls = { version = "0.26", default-features = false }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time"] }

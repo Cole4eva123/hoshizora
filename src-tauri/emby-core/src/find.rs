@@ -11,9 +11,12 @@ use crate::{Emby, Error};
 
 // How long a probe may take. https gets 2 s before http is tried, so a password goes in the clear only to a server
 // whose https is missing or that slow: a home server's IP mostly turns https down at once, and the wait is for a
-// firewall that drops rather than refuses.
+// firewall that drops rather than refuses. One whose https answers with a certificate this Mac doesn't trust isn't
+// asked over http at all (`Untrusted`): the password would go in the clear to what may not be the server.
 const PROBE_HTTPS: Duration = Duration::from_secs(2);
 const PROBE_HTTP: Duration = Duration::from_secs(5);
+// what a probe asks for, under the address: who the server is, which Emby tells anyone
+const PROBE: &str = "/System/Info/Public";
 
 // Who answered a probe: the server's id and the name it gives itself.
 #[derive(Deserialize)]
@@ -25,47 +28,66 @@ pub(crate) struct Info {
 
 impl Emby {
     // Where the server typed answers, and who it is. The addresses to try come from what was typed (`candidates`): the
-    // https ones are asked at once, and the http ones only once none of those answers. A redirect, as from a proxy's
-    // http to its https, is followed, and the address it lands at is the one found.
+    // https ones are asked at once, and the http ones only once none of those answers and none turned the app away
+    // with its certificate. A redirect, as from a proxy's http to its https, is followed, and the address it lands at
+    // is the one found.
     pub(crate) async fn find(&self, typed: &str) -> Result<(String, Info), Error> {
         let addresses = candidates(typed).ok_or(Error::NotAnAddress)?;
         match self.race(&addresses, "https:", PROBE_HTTPS).await {
-            Some(found) => Ok(found),
-            None => self.race(&addresses, "http:", PROBE_HTTP).await.ok_or(Error::Offline),
+            Err(Error::Offline) => self.race(&addresses, "http:", PROBE_HTTP).await,
+            found => found,
         }
     }
 
     // The first of `addresses` with `scheme` where Emby answers, all asked at once: where it landed, and who it is.
-    async fn race(&self, addresses: &[String], scheme: &str, timeout: Duration) -> Option<(String, Info)> {
+    // When none does, `Untrusted` if one answered with a certificate this Mac doesn't trust, else `Offline`.
+    async fn race(&self, addresses: &[String], scheme: &str, timeout: Duration) -> Result<(String, Info), Error> {
         let mut probes = JoinSet::new();
         for address in addresses.iter().filter(|a| a.starts_with(scheme)) {
             probes.spawn(probe(self.probing.clone(), address.clone(), timeout));
         }
+        let mut why = Error::Offline;
         while let Some(done) = probes.join_next().await {
-            if let Ok(Some(found)) = done {
-                return Some(found);
+            match done {
+                Ok(Ok(found)) => return Ok(found),
+                Ok(Err(e @ Error::Untrusted)) => why = e,
+                _ => {}
             }
         }
-        None
+        Err(why)
     }
 }
 
 // Whether Emby answers at `address`, following any redirect: where it landed, and who it is.
-async fn probe(http: Client, address: String, timeout: Duration) -> Option<(String, Info)> {
-    let answer = http.get(format!("{address}/System/Info/Public")).timeout(timeout).send().await.ok()?;
-    let answer = answer.error_for_status().ok()?;
+async fn probe(http: Client, address: String, timeout: Duration) -> Result<(String, Info), Error> {
+    let answer = http.get(format!("{address}{PROBE}")).timeout(timeout).send().await.map_err(unsent)?;
+    let answer = answer.error_for_status().map_err(|_| Error::Offline)?;
     // an https address redirected to http hasn't answered over https, which the password would then go to in the clear
     if address.starts_with("https:") && answer.url().scheme() != "https" {
-        return None;
+        return Err(Error::Offline);
     }
     let landed = landed_at(answer.url()).unwrap_or(address);
-    Some((landed, answer.json().await.ok()?))
+    Ok((landed, answer.json().await.map_err(|_| Error::Offline)?))
 }
 
-// Where a probe landed after any redirect: the address its /System/Info/Public sits under, a slash after it or not;
-// none when the redirect took it elsewhere.
+// Why a request got no answer: `Untrusted` when it failed on the server's certificate, else `Offline`.
+pub(crate) fn unsent(e: reqwest::Error) -> Error {
+    if untrusted(&e) { Error::Untrusted } else { Error::Offline }
+}
+
+// Whether a request failed on the server's certificate, which this Mac doesn't trust: not one that found no https
+// there (refused, or plain http on that port), which is no reason to stop. rustls' error comes wrapped in an io::Error
+// or two, whose source() skips what they hold, so they're opened by hand. Matched by type, so reqwest's rustls must be
+// this crate's (tests/emby.rs has a server whose certificate isn't trusted, which fails if they part).
+fn untrusted(e: &(dyn std::error::Error + 'static)) -> bool {
+    matches!(e.downcast_ref(), Some(rustls::Error::InvalidCertificate(_)))
+        || e.downcast_ref::<std::io::Error>().and_then(|io| io.get_ref()).is_some_and(|inner| untrusted(inner))
+        || e.source().is_some_and(untrusted)
+}
+
+// Where a probe landed after any redirect: the address its PROBE sits under, a slash after it or not; none when the
+// redirect took it elsewhere.
 fn landed_at(url: &Url) -> Option<String> {
-    const PROBE: &str = "/System/Info/Public";
     let path = url.path().strip_suffix('/').unwrap_or(url.path());
     let (base, tail) = path.split_at_checked(path.len().checked_sub(PROBE.len())?)?;
     tail.eq_ignore_ascii_case(PROBE).then(|| format!("{}{base}", url.origin().ascii_serialization()))
@@ -143,6 +165,18 @@ mod tests {
     fn text_that_is_not_an_address_has_no_candidates() {
         assert_eq!(candidates("not an address"), None);
         assert_eq!(candidates(""), None);
+    }
+
+    #[test]
+    fn only_a_certificate_turned_down_is_untrusted_not_a_port_with_no_https() {
+        use std::io::{Error as Io, ErrorKind};
+        // as reqwest hands them over (checked against badssl.com's self-signed, expired and wrong-host certificates)
+        let wrapped = |e: rustls::Error| Io::other(Io::new(ErrorKind::InvalidData, e));
+        let bad = rustls::Error::InvalidCertificate(rustls::CertificateError::UnknownIssuer);
+        assert!(untrusted(&wrapped(bad)));
+        // plain http on an https address, and nothing listening
+        assert!(!untrusted(&wrapped(rustls::Error::InvalidMessage(rustls::InvalidMessage::InvalidContentType))));
+        assert!(!untrusted(&Io::from(ErrorKind::ConnectionRefused)));
     }
 
     #[test]

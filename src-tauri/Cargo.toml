@@ -1,10 +1,10 @@
 [package]
 name = "hoshizora"
-version = "0.1.0"
 description = "放映室：自用的 Emby 播放器"
-authors = ["Bin"]
-edition = "2024"
-rust-version = "1.90"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [lib]
 name = "hoshizora_lib"
@@ -17,6 +17,14 @@ tauri-build = { version = "2.7.1", features = [] }
 [workspace]
 members = ["emby-core"]
 
+# one version for both, which is the app's (the bundle's, as tauri.conf.json names none) and what emby-core tells servers
+[workspace.package]
+version = "0.1.0"
+authors = ["Bin"]
+edition = "2024"
+rust-version = "1.90"
+
 [dependencies]
-tauri = { version = "2.12.1", features = [] }
+# held to 2.12 as @tauri-apps/api and the CLI are (package.json): the CLI won't build with them a minor apart
+tauri = { version = "~2.12.1", features = [] }
 emby-core = { path = "emby-core" }

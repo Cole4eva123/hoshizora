@@ -77,8 +77,11 @@ fn write(file: &Path, json: &[u8]) -> std::io::Result<()> {
     let dir = file.parent().unwrap_or(Path::new(""));
     fs::create_dir_all(dir)?;
     let tmp = file.with_extension("tmp");
+    // one a crash left goes first, and one there all the same fails the write: opening it would keep its mode, rather
+    // than set the one below
+    let _ = fs::remove_file(&tmp);
     let mut options = fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    options.write(true).create_new(true);
     #[cfg(unix)]
     std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
     let mut written = options.open(&tmp)?;

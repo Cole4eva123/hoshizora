@@ -6,7 +6,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::browse::{Ids, Listing};
+use crate::browse::{Ids, Listing, items_of};
 use crate::{BROWSE, Emby, Error, Kind};
 
 // How long a server may take to read a file it hasn't yet: a .strm's start comes from the cloud, about 5 s the first
@@ -79,7 +79,10 @@ pub struct Track {
     pub forced: bool,
 }
 
-// The parts of Emby's answers read here.
+// The parts of Emby's answers read here. A list leaves some out unless its `Fields` asks for them: those `Found` reads
+// of a series' 片源, or of a movie's.
+const SERIES: &str = "ProviderIds,ChildCount";
+const MOVIE: &str = "ProviderIds,MediaSources";
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct Found {
@@ -94,6 +97,8 @@ struct Found {
     media_sources: Vec<MediaSource>,
 }
 
+// what `Aired` reads that a list leaves out unless its `Fields` asks for it
+const AIRED: &str = "MediaSources";
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct Aired {
@@ -157,13 +162,13 @@ impl Emby {
             ("AnyProviderIdEquals", id.as_str()),
             ("Recursive", "true"),
             ("IncludeItemTypes", kind.item_type()),
-            ("Fields", if series { "ProviderIds,ChildCount" } else { "ProviderIds,MediaSources" }),
+            ("Fields", if series { SERIES } else { MOVIE }),
             ("Limit", "20"),
             // no pictures, but its user data, unlike `episodes`: without it Emby counts a series' seasons as 0 (as the
             // user's 4.9.5 does)
             ("EnableImages", "false"),
         ];
-        let found: Listing<Found> = self.get(&s, &format!("Users/{}/Items", s.server.user_id), &query, BROWSE).await?;
+        let found: Listing<Found> = self.get(&s, &items_of(&s), &query, BROWSE).await?;
         let tmdb = tmdb.to_string();
         let mut sources: Vec<Source> = found
             .items
@@ -195,7 +200,7 @@ impl Emby {
             ("Season", &season),
             // not those a server set to show missing episodes lists with no file
             ("IsMissing", "false"),
-            ("Fields", "MediaSources"),
+            ("Fields", AIRED),
             ("EnableImages", "false"),
             ("EnableUserData", "false"),
         ];

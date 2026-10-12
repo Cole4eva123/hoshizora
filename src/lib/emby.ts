@@ -24,9 +24,12 @@ export type Server = {
 // What a 服务器 is called: its 备注, or else the name it gives itself.
 export const nameOf = (s: Server) => s.nickname || s.name
 
-// Why the Rust side couldn't do what was asked (emby-core's Error).
+// Why the Rust side couldn't do what was asked (emby-core's Error, one kind for each of its variants). Each kind has its
+// words (errorText), which the compiler asks for once a kind is added here.
 export type EmbyError =
-  | { kind: 'notAnAddress' | 'offline' | 'signIn' | 'signedOut' | 'moved' | 'noServer' | 'storage' }
+  | {
+      kind: 'notAnAddress' | 'offline' | 'untrusted' | 'signIn' | 'signedOut' | 'moved' | 'refused' | 'noServer' | 'storage'
+    }
   | { kind: 'server'; status: number }
 
 // The kept servers, read during render like the 界面语言, so a page draws them in its first frame (a 服务器's page,
@@ -65,9 +68,18 @@ export const editServer = (s: Server, form: Form) =>
 // How a server's tile shows it: `checking` while it's asked (a grey light), `online`, `offline` when nothing Emby
 // answers, `signedOut` when the server turned a kept token down (revoked, or the user is gone), `moved` when its
 // address redirects on its own host, `refused` when it turns the user away (a 403); and for an add that failed,
-// `signIn` when the server answered the sign-in but didn't sign in (a wrong password, or an error of its own),
-// `storage` when it couldn't be kept on this device.
-export type Status = 'checking' | 'online' | 'offline' | 'signedOut' | 'moved' | 'refused' | 'signIn' | 'storage'
+// `untrusted` when its https certificate isn't trusted (on adding, or since), `signIn` when the server answered the sign-in but didn't sign
+// in (a wrong password, or an error of its own), `storage` when it couldn't be kept on this device.
+export type Status =
+  | 'checking'
+  | 'online'
+  | 'offline'
+  | 'signedOut'
+  | 'moved'
+  | 'refused'
+  | 'untrusted'
+  | 'signIn'
+  | 'storage'
 
 // A Status in words, beside its light for anyone who can't tell red from green, and for screen readers.
 export const statusText = (status: Status, t: Translate) =>
@@ -78,6 +90,7 @@ export const statusText = (status: Status, t: Translate) =>
     signedOut: t('登录已失效', 'Signed out'),
     moved: t('地址已失效', 'Address outdated'),
     refused: t('拒绝访问', 'Access denied'),
+    untrusted: t('证书不受信任', 'Untrusted certificate'),
     signIn: t('登录没成功', "Couldn't sign in"),
     storage: t('没能保存', "Couldn't save"),
   })[status]
@@ -108,6 +121,7 @@ export const dismiss = (a: Adding) => setAdding(adding.filter((x) => x.id !== a.
 
 // How a failed add's tile shows why; anything else is `offline`.
 const failedAs: Partial<Record<EmbyError['kind'], Status>> = {
+  untrusted: 'untrusted',
   signIn: 'signIn',
   server: 'signIn',
   storage: 'storage',
@@ -194,6 +208,7 @@ export function useStatus({ id, userId, signedIn, address }: Server) {
 // Why a server couldn't be asked, or a change to it didn't go through, in words: on its page, and in its settings.
 export const errorText = (e: unknown, t: Translate) => {
   const error = e as EmbyError | undefined
+  const offline = t('连接异常，检查一下网络和服务器地址', "Connection error, check your network and the server's address")
   switch (error?.kind) {
     case 'signedOut':
       return t(
@@ -205,11 +220,15 @@ export const errorText = (e: unknown, t: Translate) => {
         '服务器已经不在这个地址了。在媒体库里打开这台服务器的设置，改成它现在的地址。',
         "The server isn't at this address any more. Open its settings in Library and change it to where it is now.",
       )
+    case 'refused':
+      return t('服务器拒绝了访问（403）', 'The server refused access (403)')
     case 'server':
-      // 403 as the tile says it (`refused`)
-      return error.status === 403
-        ? t('服务器拒绝了访问（403）', 'The server refused access (403)')
-        : t(`服务器返回错误 ${error.status}`, `The server answered with error ${error.status}`)
+      return t(`服务器返回错误 ${error.status}`, `The server answered with error ${error.status}`)
+    case 'untrusted':
+      return t(
+        '服务器的 https 证书不受信任（自签、过期或不是这个域名的），所以没有连上。证书过期的话，要在服务器那边更新。',
+        "The server's https certificate isn't trusted (self-signed, expired, or another name's), so the app didn't connect. An expired one needs renewing on the server.",
+      )
     case 'notAnAddress':
       return t('这不是一个服务器地址', "That isn't a server address")
     case 'signIn':
@@ -219,8 +238,14 @@ export const errorText = (e: unknown, t: Translate) => {
         '没能存到这台设备上。看看磁盘是不是满了、放映室的数据文件夹能不能读写，再重开放映室。',
         "Couldn't save it on this device. Check the disk isn't full and Hoshizora's data folder is writable, then reopen.",
       )
+    case 'offline':
+    case 'noServer':
+    case undefined:
+      return offline
     default:
-      return t('连接异常，检查一下网络和服务器地址', "Connection error, check your network and the server's address")
+      // a kind added to EmbyError without its words fails to compile here; one only the Rust side knows reads as offline
+      error satisfies never
+      return offline
   }
 }
 
