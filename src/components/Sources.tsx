@@ -1,6 +1,6 @@
 import { type ReactNode, useId, useRef, useState } from 'react'
-import { Link } from 'react-router'
 import { Constellation, ServerMark, type Star } from '@/components/Constellation'
+import { ToLibrary } from '@/components/Page'
 import { Failed } from '@/components/PosterRow'
 import {
   type Answer,
@@ -87,9 +87,7 @@ export function Sources({
       <>
         <p className="pointer-events-auto mt-5 text-sm text-muted-foreground">
           {t('还没有服务器。', 'No servers yet. ')}
-          <Link to="/library" viewTransition className="text-star hover:underline">
-            {t('到媒体库里添加一台', 'Add one in Library')}
-          </Link>
+          <ToLibrary>{t('到媒体库里添加一台', 'Add one in Library')}</ToLibrary>
           {t('，就能在这里找到片源。', ' to find sources here.')}
         </p>
         {extra && <div className="pointer-events-auto mt-5 flex">{extra}</div>}
@@ -103,7 +101,7 @@ export function Sources({
       : t('服务器上都没有这部作品', 'No server has this title')
   // the picked one's server, or how the asking goes: grey while it does, red when a server couldn't be asked
   const light: Status = pick || !(searching || down.length) ? 'online' : searching ? 'checking' : 'offline'
-  const note = 'py-1.5 pr-2.5 pl-6.5 text-[11px] leading-4 text-muted-foreground'
+  const note = 'py-1.5 pr-2.5 pl-6.5 text-detail leading-4 text-muted-foreground'
   // where a server keeps the 作品 twice, in two 媒体库
   const twice = ({ s, src }: ServerSource) => found.some((f) => f.s === s && f.src !== src)
   const list = (
@@ -135,8 +133,8 @@ export function Sources({
       {down.map(({ s, error }) => (
         <div key={`${s.id}/${s.userId}`} role="status" className={cn(note, 'relative')}>
           <ServerMark status="offline" className="absolute top-1.5 left-1.5 size-4" />
-          <span className="text-[13px] leading-5 text-foreground/60">{nameOf(s)}</span>
-          <Failed error={error!} retry={retry} className="text-[11px]" />
+          <span className="text-name leading-5 text-foreground/60">{nameOf(s)}</span>
+          <Failed error={error!} retry={retry} className="text-detail" />
         </div>
       ))}
     </Menu>
@@ -248,11 +246,11 @@ export function Tracks({
   }
   // in place of the 音轨 and 字幕 while the server reads the file, or when it can't
   const unread = (
-    <div role="status" className="max-w-64 px-2.5 py-1.5 text-[13px] leading-5 text-muted-foreground">
+    <div role="status" className="max-w-64 px-2.5 py-1.5 text-name leading-5 text-muted-foreground">
       {reading ? (
         t('正在读取音频和字幕，第一次要几秒', 'Reading the audio and subtitles, a few seconds the first time')
       ) : error ? (
-        <Failed error={error} retry={retry} className="text-[13px]" />
+        <Failed error={error} retry={retry} className="text-name" />
       ) : (
         t('音频和字幕播放时再选', 'Pick the audio and subtitles when playing')
       )}
@@ -302,7 +300,7 @@ export function Tracks({
                     label={audioLabel(x, t)}
                   />
                 ))
-              : <p className="px-2.5 py-1.5 text-[13px] text-muted-foreground">{t('没有音轨', 'No audio')}</p>}
+              : <p className="px-2.5 py-1.5 text-name text-muted-foreground">{t('没有音轨', 'No audio')}</p>}
         </Menu>
         <Menu
           kind="subtitle"
@@ -382,12 +380,12 @@ export function Menu({
         title={why ?? current}
         aria-label={current ? t(`${label}：${current}`, `${label}: ${current}`) : label}
         className={cn(
-          'flex cursor-pointer flex-col items-center gap-1.5 text-[11px] leading-none text-foreground/55 transition-colors not-aria-disabled:hover:text-star aria-disabled:cursor-not-allowed aria-disabled:opacity-35',
-          '[&_svg]:transition-[filter] not-aria-disabled:hover:[&_svg]:drop-shadow-[0_0_6px_var(--glow)]',
+          'flex cursor-pointer flex-col items-center gap-1.5 text-detail leading-none text-foreground/60 transition-colors not-aria-disabled:hover:text-star aria-disabled:cursor-not-allowed aria-disabled:opacity-35',
+          '[&_svg]:transition-[filter] not-aria-disabled:hover:[&_svg]:drop-shadow-glow',
           star,
           'after:-bottom-2 after:opacity-0 after:transition-opacity',
-          '[&:has(+:popover-open)]:text-star [&:has(+:popover-open)]:after:opacity-100 [&:has(+:popover-open)_svg]:drop-shadow-[0_0_6px_var(--glow)]',
-          lit && 'text-star after:opacity-100 [&_svg]:drop-shadow-[0_0_6px_var(--glow)]',
+          '[&:has(+:popover-open)]:text-star [&:has(+:popover-open)]:after:opacity-100 [&:has(+:popover-open)_svg]:drop-shadow-glow',
+          lit && 'text-star after:opacity-100 [&_svg]:drop-shadow-glow',
           anchor[kind],
         )}
       >
@@ -418,7 +416,7 @@ export function Menu({
         )}
       >
         <fieldset className="min-w-0">
-          <legend className="flex items-center gap-1.5 px-2.5 pt-2 pb-1 text-[11px] text-muted-foreground">
+          <legend className="flex items-center gap-1.5 px-2.5 pt-2 pb-1 text-detail text-muted-foreground">
             {icon('size-3.5')}
             {label}
           </legend>
@@ -463,15 +461,15 @@ export function Option({
       <input type={type} name={name} checked={picked} onChange={onPick} className="sr-only" />
       {/* the star, centred on the name's line (leading-5) */}
       <span className="flex h-5 shrink-0 items-center">
-        <span className={cn('size-1.5 rounded-full bg-star shadow-[0_0_6px_1px_var(--glow)]', !picked && 'opacity-0')} />
+        <span className={cn('size-1.5 rounded-full bg-star shadow-dot shadow-(color:--glow)', !picked && 'opacity-0')} />
       </span>
       <span className="min-w-0">
-        <span title={label} className="flex items-center gap-1.5 text-[13px] leading-5 whitespace-nowrap">
+        <span title={label} className="flex items-center gap-1.5 text-name leading-5 whitespace-nowrap">
           {mark}
           <span className="truncate">{label}</span>
-          {aside && <span className="text-[11px] text-muted-foreground">{aside}</span>}
+          {aside && <span className="text-detail text-muted-foreground">{aside}</span>}
         </span>
-        {detail && <span className="block text-[11px] leading-4 text-muted-foreground tabular-nums">{detail}</span>}
+        {detail && <span className="block text-detail leading-4 text-muted-foreground tabular-nums">{detail}</span>}
       </span>
     </label>
   )
@@ -488,15 +486,15 @@ function Play({ reading }: { reading: boolean }) {
       aria-disabled
       aria-label={t('播放', 'Play')}
       title={t('播放器还在做', "The player isn't ready yet")}
-      className="grid size-11 shrink-0 cursor-not-allowed place-items-center text-star drop-shadow-[0_0_10px_var(--glow)]"
+      className="grid size-11 shrink-0 cursor-not-allowed place-items-center text-star drop-shadow-glow-lg"
     >
       <Constellation
         lines={play}
         className={cn(
           'size-full [&_polyline]:[stroke-dasharray:1]',
-          // one of the two only, as Tailwind writes the named one after the other, where it would win
+          // one of the two only: both set the animation, and the stylesheet's order would pick, not the order here
           reading
-            ? 'motion-safe:[&_polyline]:animate-[trace_1.6s_ease-in-out_infinite]'
+            ? 'motion-safe:[&_polyline]:animate-trace-loop'
             : 'motion-safe:[&_polyline]:animate-trace',
         )}
       />

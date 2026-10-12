@@ -110,7 +110,7 @@ export default function Favorites() {
           <p className="mt-6 text-sm text-muted-foreground">{show.empty}</p>
         )
       ) : (
-        <p className="mt-6 max-w-md text-[15px] leading-7 text-muted-foreground">
+        <p className="mt-6 max-w-md text-body leading-7 text-muted-foreground">
           {t(
             '还没有收藏夹。在上面给它起个名字，或者在作品页点「收藏」新建一个。',
             'No lists yet. Name one above, or start one from Save on a title.',
@@ -161,7 +161,7 @@ function Saved({ m, watched, from }: { m: Card; watched: boolean; from: From }) 
         onClick={() => toggleWatched(m)}
         className={cn(
           'absolute right-0 bottom-0 inline-flex items-center gap-1 rounded-sm text-xs transition-colors',
-          watched ? 'text-star [&_svg]:drop-shadow-[0_0_5px_var(--glow)]' : 'text-muted-foreground/60 hover:text-star',
+          watched ? 'text-star [&_svg]:drop-shadow-glow' : 'text-muted-foreground/60 hover:text-star',
         )}
       >
         <Played on={watched} className="size-3.5" />

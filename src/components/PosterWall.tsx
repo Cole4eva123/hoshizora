@@ -208,7 +208,7 @@ export function PosterWall({
                   className={cn(
                     'grid size-5 place-items-center rounded-full after:size-1.5 after:rounded-full after:transition',
                     i === index
-                      ? 'after:scale-125 after:bg-star after:shadow-[0_0_8px_2px_var(--glow)]'
+                      ? 'after:scale-125 after:bg-star after:shadow-dot-lg after:shadow-(color:--glow)'
                       : 'after:bg-foreground/50 hover:after:bg-foreground/90',
                   )}
                 />

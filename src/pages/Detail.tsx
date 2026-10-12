@@ -39,7 +39,7 @@ import {
   useSeason,
   useTitles,
 } from '@/lib/tmdb'
-import { cn, lit, mostCols } from '@/lib/utils'
+import { cn, mostCols } from '@/lib/utils'
 
 export default function Detail({ type }: { type: MediaType }) {
   const t = useT()
@@ -88,7 +88,7 @@ function TitlePage({
         backdrops={backdrops}
         info={() => (
           <TitleInfo m={m} as="h1" facts={facts}>
-            <p className="mt-4 max-w-xl text-[15px] leading-7 text-foreground/80">
+            <p className="mt-4 max-w-xl text-body leading-7 text-foreground/80">
               {m.overview || t('TMDB 上还没有这部作品的中文简介。', 'TMDB has no English overview of this title yet.')}
             </p>
             {canConnect ? (
@@ -351,7 +351,7 @@ function EpisodeCard({
           'aspect-video text-3xl',
           there &&
             'transition group-hover:outline-star/40 group-has-focus-visible:outline-2 group-has-focus-visible:outline-offset-2 group-has-focus-visible:outline-ring',
-          there?.picked && cn('outline-star/70 group-hover:outline-star/70', lit),
+          there?.picked && 'shadow-lit outline-star/70 group-hover:outline-star/70',
         )}
       >
         {e.episode_number}

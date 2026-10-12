@@ -60,7 +60,7 @@ export function ServerMark({ status, className }: { status: Status; className: s
       {/* over the icon's light, at (7, 12) of its 24 */}
       <span
         className={cn(
-          'absolute top-1/2 left-[29.17%] size-1/6 -translate-1/2 rounded-full bg-tone shadow-[0_0_8px_2px_var(--tone)] transition duration-500',
+          'absolute top-1/2 left-[29.17%] size-1/6 -translate-1/2 rounded-full bg-tone shadow-dot-lg transition duration-500',
           status === 'checking' && 'shadow-none',
         )}
       />

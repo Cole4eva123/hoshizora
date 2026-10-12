@@ -50,12 +50,12 @@ export function BackButton() {
   )
 }
 
-// Where the empty states send people: servers are connected in the 媒体库.
-export function ToLibrary() {
+// Where the empty states send people: servers are connected in the 媒体库. Named 媒体库, unless it says more.
+export function ToLibrary({ children }: { children?: ReactNode }) {
   const t = useT()
   return (
     <Link to="/library" viewTransition className="text-primary hover:underline">
-      {t('媒体库', 'Library')}
+      {children ?? t('媒体库', 'Library')}
     </Link>
   )
 }
@@ -68,7 +68,7 @@ export function EmptyState({ title, children }: { title: string; children: React
   return (
     <div className="max-w-md">
       <h2 className={sectionTitle}>{title}</h2>
-      <p className="mt-3 text-[15px] leading-7 text-muted-foreground">{children}</p>
+      <p className="mt-3 text-body leading-7 text-muted-foreground">{children}</p>
     </div>
   )
 }

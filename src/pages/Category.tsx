@@ -6,7 +6,7 @@ import { Page } from '@/components/Page'
 import { PosterGrid } from '@/components/PosterRow'
 import { useT } from '@/lib/i18n'
 import { categories, sortsOf, useGenres, withGenres } from '@/lib/tmdb'
-import { choice, cn } from '@/lib/utils'
+import { choice, cn, divider } from '@/lib/utils'
 
 type Genre = ReturnType<typeof useGenres>[number]
 
@@ -81,7 +81,7 @@ function Genres({ options, ids, onChange }: { options: Genre[]; ids: number[]; o
       className="group flex items-center gap-6"
     >
       {/* a constellation's line between the sorts and the 类型, as between the two languages */}
-      <span aria-hidden="true" className="h-3.5 w-px rotate-20 bg-star/50" />
+      <span aria-hidden="true" className={divider} />
       <button
         aria-expanded={open}
         onClick={() => setOpen(!open)}

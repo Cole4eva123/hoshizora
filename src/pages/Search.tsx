@@ -108,7 +108,7 @@ export default function Search() {
       </form>
 
       {scope.empty ? (
-        <p className="mt-6 max-w-md text-[15px] leading-7 text-muted-foreground">{scope.empty}</p>
+        <p className="mt-6 max-w-md text-body leading-7 text-muted-foreground">{scope.empty}</p>
       ) : q ? (
         <Found q={q} />
       ) : (

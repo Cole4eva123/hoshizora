@@ -5,7 +5,7 @@ import { isTauri } from '@tauri-apps/api/core'
 import { Constellation, type Star } from '@/components/Constellation'
 import { type Copy, type Translate, en, setLang, useT, zh } from '@/lib/i18n'
 import { mediaTypes } from '@/lib/tmdb'
-import { cn, lens, pentagram, sliders, star } from '@/lib/utils'
+import { cn, divider, lens, pentagram, sliders, star } from '@/lib/utils'
 
 // Each page's icon is a small constellation, drawn like the logo beside them: a house, a star, two frames stacked, a
 // lens and its handle, two sliders.
@@ -105,7 +105,7 @@ export default function App() {
               viewTransition
               onClick={() => setOpen(false)}
               className={cn(
-                'flex h-10 items-center gap-2 rounded-lg px-3 text-[15px] whitespace-nowrap text-star/70 -outline-offset-2 transition-colors hover:text-star',
+                'flex h-10 items-center gap-2 rounded-lg px-3 text-body whitespace-nowrap text-star/70 -outline-offset-2 transition-colors hover:text-star',
                 stagger[i],
               )}
             >
@@ -117,9 +117,9 @@ export default function App() {
                   <>
                     <Constellation
                       lines={icon}
-                      className={cn(draw, lit && 'text-white drop-shadow-[0_0_6px_var(--glow)]')}
+                      className={cn(draw, lit && 'text-shine drop-shadow-glow')}
                     />
-                    <span className={cn(appear, lit && ['text-white', star])}>{t(...label)}</span>
+                    <span className={cn(appear, lit && ['text-shine', star])}>{t(...label)}</span>
                   </>
                 )
               }}
@@ -152,18 +152,18 @@ function LangSwitch() {
     else change()
   }
   const option =
-    'h-10 rounded-sm px-1.5 text-star/85 transition-colors hover:text-star aria-pressed:font-medium aria-pressed:text-white aria-pressed:[text-shadow:0_0_12px_var(--glow)]'
+    'h-10 rounded-sm px-1.5 text-star/85 transition-colors hover:text-star aria-pressed:font-medium aria-pressed:text-shine aria-pressed:text-shadow-glow'
   // -mr-1.5: the last word's padding hangs into the gutter, so its letters end where the page does
   return (
     <div
       role="group"
       aria-label={t('界面语言', 'Language')}
-      className="fixed top-(--menu-top) right-(--gutter) z-20 -mr-1.5 flex items-center text-[13px] opacity-75 transition-opacity hover:opacity-100 has-focus-visible:opacity-100 max-md:menu-open:pointer-events-none max-md:menu-open:opacity-0"
+      className="fixed top-(--menu-top) right-(--gutter) z-20 -mr-1.5 flex items-center text-name opacity-75 transition-opacity hover:opacity-100 has-focus-visible:opacity-100 max-md:menu-open:pointer-events-none max-md:menu-open:opacity-0"
     >
       <button lang="zh-CN" aria-pressed={t === zh} onClick={() => pick(zh)} className={option}>
         中文
       </button>
-      <span aria-hidden="true" className="h-3.5 w-px rotate-20 bg-star/50" />
+      <span aria-hidden="true" className={divider} />
       <button
         lang="en"
         aria-label="English"

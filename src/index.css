@@ -23,6 +23,21 @@
   --font-heading: "Noto Serif SC", "Songti SC", serif;
   --font-heading--font-feature-settings: "palt";
   --color-tone: var(--tone);
+  --color-shine: var(--shine);
+  /* starlight's glow, all of it here: on a lit icon (drop-shadow-glow), the 播放 triangle (drop-shadow-glow-lg), the
+     language shown (text-shadow-glow), a picked picture among radios (shadow-lit), and a star's dot under a word or
+     standing alone (shadow-dot, shadow-dot-lg), which glows in --tone unless given --glow (shadow-(color:--glow)) */
+  --drop-shadow-glow: 0 0 6px var(--glow);
+  --drop-shadow-glow-lg: 0 0 10px var(--glow);
+  --text-shadow-glow: 0 0 12px var(--glow);
+  --shadow-lit: 0 0 24px -6px var(--glow);
+  --shadow-dot: 0 0 6px 1px var(--tone);
+  --shadow-dot-lg: 0 0 8px 2px var(--tone);
+  /* the type between Tailwind's steps: running text and quiet words (15px), a list's names (13px), and the details
+     under them and an icon's word (11px) */
+  --text-body: 0.9375rem;
+  --text-name: 0.8125rem;
+  --text-detail: 0.6875rem;
   --color-night: var(--night);
   --color-star: var(--star);
   --color-ring: var(--ring);
@@ -60,6 +75,7 @@
   /* a constellation's lines drawing themselves in (a dash of 1, its polylines' pathLength): the 播放 triangle as a 片源
      opens, and over and over while the server reads the file */
   --animate-trace: trace 0.9s ease-out both;
+  --animate-trace-loop: trace 1.6s ease-in-out infinite;
   @keyframes trace {
     from {
       stroke-dashoffset: 1;
@@ -70,11 +86,14 @@
 /* Dark only, in the logo's palette: its midnight sky behind everything, starlight as the one accent. */
 :root {
   color-scheme: dark;
-  /* sampled from 午夜星辰播放三角.png: the sky, the starlight, the glow around the stars. --night is copied, as
-     neither can read it, into index.html's theme-color and the app window's backgroundColor (src-tauri/tauri.conf.json) */
+  /* sampled from 午夜星辰播放三角.png: the sky, the starlight, the glow around the stars, and its bright star, white,
+     for what's lit (the current page, the language shown). --night is copied, as neither can read it, into
+     index.html's theme-color and the app window's backgroundColor (src-tauri/tauri.conf.json); public/favicon.svg
+     draws in --night, --star and --foreground, copied too */
   --night: #020a20;
   --star: #9ec7e7;
   --glow: #5191cb;
+  --shine: #ffffff;
 
   --background: var(--night);
   --foreground: #dfe8f5;

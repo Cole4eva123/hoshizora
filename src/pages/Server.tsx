@@ -17,7 +17,7 @@ import {
 } from '@/lib/emby'
 import { useT } from '@/lib/i18n'
 import { hrefOf } from '@/lib/tmdb'
-import { choice, cn, lit, mostCols, usePages } from '@/lib/utils'
+import { choice, cn, mostCols, usePages } from '@/lib/utils'
 
 // 11,392 in either language, whatever the browser's
 const count = (n: number) => n.toLocaleString('en-US')
@@ -148,7 +148,8 @@ function Cover({ library, picked, onPick }: { library: Library; picked: boolean;
         src={library.cover}
         className={cn(
           'aspect-video transition-opacity group-has-focus-visible:outline-2 group-has-focus-visible:outline-offset-2 group-has-focus-visible:outline-ring',
-          picked ? cn('outline-star/70', lit) : 'opacity-50 group-hover:opacity-100',
+          // the glow of the picked one among pictures that are radios
+          picked ? 'shadow-lit outline-star/70' : 'opacity-50 group-hover:opacity-100',
         )}
       />
       <span className={cn(choice(picked), 'mt-2 block w-fit group-hover:text-foreground')}>{library.name}</span>

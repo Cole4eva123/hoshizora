@@ -73,7 +73,7 @@ export function NewFolder({ m, onAdd, className }: { m?: Card; onAdd?: (id: stri
         aria-label={t('新建收藏夹', 'New list')}
         placeholder={t('新建收藏夹', 'New list')}
         autoComplete="off"
-        className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-star/60"
+        className="min-w-0 flex-1 bg-transparent text-name outline-none placeholder:text-star/60"
       />
     </form>
   )

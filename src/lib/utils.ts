@@ -1,23 +1,35 @@
-import { cn } from "cn"
+import { createCn } from "cn/config"
 import { useSearchParams } from "react-router"
 import type { Star } from "@/components/Constellation"
 import type { Status } from "@/lib/emby"
 
-export { cn }
+// Tailwind's class merging, told the theme's own sizes and glows (index.css @theme): unknown, it takes `text-body` for a
+// colour, which a later colour drops, and `shadow-dot` for a shadow's colour, which `shadow-(color:--glow)` drops.
+// ponytail: compiled when the page loads (cn/config, about 75 KB more script than "cn"'s prebuilt tables); have the
+// cn/vite plugin build them from index.css at build time if the first load ever drags.
+export const cn = createCn({
+  extend: {
+    theme: {
+      text: ["body", "name", "detail"],
+      shadow: ["dot", "dot-lg", "lit"],
+      "drop-shadow": ["glow", "glow-lg"],
+      "text-shadow": ["glow"],
+    },
+  },
+})
 
 // The star under a word, in --tone: the picked option's in a Choices row, the current page's in the corner menu.
 export const star =
-  'relative after:absolute after:-bottom-1 after:left-1/2 after:size-1 after:-translate-x-1/2 after:rounded-full after:bg-tone after:shadow-[0_0_6px_1px_var(--tone)]'
+  'relative after:absolute after:-bottom-1 after:left-1/2 after:size-1 after:-translate-x-1/2 after:rounded-full after:bg-tone after:shadow-dot'
 
-// The glow of the picked one among pictures that are radios: a 媒体库's cover, an episode, each ringed in starlight its
-// own way.
-export const lit = 'shadow-[0_0_24px_-6px_var(--glow)]'
+// A constellation's line between two words: the two languages, the sorts and the 类型.
+export const divider = 'h-3.5 w-px rotate-20 bg-star/50'
 
 // One option of a Choices row, picked or not: a quiet word, and under the picked one the star. Also dresses a control
 // that sits in the row, like the menu of older seasons.
 export const choice = (picked: boolean) =>
   cn(
-    'cursor-pointer rounded-sm py-1 text-[15px] text-muted-foreground transition-colors hover:text-foreground has-focus-visible:outline-2 has-focus-visible:outline-offset-4 has-focus-visible:outline-tone',
+    'cursor-pointer rounded-sm py-1 text-body text-muted-foreground transition-colors hover:text-foreground has-focus-visible:outline-2 has-focus-visible:outline-offset-4 has-focus-visible:outline-tone',
     star,
     'after:opacity-0 after:transition-opacity',
     picked && 'text-foreground after:opacity-100',

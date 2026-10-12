@@ -64,7 +64,7 @@ function TrendingWall({ children }: { children: ReactNode }) {
         slides[i] ? (
           <TitleInfo m={slides[i]}>
             {slides[i].overview && (
-              <p className="mt-4 line-clamp-2 max-w-xl text-[15px] leading-7 text-foreground/80 md:line-clamp-3">
+              <p className="mt-4 line-clamp-2 max-w-xl text-body leading-7 text-foreground/80 md:line-clamp-3">
                 {slides[i].overview}
               </p>
             )}
@@ -87,7 +87,7 @@ function Fallback({ error }: { error?: string }) {
       <h2 className="font-heading text-4xl font-black md:text-5xl">
         {t('热门作品会在这里轮播', 'Trending titles take turns here')}
       </h2>
-      <p className="mt-4 text-[15px] leading-7 text-foreground/75">
+      <p className="mt-4 text-body leading-7 text-foreground/75">
         {hasToken
           ? error
           : t(

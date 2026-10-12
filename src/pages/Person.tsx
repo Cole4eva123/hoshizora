@@ -79,7 +79,7 @@ function Biography({ text }: { text: string }) {
     <div className="col-span-2 max-w-2xl md:col-span-1">
       <p
         ref={ref}
-        className={cn('text-[15px] leading-7 whitespace-pre-line text-foreground/80', !open && 'line-clamp-5')}
+        className={cn('text-body leading-7 whitespace-pre-line text-foreground/80', !open && 'line-clamp-5')}
       >
         {text}
       </p>
