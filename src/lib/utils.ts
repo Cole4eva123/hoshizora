@@ -1,7 +1,7 @@
 import { createCn } from "cn/config"
 import { useSearchParams } from "react-router"
 import type { Star } from "@/components/Constellation"
-import type { Status } from "@/lib/emby"
+import type { Server, Status } from "@/lib/emby"
 
 // Tailwind's class merging, told the theme's own sizes and glows (index.css @theme): unknown, it takes `text-body` for a
 // colour, which a later colour drops, and `shadow-dot` for a shadow's colour, which `shadow-(color:--glow)` drops.
@@ -40,6 +40,20 @@ export const choice = (picked: boolean) =>
 export const reveal = (img: HTMLImageElement | null) => {
   if (img?.complete && img.naturalWidth) img.dataset.loaded = ''
 }
+
+// What this app keeps in storage goes under its own prefix, as every app on github.io shares one origin's storage: mp2,
+// the course repo's name, kept so what's saved stays found.
+export const storageKey = (name: string) => `mp2.${name}`
+
+// The 媒体库 page, and a 服务器's there, by its id and its user's, as one server can be signed in as two users.
+export const libraryHref = '/library'
+export const serverHref = (s: Pick<Server, 'id' | 'userId'>) => `${libraryHref}/${s.id}/${s.userId}`
+
+// How long the second press that 移除 and 删除 ask for is waited for, after the first.
+export const confirmFor = 3000
+
+// What a cast card's headshot and an actor's portrait are named for the view transition, so the one grows into the other.
+export const portrait = '[view-transition-name:portrait]'
 
 // This device's localStorage, or none where it's blocked or missing (under bun test): then what's kept lasts until the
 // page closes.

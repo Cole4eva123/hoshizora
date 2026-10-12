@@ -150,7 +150,7 @@ function TopMatch({ m, from }: { m?: Media; from?: From }) {
   if (!m) return <Frame className={cn(frame, 'mt-8 animate-pulse')} />
   return (
     <Link to={hrefOf(m)} state={from} viewTransition aria-label={titleOf(m)} className="group relative mt-8 block">
-      <Frame src={img(m.backdrop_path, 'w1280')} className={cn(frame, 'transition group-hover:outline-star/60')} />
+      <Frame src={img(m.backdrop_path, 'backdrop')} className={cn(frame, 'transition group-hover:outline-star/60')} />
       <div className="absolute inset-0 flex items-end rounded-2xl bg-linear-to-tr from-background/90 via-background/30 to-transparent p-6 md:p-10">
         <TitleInfo m={m}>
           {m.overview && <p className="mt-3 line-clamp-2 max-w-xl text-sm leading-6 text-foreground/80">{m.overview}</p>}

@@ -35,7 +35,8 @@ export type EmbyError =
 // The kept servers, read during render like the 界面语言, so a page draws them in its first frame (a 服务器's page,
 // back from a 作品, is drawn full height at once, where its scroll is restored): asked for once, before the first
 // render, and again after each change.
-let servers: Server[] = canConnect ? await invoke<Server[]>('emby_servers').catch(() => []) : []
+const listServers = () => invoke<Server[]>('emby_servers')
+let servers: Server[] = canConnect ? await listServers().catch(() => []) : []
 const listeners = new Set<() => void>()
 const subscribe = (listener: () => void) => {
   listeners.add(listener)
@@ -43,7 +44,7 @@ const subscribe = (listener: () => void) => {
 }
 const notify = () => listeners.forEach((l) => l())
 const reload = () =>
-  invoke<Server[]>('emby_servers').then((next) => {
+  listServers().then((next) => {
     servers = next
     notify()
   })
@@ -148,7 +149,7 @@ export function addServer(form: Form, instead?: Adding) {
   const fail = (status: Status, error?: EmbyError) =>
     setAdding(adding.map((a) => (a.id === entry.id ? { ...a, status, error } : a)))
   invoke('emby_add', { form })
-    .then(() => invoke<Server[]>('emby_servers'))
+    .then(listServers)
     .then((next) => {
       // not notified on its own (as reload would): setAdding below notifies once for both, so no frame shows the server
       // beside its tile
@@ -255,24 +256,30 @@ export const errorText = (e: unknown, t: Translate) => {
 // pictures' URLs carry it, so one moved to another address asks again. The cache asks for a key it doesn't have by
 // these, which read the key back.
 const keyOf = (s: Server) => `emby/${s.id}/${s.userId}/${encodeURIComponent(s.address)}/`
+// a key read back: its server and user (what the Rust side knows the server by), and the parts of what was asked after
+// its name (`items/{library}/{sort}/{page}`: library, sort, page)
+const askedIn = (key: string) => {
+  const [, server, user, , , ...asked] = key.split('/')
+  return { server, user, asked }
+}
 const askViews = (key: string) => {
-  const [, server, user] = key.split('/')
+  const { server, user } = askedIn(key)
   return invoke<Library[]>('emby_libraries', { server, user })
 }
 const askItems = (key: string) => {
-  const [, server, user, , , library, sort, page] = key.split('/')
+  const { server, user, asked: [library, sort, page] } = askedIn(key)
   return invoke<Page>('emby_items', { server, user, library, sort, start: Number(page) * pageSize, limit: pageSize })
 }
 const askSources = (key: string) => {
-  const [, server, user, , , mediaType, id] = key.split('/')
+  const { server, user, asked: [mediaType, id] } = askedIn(key)
   return invoke<Source[]>('emby_sources', { server, user, mediaType, id: Number(id) })
 }
 const askEpisodes = (key: string) => {
-  const [, server, user, , , series, season] = key.split('/')
+  const { server, user, asked: [series, season] } = askedIn(key)
   return invoke<EpisodeSource[]>('emby_episodes', { server, user, series, season: Number(season) })
 }
 const askVersions = (key: string) => {
-  const [, server, user, , , item] = key.split('/')
+  const { server, user, asked: [item] } = askedIn(key)
   return invoke<Version[]>('emby_versions', { server, user, item })
 }
 
@@ -376,8 +383,10 @@ export type Shelf = { server: string; user: string; library: string; sort: Sort;
 // The 媒体库's lineup with one page more than its grid showed, for 下一部 past the last card loaded there. Without a
 // `shelf`, or with its server removed meanwhile, it asks for nothing.
 export function useLineupAfter(shelf: Shelf | undefined) {
+  const t = useT()
   const s = useServers().find((x) => x.id === shelf?.server && x.userId === shelf?.user)
-  return useItems(s, shelf?.library, shelf?.sort ?? 'added', (shelf?.pages ?? 0) + 1)
+  // in the 媒体库's first order where the entry carries none, as one saved before it did
+  return useItems(s, shelf?.library, shelf?.sort ?? librarySorts(t)[0].key, (shelf?.pages ?? 0) + 1)
 }
 
 // Where a 作品 can be played on a 服务器 (emby-core's sources): its 片源 there, the versions of each, and each version's

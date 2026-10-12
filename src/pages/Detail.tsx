@@ -18,7 +18,7 @@ import {
   useLineupAfter,
   useServers,
 } from '@/lib/emby'
-import { type Translate, useT } from '@/lib/i18n'
+import { useT } from '@/lib/i18n'
 import {
   type Details,
   type Episode,
@@ -27,11 +27,13 @@ import {
   type MediaType,
   airDateOf,
   daysUntil,
+  episodeText,
   hrefOf,
   img,
   lineupOf,
   mediaTypes,
   nextEpisodeText,
+  personHref,
   prefetchPerson,
   relativeDays,
   titleOf,
@@ -39,7 +41,7 @@ import {
   useSeason,
   useTitles,
 } from '@/lib/tmdb'
-import { cn, mostCols } from '@/lib/utils'
+import { cn, mostCols, portrait } from '@/lib/utils'
 
 export default function Detail({ type }: { type: MediaType }) {
   const t = useT()
@@ -80,7 +82,7 @@ function TitlePage({
   const { pick, exact } = pickOf(answers, wanted)
   if (pick && (pick.s.id !== wanted?.server || pick.s.userId !== wanted.user))
     setWanted({ server: pick.s.id, user: pick.s.userId })
-  const facts = [...m.genres.slice(0, 3).map((g) => g.name), m.runtime ? t(`${m.runtime} 分钟`, `${m.runtime} min`) : '']
+  const facts = [...m.genres.slice(0, factGenres).map((g) => g.name), m.runtime ? t(`${m.runtime} 分钟`, `${m.runtime} min`) : '']
   return (
     <>
       <PosterWall
@@ -130,6 +132,9 @@ function TitlePage({
     </>
   )
 }
+
+// the 类型 the wall names beside its type and date, the first few, so the line stays one
+const factGenres = 3
 
 // the card clicked (`item`) is the one stepped from, not the one stepped to
 const stepping = (from: From) => ({ state: { ...from, item: undefined }, replace: true, viewTransition: true })
@@ -298,7 +303,10 @@ function Episodes({ tv, on }: { tv: Details; on?: { s: Server; series: string } 
       </Row>
       {on && picked && (
         <div className="mt-6 px-(--gutter)">
-          <p className="mb-3 text-sm text-muted-foreground">{episodesOf(picked, t)}</p>
+          <p className="mb-3 text-sm text-muted-foreground">
+            {/* by its season too where there are several, as the next episode's line says it */}
+            {episodeText({ ...picked, season: (tv.number_of_seasons ?? 1) > 1 ? picked.season : undefined }, t)}
+          </p>
           <Tracks s={on.s} item={picked.item} given={picked.versions} eager />
         </div>
       )}
@@ -308,12 +316,6 @@ function Episodes({ tv, on }: { tv: Details; on?: { s: Server; series: string } 
 
 // most of an episode's still on a phone, so the next one peeks in; then two to four to a row
 const episodeTrack = 'auto-cols-[85%] sm:auto-cols-(--span) sm:[--cols:2] lg:[--cols:3] xl:[--cols:4]'
-
-// What an episode on a 片源 is called, a file holding several (S01E01-E02) by all of them.
-const episodesOf = ({ season, episode, last }: EpisodeSource, t: Translate) => {
-  const n = last ? `${episode}–${last}` : episode
-  return t(`第 ${season} 季第 ${n} 集`, `Season ${season}, Episode${last ? 's' : ''} ${n}`)
-}
 
 // An episode as TMDB has it. On the picked 片源 (`there`), its title is a radio's label, whose box covers the card, so
 // the card takes the click and the radio its name, lit when picked; one not found on the 片源 by its
@@ -335,7 +337,7 @@ function EpisodeCard({
   const name = (
     <>
       <span className={cn(e.name && 'mr-1.5 text-muted-foreground')}>
-        {t(`第 ${e.episode_number} 集`, `Episode ${e.episode_number}`)}
+        {episodeText({ episode: e.episode_number }, t)}
       </span>
       {e.name}
     </>
@@ -346,7 +348,7 @@ function EpisodeCard({
       className={cn('group relative snap-start', missing && 'opacity-40')}
     >
       <Frame
-        src={img(e.still_path, 'w500')}
+        src={img(e.still_path, 'still')}
         className={cn(
           'aspect-video text-3xl',
           there &&
@@ -377,12 +379,15 @@ function EpisodeCard({
   )
 }
 
+// TMDB lists every credited part, the leads first; the row shows them, not the walk-ons
+const castShown = 20
+
 function Cast({ cast }: { cast: Details['credits']['cast'] }) {
   const t = useT()
   if (!cast.length) return null
   return (
     <Row title={t('演员', 'Cast')} track="auto-cols-[6rem] sm:auto-cols-[7.5rem]">
-      {cast.slice(0, 20).map((p) => (
+      {cast.slice(0, castShown).map((p) => (
         <CastCard key={p.credit_id} p={p} />
       ))}
     </Row>
@@ -394,7 +399,7 @@ function Cast({ cast }: { cast: Details['credits']['cast'] }) {
 // while it's the one being opened, as the browser skips a transition when two elements share a name.
 function CastCard({ p }: { p: Details['credits']['cast'][number] }) {
   const t = useT()
-  const to = `/person/${p.id}`
+  const to = personHref(p.id)
   const opening = useViewTransitionState(to)
   return (
     <Link
@@ -406,10 +411,10 @@ function CastCard({ p }: { p: Details['credits']['cast'][number] }) {
     >
       {/* TMDB headshots are 2:3, so a 2:3 frame shows the whole photo */}
       <Frame
-        src={img(p.profile_path, 'w300')}
+        src={img(p.profile_path, 'headshot')}
         className={cn(
           'aspect-2/3 text-2xl transition group-hover:outline-star/60 group-active:scale-[.97]',
-          opening && '[view-transition-name:portrait]',
+          opening && portrait,
         )}
       >
         {p.name.slice(0, 1)}

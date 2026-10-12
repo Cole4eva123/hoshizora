@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { type Folder, isWatched, removeFolder, renameFolder, toggleWatched, useFavorites } from '@/lib/favorites'
 import { useT } from '@/lib/i18n'
 import { type Card, type From, hrefOf, lineupOf, titleOf } from '@/lib/tmdb'
-import { choice, cn, dialogBox, play, sliders } from '@/lib/utils'
+import { choice, cn, confirmFor, dialogBox, play, sliders } from '@/lib/utils'
 
 // 看过: the logo's play triangle, filled with light once the 作品 has been watched.
 const Played = ({ on, className }: { on: boolean; className: string }) =>
@@ -220,7 +220,7 @@ function FolderSettings({ f, onRemove }: { f: Folder; onRemove: () => void }) {
               onClick={() => {
                 if (!sure) {
                   setSure(true)
-                  unsure.current = setTimeout(() => setSure(false), 3000)
+                  unsure.current = setTimeout(() => setSure(false), confirmFor)
                   return
                 }
                 dialog.current?.close()

@@ -2,10 +2,13 @@ import axios from 'axios'
 import { useMemo } from 'react'
 import { arrivedOf, ask, useAnswers } from '@/lib/cache'
 import type { Shelf } from '@/lib/emby'
-import { type Copy, type Translate, useT } from '@/lib/i18n'
+import { type Copy, type Translate, en, langOf, localeOf, useT, zh } from '@/lib/i18n'
 
 const token: string | undefined = import.meta.env.VITE_TMDB_TOKEN
 export const hasToken = Boolean(token)
+// what makes a token put in .env.local count: the dev server reads it when it starts, a built version when it's built
+export const tokenTakesEffect = (t: Translate) =>
+  import.meta.env.DEV ? t('重启开发服务器', 'restart the dev server') : t('重新构建', 'rebuild')
 
 const api = axios.create({
   baseURL: 'https://api.themoviedb.org/3',
@@ -125,7 +128,7 @@ const zhNames: Record<number, string> = { 10765: '科幻奇幻', 10768: '战争�
 export function genresOf(c: Category, genres: Genre[], t: Translate) {
   const own = new URLSearchParams(c.path.split('?')[1])
   const named = [own.get('with_genres'), own.get('without_genres')].join(',').split(',').map(Number)
-  const order = new Intl.Collator(locale(t))
+  const order = new Intl.Collator(localeOf(t))
   return genres
     .filter((g) => !named.includes(g.id))
     .map((g) => ({ key: g.id, label: t(zhNames[g.id] ?? g.name, g.name) }))
@@ -156,8 +159,10 @@ export const titleOf = (m: Card) => m.title ?? m.name ?? ''
 // The 作品 of the list a card was opened from, in the order shown, so the title page can step to the ones before and
 // after. It rides along in the history entry, so it keeps only what that needs.
 export type Lineup = { media_type: MediaType; id: number; title: string }[]
-// a 作品's own page
+// a 作品's own page, a 分类's and an actor's
 export const hrefOf = (m: Pick<Media, 'media_type' | 'id'>) => `/${m.media_type}/${m.id}`
+export const categoryHref = (key: string) => `/category/${key}`
+export const personHref = (id: number) => `/person/${id}`
 export const lineupOf = (list: Card[]): Lineup =>
   list.map((m) => ({ media_type: m.media_type, id: m.id, title: titleOf(m) }))
 // Where a title page was opened from: the lineup, and for a list that pages on (a 分类, a search, a 服务器's 媒体库)
@@ -166,8 +171,20 @@ export const lineupOf = (list: Card[]): Lineup =>
 export type From = { lineup: Lineup; list?: { path: string; pages: number } | Shelf; item?: string }
 export const originalTitleOf = (m: Media) => m.original_title ?? m.original_name ?? ''
 export const yearOf = (m: Card) => (m.release_date ?? m.first_air_date ?? '').slice(0, 4)
-export const img = (path: string | null, size: 'w300' | 'w342' | 'w500' | 'w1280') =>
-  path ? `https://image.tmdb.org/t/p/${size}${path}` : undefined
+// TMDB's picture sizes, by what each is drawn as: a 海报 on a card, an episode's 剧照, the 片名艺术字 (and twice that
+// for a sharp screen), a full-width 剧照 and its blurred tint behind the page, a cast card's headshot, an actor's portrait.
+const sizes = {
+  poster: 'w342',
+  still: 'w500',
+  logo: 'w500',
+  logo2x: 'w1280',
+  backdrop: 'w1280',
+  tint: 'w300',
+  headshot: 'w300',
+  portrait: 'w500',
+}
+export const img = (path: string | null, as: keyof typeof sizes) =>
+  path ? `https://image.tmdb.org/t/p/${sizes[as]}${path}` : undefined
 
 export type Episode = {
   id: number
@@ -202,13 +219,14 @@ export type Logo = { file_path: string; iso_639_1: string | null; iso_3166_1: st
 export function pickLogo(logos: Logo[], t: Translate, originalLanguage?: string) {
   const find = (lang?: string, region?: string) =>
     logos.find((l) => l.iso_639_1 === lang && (!region || l.iso_3166_1 === region))
-  return t(find('zh', 'CN'), find('en')) ?? find(originalLanguage) ?? find('en') ?? logos[0]
+  // Chinese lettering in Simplified is the one TMDB tags CN
+  return find(langOf(t), t('CN', undefined)) ?? find(originalLanguage) ?? find(langOf(en)) ?? logos[0]
 }
 
 export function useLogo(m: Media) {
   const t = useT()
   const { data, error } = useTmdb<{ logos: Logo[] }>(
-    `/${m.media_type}/${m.id}/images?include_image_language=zh,${m.original_language},en,null`,
+    `/${m.media_type}/${m.id}/images?include_image_language=${langOf(zh)},${m.original_language},${langOf(en)},null`,
   )
   return { ready: Boolean(data || error), logo: data && pickLogo(data.logos, t, m.original_language) }
 }
@@ -235,20 +253,30 @@ export function isDarkInk(px: Uint8ClampedArray) {
 const dayOf = (date: string) => new Date(`${date}T00:00`)
 export const daysUntil = (date: string, now = new Date()) =>
   Math.round((dayOf(date).getTime() - new Date(now).setHours(0, 0, 0, 0)) / 86_400_000)
-// TMDB's language and the dates' locale
-const locale = (t: Translate) => t('zh-CN', 'en-US')
 // "2026年10月8日周四", "Thu, October 8, 2026"
 export const airDateOf = (date: string, t: Translate) =>
-  dayOf(date).toLocaleDateString(locale(t), { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })
+  dayOf(date).toLocaleDateString(localeOf(t), { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })
 // "6天后", "in 6 days"
 export const relativeDays = (days: number, t: Translate) =>
-  new Intl.RelativeTimeFormat(locale(t), { numeric: 'auto' }).format(days, 'day')
+  new Intl.RelativeTimeFormat(localeOf(t), { numeric: 'auto' }).format(days, 'day')
 // "2026年9月28日", "September 28, 2026"
-const fullDate = (date: string, t: Translate) => dayOf(date).toLocaleDateString(locale(t), { dateStyle: 'long' })
+const fullDate = (date: string, t: Translate) => dayOf(date).toLocaleDateString(localeOf(t), { dateStyle: 'long' })
 // release or first air date in full
 export const releaseOf = (m: Media, t: Translate) => {
   const date = m.release_date || m.first_air_date
   return date ? fullDate(date, t) : ''
+}
+
+// An episode by its number, and its season's when given (第 2 季第 3 集, S2 E3); `last` for a file holding several
+// (S1 E1–2).
+export const episodeText = (
+  { episode, season, last }: { episode: number; season?: number; last?: number },
+  t: Translate,
+) => {
+  const n = last ? `${episode}–${last}` : `${episode}`
+  return season === undefined
+    ? t(`第 ${n} 集`, `Episode${last ? 's' : ''} ${n}`)
+    : t(`第 ${season} 季第 ${n} 集`, `S${season} E${n}`)
 }
 
 // When the next episode comes out, or why there isn't one.
@@ -256,10 +284,7 @@ export function nextEpisodeText(tv: Details, t: Translate, now = new Date()) {
   const seasons = tv.number_of_seasons ?? 1
   const next = tv.next_episode_to_air
   if (next) {
-    const ep =
-      seasons > 1
-        ? t(`第 ${next.season_number} 季第 ${next.episode_number} 集`, `S${next.season_number} E${next.episode_number}`)
-        : t(`第 ${next.episode_number} 集`, `Episode ${next.episode_number}`)
+    const ep = episodeText({ episode: next.episode_number, season: seasons > 1 ? next.season_number : undefined }, t)
     if (!next.air_date) return t(`下一集：${ep}，播出时间还没公布`, `Next: ${ep}, air date not announced yet`)
     const date = airDateOf(next.air_date, t)
     const days = relativeDays(daysUntil(next.air_date, now), t)
@@ -342,16 +367,16 @@ const errorText = (e: unknown, t: Translate) => {
     : t('连不上 TMDB，检查一下网络', "Can't reach TMDB, check your connection")
 }
 
-// TMDB's answer to a path; without a token, there's none to ask for.
+// TMDB's answer to a path; without a token, there's none to ask for (errorText says so, in the language shown).
 const getTmdb = (path: string) =>
-  token ? api.get(path).then((r) => r.data) : Promise.reject(new Error('还没有配置 TMDB 令牌'))
+  token ? api.get(path).then((r) => r.data) : Promise.reject(new Error('no TMDB token'))
 
 // Each request asks for the language shown, so the two languages' answers are cached apart.
 // ponytail: a switch asks again for everything on screen, and pages show their loading state until it's in: Detail and
 // Person drop to their back button, losing the scroll and the picked season, and pages back in history, cached in the
 // other language only, lose their scroll. Let the other language's answer stand in while the new one loads if
 // switching mid-page ever matters.
-const inLanguage = (path: string, t: Translate) => withQuery(path, `language=${locale(t)}`)
+const inLanguage = (path: string, t: Translate) => withQuery(path, `language=${localeOf(t)}`)
 
 // The answers to several requests, in order, each undefined until it arrives, and never another request's answer.
 // The missing ones are asked for; `retry` asks again for the ones that failed.
@@ -402,6 +427,9 @@ export function useTitles(path: string | undefined, pages = 1) {
   return { titles, loading: arrived.length < paths.length, more, error, retry }
 }
 
+// the most 剧照 a 画报墙 takes turns with: a 作品's own, or Home's trending 作品
+export const wallSlides = 8
+
 // include_image_language=null keeps only textless backdrops, which suit the wall. For shows, credits is the current
 // cast; aggregate_credits covers every season but runs to megabytes for long-running ones.
 // `backdrops` are the 剧照 for the wall: textless ones, else the main backdrop, which may carry text.
@@ -409,7 +437,7 @@ export function useDetails(type: MediaType, id: string) {
   const { data, error } = useTmdb<Omit<Details, 'media_type'>>(
     `/${type}/${id}?append_to_response=images,credits&include_image_language=null`,
   )
-  const backdrops = data ? data.images.backdrops.slice(0, 8).map((b) => b.file_path) : []
+  const backdrops = data ? data.images.backdrops.slice(0, wallSlides).map((b) => b.file_path) : []
   if (!backdrops.length && data?.backdrop_path) backdrops.push(data.backdrop_path)
   // details leave out media_type; someone in two parts gets one place in the cast, so one headshot opens their page
   const details = useMemo(
@@ -419,8 +447,8 @@ export function useDetails(type: MediaType, id: string) {
   return { details, backdrops, error }
 }
 
-// A season's episodes. TMDB names an untranslated episode "第 N 集" ("Episode N"); that name is dropped, as the number
-// shows anyway.
+// A season's episodes. TMDB names an untranslated episode "第 N 集" ("Episode N"), its own placeholder; that name is
+// dropped, as the number shows anyway.
 export function useSeason(tvId: number, season: number) {
   const t = useT()
   const { data, error } = useTmdb<{ episodes: Episode[] }>(`/tv/${tvId}/season/${season}`)

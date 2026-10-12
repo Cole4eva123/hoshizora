@@ -3,7 +3,7 @@ import { Link } from 'react-router'
 import { Pause, Play } from 'lucide-react'
 import { Ratings } from '@/components/Ratings'
 import { Button } from '@/components/ui/button'
-import { useT } from '@/lib/i18n'
+import { langOf, useT } from '@/lib/i18n'
 import {
   type Logo,
   type Media,
@@ -44,8 +44,8 @@ function Title({ m, logo, as: Heading = 'h2' }: { m: Media; logo?: Logo; as?: 'h
       {art ? (
         <Heading>
           <img
-            src={img(art.file_path, 'w500')}
-            srcSet={`${img(art.file_path, 'w1280')} 2x`}
+            src={img(art.file_path, 'logo')}
+            srcSet={`${img(art.file_path, 'logo2x')} 2x`}
             alt={title}
             crossOrigin="anonymous"
             onLoad={(e) => setTone(isDark(e.currentTarget) ? 'dark' : 'light')}
@@ -63,7 +63,7 @@ function Title({ m, logo, as: Heading = 'h2' }: { m: Media; logo?: Logo; as?: 'h
         </Heading>
       )}
       {original !== title && (
-        <p className="mt-2 text-sm text-foreground/60">{art && art.iso_639_1 !== t('zh', 'en') ? title : original}</p>
+        <p className="mt-2 text-sm text-foreground/60">{art && art.iso_639_1 !== langOf(t) ? title : original}</p>
       )}
     </>
   )
@@ -140,7 +140,7 @@ export function PosterWall({
         // The current backdrop, blurred, tints the whole page faintly; the night sky stays the base.
         <img
           key={current}
-          src={img(current, 'w300')}
+          src={img(current, 'tint')}
           alt=""
           className="pointer-events-none fixed inset-0 -z-10 size-full scale-110 animate-in object-cover opacity-12 blur-3xl duration-1000 fade-in"
         />
@@ -155,7 +155,7 @@ export function PosterWall({
         {backdrops.map((path, i) => {
           const still = (
             <img
-              src={img(path, 'w1280')}
+              src={img(path, 'backdrop')}
               alt=""
               loading={i ? 'lazy' : 'eager'}
               ref={reveal}

@@ -4,7 +4,7 @@ import { ChevronDown } from 'lucide-react'
 import { Choices } from '@/components/Choices'
 import { Page } from '@/components/Page'
 import { PosterGrid } from '@/components/PosterRow'
-import { useT } from '@/lib/i18n'
+import { namesOf, useT } from '@/lib/i18n'
 import { categories, sortsOf, useGenres, withGenres } from '@/lib/tmdb'
 import { choice, cn, divider } from '@/lib/utils'
 
@@ -90,7 +90,7 @@ function Genres({ options, ids, onChange }: { options: Genre[]; ids: number[]; o
         {names.length ? (
           <>
             <span className="sr-only">{t('类型：', 'Genre: ')}</span>
-            {names.join(t('、', ', '))}
+            {namesOf(names, t)}
           </>
         ) : (
           t('类型', 'Genre')

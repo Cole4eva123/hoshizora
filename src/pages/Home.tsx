@@ -3,7 +3,17 @@ import { EmptyState, ToLibrary } from '@/components/Page'
 import { PosterRow } from '@/components/PosterRow'
 import { PosterWall, TitleInfo } from '@/components/PosterWall'
 import { useT } from '@/lib/i18n'
-import { categories, hasToken, hrefOf, lineupOf, titleOf, trendingToday, useTitles } from '@/lib/tmdb'
+import {
+  categories,
+  hasToken,
+  hrefOf,
+  lineupOf,
+  titleOf,
+  tokenTakesEffect,
+  trendingToday,
+  useTitles,
+  wallSlides,
+} from '@/lib/tmdb'
 
 // 打乱数组顺序，返回新数组，原数组不变（画报墙每次进首页轮播的顺序都不一样）
 // <T,>：泛型，什么类型的数组都能打乱；逗号让 .tsx 不把 <T> 当成 JSX 标签
@@ -32,12 +42,10 @@ export default function Home() {
         <PosterRow category={first} />
       </TrendingWall>
       {/* 画报墙下面的部分。Tailwind 的数字 × 4px 就是实际距离：
-          space-y-8：每两个相邻子元素（继续观看、各分类行）之间隔 32px，加在父元素上，所有行一起变
-          pt-1：上内边距 4px，画报墙底部到"继续观看"的距离
+          space-y-4：每两个相邻子元素（继续观看、各分类行）之间隔 16px，加在父元素上，所有行一起变；手机和宽屏一样
           pb-(--page-bottom)：下内边距，用 index.css 里的 --page-bottom（至少 64px，iPhone 底部横条更高时取横条高度），
-            最后一行不会贴着屏幕底
-          md:space-y-10：屏幕宽 ≥ 768px 时行间距改为 40px；不带 md: 的值是给手机的 */}
-      <div className="space-y-4 pt-0 pb-(--page-bottom) md:space-y-4">
+            最后一行不会贴着屏幕底 */}
+      <div className="space-y-4 pb-(--page-bottom)">
         {/* 继续观看：Emby 还没做，现在是占位 */}
         <ContinueWatching />
         {/* 其余分类每个一行；key 让 React 认出哪行是哪个分类 */}
@@ -53,7 +61,7 @@ export default function Home() {
 function TrendingWall({ children }: { children: ReactNode }) {
   const t = useT()
   const { titles, error } = useTitles(trendingToday)
-  const slides = useMemo(() => shuffled(titles?.filter((m) => m.backdrop_path) ?? []).slice(0, 8), [titles])
+  const slides = useMemo(() => shuffled(titles?.filter((m) => m.backdrop_path) ?? []).slice(0, wallSlides), [titles])
   const lineup = lineupOf(slides)
   return (
     <PosterWall
@@ -93,11 +101,11 @@ function Fallback({ error }: { error?: string }) {
           : t(
               <>
                 还没有配置 TMDB 令牌。在项目根目录新建 <code>.env.local</code>，写入{' '}
-                <code>VITE_TMDB_TOKEN=你的读访问令牌</code>，然后重启 <code>bun run dev</code>。
+                <code>VITE_TMDB_TOKEN=你的读访问令牌</code>，然后{tokenTakesEffect(t)}。
               </>,
               <>
                 No TMDB token yet. Create <code>.env.local</code> in the project root with{' '}
-                <code>VITE_TMDB_TOKEN=your read access token</code>, then restart <code>bun run dev</code>.
+                <code>VITE_TMDB_TOKEN=your read access token</code>, then {tokenTakesEffect(t)}.
               </>,
             )}
       </p>

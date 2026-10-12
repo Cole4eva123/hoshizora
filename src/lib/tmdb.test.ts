@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { en, zh } from './i18n'
-import { type Category, type Credit, type Details, type Episode, type Logo, type Media, type Person, daysUntil, genresOf, isDarkInk, lifeOf, nextEpisodeText, pickLogo, releaseOf, sortsOf, toTitles, withGenres, worksOf } from './tmdb'
+import { type Category, type Credit, type Details, type Episode, type Logo, type Media, type Person, daysUntil, episodeText, genresOf, isDarkInk, lifeOf, nextEpisodeText, pickLogo, releaseOf, sortsOf, toTitles, withGenres, worksOf } from './tmdb'
 
 const now = new Date('2026-10-02T21:30')
 const ep = (season_number: number, episode_number: number, air_date: string | null) =>
@@ -160,4 +160,11 @@ test('a person: born, age, birthplace; or died and the age reached', () => {
   expect(lifeOf(newman, zh, now)).toEqual(['1925年1月26日生', '2008年9月26日逝世', '享年 83 岁'])
   expect(lifeOf(newman, en, now)).toEqual(['Born January 26, 1925', 'Died September 26, 2008', 'Aged 83'])
   expect(lifeOf(p({}), zh, now)).toEqual([])
+})
+
+test('an episode is named by its number, its season where there are several, and a file of several by both ends', () => {
+  expect(episodeText({ episode: 3 }, zh)).toBe('第 3 集')
+  expect(episodeText({ episode: 3, season: 2 }, en)).toBe('S2 E3')
+  expect(episodeText({ episode: 1, season: 1, last: 2 }, zh)).toBe('第 1 季第 1–2 集')
+  expect(episodeText({ episode: 1, last: 2 }, en)).toBe('Episodes 1–2')
 })

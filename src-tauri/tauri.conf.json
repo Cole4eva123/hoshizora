@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "HOSHIZORA",
+        "title": "放映室",
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "width": 1280,

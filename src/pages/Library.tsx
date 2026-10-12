@@ -25,7 +25,7 @@ import {
   useStatus,
 } from '@/lib/emby'
 import { useT } from '@/lib/i18n'
-import { cn, dialogBox, sliders, toneOf } from '@/lib/utils'
+import { cn, confirmFor, dialogBox, serverHref, sliders, toneOf } from '@/lib/utils'
 
 // The servers and the tile that adds one, as many to a row as fit: two on a phone.
 const tile = 'min-h-44 rounded-2xl p-5'
@@ -99,7 +99,7 @@ function ServerTile({ server }: { server: Server }) {
       {...server}
       name={nameOf(server)}
       status={status}
-      to={`/library/${server.id}/${server.userId}`}
+      to={serverHref(server)}
       onOpen={() => refresh(server)}
     >
       <Settings server={server} />
@@ -320,7 +320,7 @@ function ServerDialog({
                     return remove()
                   }
                   setSure(true)
-                  unsure.current = setTimeout(() => setSure(false), 3000)
+                  unsure.current = setTimeout(() => setSure(false), confirmFor)
                 }}
                 className={cn('mr-auto text-muted-foreground hover:text-destructive', sure && 'text-destructive')}
               >

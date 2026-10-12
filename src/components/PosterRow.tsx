@@ -5,7 +5,18 @@ import { sectionTitle } from '@/components/Page'
 import { Button } from '@/components/ui/button'
 import { useT } from '@/lib/i18n'
 import { cn, mostCols, reveal, usePages } from '@/lib/utils'
-import { type Card, type Category, type From, hrefOf, img, lineupOf, titleOf, useTitles, yearOf } from '@/lib/tmdb'
+import {
+  type Card,
+  type Category,
+  type From,
+  categoryHref,
+  hrefOf,
+  img,
+  lineupOf,
+  titleOf,
+  useTitles,
+  yearOf,
+} from '@/lib/tmdb'
 
 // A picture in the cards' rounded frame. `children` (an episode number, an initial) sit under it, in the same grid
 // cell: they show while it loads, if it fails, and when there's none.
@@ -69,7 +80,7 @@ export function Poster({
 export function PosterCard({ m, role, from }: { m: Card; role?: string; from?: From }) {
   const t = useT()
   return (
-    <Poster to={hrefOf(m)} state={from} src={img(m.poster_path, 'w342')} title={titleOf(m)}>
+    <Poster to={hrefOf(m)} state={from} src={img(m.poster_path, 'poster')} title={titleOf(m)}>
       {yearOf(m)}
       {role && <span className="truncate">{t(`饰 ${role}`, `as ${role}`)}</span>}
     </Poster>
@@ -197,7 +208,7 @@ export function PosterRow({ category }: { category: Category }) {
     <Row
       title={
         <Link
-          to={`/category/${category.key}`}
+          to={categoryHref(category.key)}
           viewTransition
           className="group inline-flex items-center gap-1 transition-colors hover:text-star"
         >

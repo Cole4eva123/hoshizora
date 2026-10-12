@@ -3,7 +3,7 @@ import { Plus } from 'lucide-react'
 import { Constellation, Filled } from '@/components/Constellation'
 import { Menu, Option } from '@/components/Sources'
 import { addFolder, has, toggleIn, useFavorites } from '@/lib/favorites'
-import { useT } from '@/lib/i18n'
+import { namesOf, useT } from '@/lib/i18n'
 import type { Card } from '@/lib/tmdb'
 import { cn, pentagram } from '@/lib/utils'
 
@@ -25,7 +25,7 @@ export function Favorite({ m }: { m: Card }) {
           ? t(`${inside[0].name} 等 ${inside.length} 个`, `${inside[0].name} +${inside.length - 1}`)
           : inside[0]?.name
       }
-      current={inside.map((f) => f.name).join(t('、', ', ')) || undefined}
+      current={namesOf(inside.map((f) => f.name), t) || undefined}
       icon={(className) =>
         inside.length ? (
           <Filled line={pentagram[0]} className={className} />

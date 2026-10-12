@@ -15,7 +15,7 @@ import {
   useVersions,
 } from '@/lib/emby'
 import { useT } from '@/lib/i18n'
-import { asideOf, audioLabel, picksOf, releaseNameOf, specOf, subtitleLabel, subtitlesOf } from '@/lib/tracks'
+import { asideOf, audioLabel, noTrack, picksOf, releaseNameOf, specOf, subtitleLabel, subtitlesOf } from '@/lib/tracks'
 import { type Media, mediaTypes } from '@/lib/tmdb'
 import { cn, play, star } from '@/lib/utils'
 
@@ -306,7 +306,7 @@ export function Tracks({
           kind="subtitle"
           label={t('字幕', 'Subtitles')}
           icon={(className) => <Constellation lines={captions} className={className} />}
-          current={v?.video && (subtitle === -1 ? t('关闭', 'Off') : sub && subtitleLabel(sub, t))}
+          current={v?.video && (subtitle === noTrack ? t('关闭', 'Off') : sub && subtitleLabel(sub, t))}
           {...menu}
         >
           {!v?.video ? (
@@ -315,8 +315,8 @@ export function Tracks({
             <>
               <Option
                 name={`${name}s`}
-                picked={subtitle === -1}
-                onPick={() => setPicks({ ...own, subtitle: -1 })}
+                picked={subtitle === noTrack}
+                onPick={() => setPicks({ ...own, subtitle: noTrack })}
                 label={t('关闭', 'Off')}
               />
               {/* those in the language shown first; a film can carry thirty, so the list scrolls */}

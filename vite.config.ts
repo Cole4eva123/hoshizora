@@ -16,7 +16,7 @@ export default defineConfig({
   server: {
     // not the Rust side, whose build output runs to tens of thousands of files
     watch: { ignored: ['**/src-tauri/**'] },
-    // Douban sends no CORS headers, so the browser reaches it through the dev server
+    // Douban sends no CORS headers, so the browser reaches it through the dev server (ratings.ts asks /douban)
     proxy: {
       '/douban': { target: 'https://movie.douban.com', changeOrigin: true, rewrite: (p) => p.replace(/^\/douban/, '') },
     },

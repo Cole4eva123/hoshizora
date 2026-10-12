@@ -17,21 +17,21 @@ import {
 } from '@/lib/emby'
 import { useT } from '@/lib/i18n'
 import { hrefOf } from '@/lib/tmdb'
-import { choice, cn, mostCols, usePages } from '@/lib/utils'
+import { choice, cn, libraryHref, mostCols, usePages } from '@/lib/utils'
 
 // 11,392 in either language, whatever the browser's
 const count = (n: number) => n.toLocaleString('en-US')
 
-// A 服务器 opened from the 媒体库 page, by its id and its user's, as one server can be signed in as two users. One
-// removed meanwhile, or another device's link, goes back to the 媒体库 page.
 // a 媒体库's cover, with the next one peeking in on a phone; then three to five to a row
 const coverTrack = 'auto-cols-[42%] sm:auto-cols-(--span) sm:[--cols:3] lg:[--cols:4] xl:[--cols:5]'
 
+// A 服务器 opened from the 媒体库 page, by its id and its user's, as one server can be signed in as two users. One
+// removed meanwhile, or another device's link, goes back to the 媒体库 page.
 export default function ServerPage() {
   const { server, user } = useParams()
   const s = useServers().find((x) => x.id === server && x.userId === user)
   // keyed, so another server's page starts over rather than keep this one's state
-  return s ? <Browse key={`${s.id}/${s.userId}`} server={s} /> : <Navigate to="/library" replace />
+  return s ? <Browse key={`${s.id}/${s.userId}`} server={s} /> : <Navigate to={libraryHref} replace />
 }
 
 // The server's 媒体库 as its own covers, and under them the 作品 of the one picked (?lib=, else the first), in the

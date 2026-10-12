@@ -4,7 +4,7 @@ import { BackButton, Page, sectionTitle } from '@/components/Page'
 import { Frame, PosterCard, posterGrid } from '@/components/PosterRow'
 import { useT } from '@/lib/i18n'
 import { img, lifeOf, lineupOf, usePerson } from '@/lib/tmdb'
-import { cn } from '@/lib/utils'
+import { cn, portrait } from '@/lib/utils'
 
 // An actor's page, opened from the cast of a title: who they are, then the 作品 they acted in.
 export default function Person() {
@@ -28,8 +28,8 @@ export default function Person() {
       <div className="grid grid-cols-[7rem_1fr] items-start gap-x-5 gap-y-6 md:grid-cols-[11rem_1fr] md:grid-rows-[auto_1fr] md:gap-x-10 md:gap-y-4">
         {/* uncropped, like the cast row's headshot, which grows into this one (view transition "portrait") */}
         <Frame
-          src={img(person.profile_path, 'w500')}
-          className="aspect-2/3 text-5xl [view-transition-name:portrait] md:row-span-2"
+          src={img(person.profile_path, 'portrait')}
+          className={cn('aspect-2/3 text-5xl md:row-span-2', portrait)}
         >
           {person.name.slice(0, 1)}
         </Frame>

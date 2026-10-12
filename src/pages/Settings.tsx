@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react'
 import { Page } from '@/components/Page'
-import { useT } from '@/lib/i18n'
+import { listOf, useT } from '@/lib/i18n'
 import { fromMdblist, hasDouban, hasMdblistKey, ratingSources } from '@/lib/ratings'
-import { hasToken } from '@/lib/tmdb'
+import { hasToken, tokenTakesEffect } from '@/lib/tmdb'
 
 function Status({ label, ok, value }: { label: string; ok: boolean; value?: string }) {
   const t = useT()
@@ -28,9 +28,7 @@ function Group({ title, note, children }: { title: string; note?: string; childr
 
 export default function Settings() {
   const t = useT()
-  // "IMDb、烂番茄、MyAnimeList", "IMDb, Rotten Tomatoes, and MyAnimeList"
-  const names = fromMdblist.map((s) => t(...s.label))
-  const mdblist = t(names.join('、'), new Intl.ListFormat('en').format(names))
+  const mdblist = listOf(fromMdblist.map((s) => t(...s.label)), t)
   return (
     <Page title={t('设置', 'Settings')}>
       <div className="max-w-2xl space-y-8">
@@ -40,8 +38,8 @@ export default function Settings() {
             hasToken
               ? undefined
               : t(
-                  '在项目根目录的 .env.local 写入 VITE_TMDB_TOKEN=你的读访问令牌，重启开发服务器后生效。',
-                  'Put VITE_TMDB_TOKEN=your read access token in .env.local at the project root, then restart the dev server.',
+                  `在项目根目录的 .env.local 写入 VITE_TMDB_TOKEN=你的读访问令牌，${tokenTakesEffect(t)}后生效。`,
+                  `Put VITE_TMDB_TOKEN=your read access token in .env.local at the project root, then ${tokenTakesEffect(t)}.`,
                 )
           }
         >

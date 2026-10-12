@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router'
 import { ChevronLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useT } from '@/lib/i18n'
+import { libraryHref } from '@/lib/utils'
 
 // The title is set large, like a title card; with `hideTitle` it's only read out, and the page starts where it
 // would have: a server's page is headed by its covers, under its name set small.
@@ -54,7 +55,7 @@ export function BackButton() {
 export function ToLibrary({ children }: { children?: ReactNode }) {
   const t = useT()
   return (
-    <Link to="/library" viewTransition className="text-primary hover:underline">
+    <Link to={libraryHref} viewTransition className="text-primary hover:underline">
       {children ?? t('媒体库', 'Library')}
     </Link>
   )

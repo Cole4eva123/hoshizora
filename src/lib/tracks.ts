@@ -1,5 +1,5 @@
 import type { Track, Version } from '@/lib/emby'
-import type { Translate } from '@/lib/i18n'
+import { type Translate, langOf } from '@/lib/i18n'
 
 // What a 片源's versions and tracks are called on the page, and which a version starts on: rules of naming, apart
 // from asking Emby (emby.ts), as they change with the words the page uses.
@@ -63,7 +63,7 @@ function languageOf(tr: Track, t: Translate) {
   if (!tr.language || tr.language === 'und') return
   if (isIn(tr, 'zh') && simplified(tr)) return t('简体中文', 'Simplified Chinese')
   if (isIn(tr, 'zh') && traditional(tr)) return t('繁体中文', 'Traditional Chinese')
-  return named(tr.language, t('zh', 'en')) ?? tr.language
+  return named(tr.language, langOf(t)) ?? tr.language
 }
 
 const codecs: Record<string, string> = {
@@ -110,11 +110,14 @@ export function asideOf(tr: Track, t: Translate) {
   return names.some((n) => n?.toLowerCase() === title.toLowerCase()) ? undefined : title
 }
 
-// The 音轨 and 字幕 a version starts on, by index, -1 for none: the file's default 音轨, else its first; a whole 字幕 in
+// The index that stands for no 音轨 or 字幕, as Emby takes it for playing without one.
+export const noTrack = -1
+
+// The 音轨 and 字幕 a version starts on, by index, noTrack for none: the file's default 音轨, else its first; a whole 字幕 in
 // the language shown when the 音轨 isn't in it (简体 first among Chinese ones), else the file's default 字幕; and with
 // the 音轨 in the language shown, only a forced 字幕 in it, for what isn't spoken in it.
 export function picksOf(v: Version, t: Translate) {
-  const shown = t('zh', 'en')
+  const shown = langOf(t)
   const audio = v.audio.find((a) => a.default) ?? v.audio[0]
   const mine = v.subtitles.filter((s) => isIn(s, shown))
   // a whole one, not a forced one of only a few lines
@@ -123,11 +126,11 @@ export function picksOf(v: Version, t: Translate) {
     audio && isIn(audio, shown)
       ? mine.find(forced)
       : (whole.find(simplified) ?? whole[0] ?? v.subtitles.find((s) => s.default))
-  return { audio: audio?.index ?? -1, subtitle: subtitle?.index ?? -1 }
+  return { audio: audio?.index ?? noTrack, subtitle: subtitle?.index ?? noTrack }
 }
 
 // The 字幕 in the order offered: those in the language shown first, each kept in the file's order.
 export const subtitlesOf = (v: Version, t: Translate) => {
-  const shown = t('zh', 'en')
+  const shown = langOf(t)
   return [...v.subtitles.filter((s) => isIn(s, shown)), ...v.subtitles.filter((s) => !isIn(s, shown))]
 }

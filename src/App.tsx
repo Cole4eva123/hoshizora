@@ -3,9 +3,9 @@ import { flushSync } from 'react-dom'
 import { NavLink, Outlet, ScrollRestoration, useLocation } from 'react-router'
 import { isTauri } from '@tauri-apps/api/core'
 import { Constellation, type Star } from '@/components/Constellation'
-import { type Copy, type Translate, en, setLang, useT, zh } from '@/lib/i18n'
+import { type Copy, type Translate, en, localeOf, setLang, useT, zh } from '@/lib/i18n'
 import { mediaTypes } from '@/lib/tmdb'
-import { cn, divider, lens, pentagram, sliders, star } from '@/lib/utils'
+import { cn, divider, lens, libraryHref, pentagram, sliders, star } from '@/lib/utils'
 
 // Each page's icon is a small constellation, drawn like the logo beside them: a house, a star, two frames stacked, a
 // lens and its handle, two sliders.
@@ -13,7 +13,7 @@ const nav: { to: string; label: Copy; icon: Star[][] }[] = [
   { to: '/', label: ['首页', 'Home'], icon: [[[12, 3], [20, 10], [20, 20], [4, 20], [4, 10], [12, 3]]] },
   { to: '/favorites', label: ['收藏', 'Favorites'], icon: pentagram },
   {
-    to: '/library',
+    to: libraryHref,
     label: ['媒体库', 'Library'],
     icon: [
       [[3, 9], [16, 9], [16, 21], [3, 21], [3, 9]],
@@ -143,7 +143,8 @@ export default function App() {
 function LangSwitch() {
   const t = useT()
   useEffect(() => {
-    document.documentElement.lang = t('zh-CN', 'en') // for screen readers, and the fonts' choice of glyphs
+    document.documentElement.lang = localeOf(t) // for screen readers, and the fonts' choice of glyphs
+    document.title = t('放映室', 'Hoshizora')
   }, [t])
   const pick = (lang: Translate) => {
     if (lang === t) return
@@ -160,12 +161,12 @@ function LangSwitch() {
       aria-label={t('界面语言', 'Language')}
       className="fixed top-(--menu-top) right-(--gutter) z-20 -mr-1.5 flex items-center text-name opacity-75 transition-opacity hover:opacity-100 has-focus-visible:opacity-100 max-md:menu-open:pointer-events-none max-md:menu-open:opacity-0"
     >
-      <button lang="zh-CN" aria-pressed={t === zh} onClick={() => pick(zh)} className={option}>
+      <button lang={localeOf(zh)} aria-pressed={t === zh} onClick={() => pick(zh)} className={option}>
         中文
       </button>
       <span aria-hidden="true" className={divider} />
       <button
-        lang="en"
+        lang={localeOf(en)}
         aria-label="English"
         aria-pressed={t === en}
         onClick={() => pick(en)}

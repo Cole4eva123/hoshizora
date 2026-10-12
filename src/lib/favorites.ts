@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { type Card, hrefOf, mediaTypes } from '@/lib/tmdb'
-import { storage } from '@/lib/utils'
+import { storage, storageKey } from '@/lib/utils'
 
 // The 收藏夹 and which 作品 have been 看过, kept on this device as the 界面语言 is: any TMDB 作品 can be saved, on the
 // web too and with no server. Emby's own favorites can't hold several 收藏夹, only one list a server, of what it has.
@@ -10,7 +10,7 @@ import { storage } from '@/lib/utils'
 export type Folder = { id: string; name: string; titles: Card[] }
 export type Favorites = { folders: Folder[]; watched: string[] }
 
-const key = 'mp2.favorites'
+const key = storageKey('favorites')
 
 // Whether kept data has every part the pages read, down to each card's id and a kind of 作品 this knows: checked
 // here, at the way in, as a page that met a part missing would fail to draw.
