@@ -61,11 +61,16 @@ test('release date in full', () => {
 })
 
 test('lists hand out 作品 that know their type, once each, and no people', () => {
-  const listed = (id: number, media_type?: 'movie' | 'tv' | 'person') => ({ id, media_type }) as Parameters<typeof toTitles>[1][number]
+  const listed = (id: number, media_type?: string) => ({ id, media_type }) as Parameters<typeof toTitles>[1][number]
   const types = (path: string, ...results: ReturnType<typeof listed>[]) => toTitles(path, results).map((m) => `${m.id} ${m.media_type}`)
   expect(types('/discover/tv?with_genres=16', listed(1))).toEqual(['1 tv'])
   expect(types('/discover/movie?with_genres=99', listed(1))).toEqual(['1 movie'])
   expect(types('/trending/all/day', listed(1, 'tv'), listed(2, 'person'), listed(3, 'movie'))).toEqual(['1 tv', '3 movie'])
+  expect(types('/trending/tv/week', listed(1))).toEqual(['1 tv'])
+  // a kind with no page here (a TMDB collection), or none at all, is no 作品
+  expect(types('/search/multi?query=x', listed(1, 'collection'), listed(2), listed(3, 'movie'))).toEqual(['3 movie'])
+  // the type is a part of the path, not any text in it
+  expect(types('/discover/movie?with_keywords=/tv', listed(1))).toEqual(['1 movie'])
   // a title that slid onto the next page shows once; a show and a movie may share an id
   expect(types('/trending/all/day', listed(1, 'tv'), listed(1, 'movie'), listed(1, 'tv'))).toEqual(['1 tv', '1 movie'])
 })
@@ -81,6 +86,9 @@ test('sorting: TMDB sorts, 最新 skips the unreleased, 高分 needs the 分类 
     votes: '/discover/tv?with_genres=18&sort_by=vote_count.desc',
   })
   expect(paths({ ...show, path: '/discover/movie?with_genres=99' }).latest).toContain('primary_release_date.lte=2026-10-02')
+  // the hints say what the date is: a show's premiere, a movie's release
+  expect(sortsOf(show, zh, null, day)[1].hint).toBe('最近开播的在前，还没开播的不算')
+  expect(sortsOf({ ...show, path: '/discover/movie' }, en, 'oldest', day)[1].hint).toBe('Earliest releases first, not counting upcoming ones')
   expect(sortsOf({ key: 'm', title: ['热门电影', 'Trending Movies'], path: '/trending/movie/week' }, zh)).toEqual([])
   expect(sortsOf(show, en, null, day).map((s) => s.label)).toEqual(['Popular', 'Latest', 'Top Rated', 'Most Rated'])
 })

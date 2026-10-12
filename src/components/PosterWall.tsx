@@ -4,7 +4,17 @@ import { Pause, Play } from 'lucide-react'
 import { Ratings } from '@/components/Ratings'
 import { Button } from '@/components/ui/button'
 import { useT } from '@/lib/i18n'
-import { type Logo, type Media, img, isDarkInk, originalTitleOf, releaseOf, titleOf, useLogo } from '@/lib/tmdb'
+import {
+  type Logo,
+  type Media,
+  img,
+  isDarkInk,
+  mediaTypes,
+  originalTitleOf,
+  releaseOf,
+  titleOf,
+  useLogo,
+} from '@/lib/tmdb'
 import { cn, reveal } from '@/lib/utils'
 
 const scrollToSlide = (el: HTMLElement | null, i: number) => el?.scrollTo({ left: i * el.clientWidth })
@@ -84,7 +94,7 @@ export function TitleInfo({
       {/* keyed by its lettering: the other language's starts afresh, not with this one's tone */}
       <Title key={logo?.file_path} m={m} logo={logo} as={as} />
       <Ratings m={m}>
-        {[m.media_type === 'tv' ? t('剧集', 'Series') : t('电影', 'Movie'), releaseOf(m, t), ...facts]
+        {[t(...mediaTypes[m.media_type].label), releaseOf(m, t), ...facts]
           .filter(Boolean)
           .map((fact) => (
             <span key={fact}>{fact}</span>

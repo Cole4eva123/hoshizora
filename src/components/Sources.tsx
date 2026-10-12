@@ -16,7 +16,7 @@ import {
 } from '@/lib/emby'
 import { useT } from '@/lib/i18n'
 import { asideOf, audioLabel, picksOf, releaseNameOf, specOf, subtitleLabel, subtitlesOf } from '@/lib/tracks'
-import type { Media } from '@/lib/tmdb'
+import { type Media, mediaTypes } from '@/lib/tmdb'
 import { cn, play, star } from '@/lib/utils'
 
 // The 片源 picked: on which server, signed in as whom, and the server's own id for the 作品 there.
@@ -134,12 +134,12 @@ export function Sources({
   )
   return (
     <div className="pointer-events-auto mt-6">
-      {m.media_type === 'movie' ? (
+      {mediaTypes[m.media_type].episodic ? (
+        list
+      ) : (
         <Tracks s={pick?.s} item={pick?.src.item} given={pick?.src.versions ?? []} eager={eager} why={none}>
           {list}
         </Tracks>
-      ) : (
-        list
       )}
     </div>
   )

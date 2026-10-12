@@ -12,7 +12,17 @@ const api = axios.create({
   headers: { Authorization: `Bearer ${token}` },
 })
 
-export type MediaType = 'movie' | 'tv'
+// The kinds of 作品, by TMDB's name for each, which their routes and lists use too: what each is called, the date
+// TMDB's discover orders it by and what that date is (上映, 开播), and whether it plays by the episode. A kind added
+// here gets its route, its sorts and its place in lists; MDBList's name for it is in ratings.ts, which reads any kind
+// but tv as a movie.
+export const mediaTypes = {
+  movie: { label: ['电影', 'Movie'], date: 'primary_release_date', debut: ['上映', 'releases'], episodic: false },
+  tv: { label: ['剧集', 'Series'], date: 'first_air_date', debut: ['开播', 'premieres'], episodic: true },
+} satisfies Record<string, { label: Copy; date: string; debut: Copy; episodic: boolean }>
+
+export type MediaType = keyof typeof mediaTypes
+const isMediaType = (x: unknown): x is MediaType => typeof x === 'string' && Object.hasOwn(mediaTypes, x)
 
 // A 作品 as the hooks below hand it out: it always knows its own type.
 export type Media = {
@@ -54,8 +64,8 @@ export const trendingToday = '/trending/all/day'
 // TMDB's search over titles of both types and people; useTitles keeps the 作品.
 export const searchPath = (query: string) => `/search/multi?query=${encodeURIComponent(query)}`
 
-// A list endpoint's type is in its path: /discover/tv, /trending/tv, …
-const typeIn = (path: string): MediaType => (path.includes('/tv') ? 'tv' : 'movie')
+// A list endpoint's type is one of its path's parts (/discover/tv, /trending/movie/week); /trending/all has none.
+const typeIn = (path: string) => path.split('?')[0].split('/').find(isMediaType)
 const withQuery = (path: string, query: string) => `${path}${path.includes('?') ? '&' : '?'}${query}`
 
 // The orders a 分类 offers, as its row of sorts shows them with `picked` (its ?sort= key) picked. TMDB does the
@@ -63,9 +73,9 @@ const withQuery = (path: string, query: string) => `${path}${path.includes('?') 
 // Each `hint` says which titles the order leaves out. 最新 and 最早 are one order run either way: they share a place
 // in the row, which holds the picked one, and pressing it again turns to the other, its `flip`.
 export function sortsOf(c: Category, t: Translate, picked?: string | null, today = new Date()) {
-  if (!c.votes) return []
-  const tv = typeIn(c.path) === 'tv'
-  const date = tv ? 'first_air_date' : 'primary_release_date'
+  const type = typeIn(c.path)
+  if (!c.votes || !type) return []
+  const { date, debut: [zhDebut, enDebut] } = mediaTypes[type]
   const day = today.toLocaleDateString('en-CA') // YYYY-MM-DD in local time
   const byDate = (order: 'desc' | 'asc') => withQuery(c.path, `sort_by=${date}.${order}&${date}.lte=${day}`)
   return [
@@ -76,18 +86,14 @@ export function sortsOf(c: Category, t: Translate, picked?: string | null, today
           key: 'oldest',
           flip: 'latest',
           label: t('最早', 'Oldest'),
-          hint: tv
-            ? t('最早开播的在前，还没开播的不算', 'Earliest premieres first, not counting upcoming ones')
-            : t('最早上映的在前，还没上映的不算', 'Earliest releases first, not counting upcoming ones'),
+          hint: t(`最早${zhDebut}的在前，还没${zhDebut}的不算`, `Earliest ${enDebut} first, not counting upcoming ones`),
           path: byDate('asc'),
         }
       : {
           key: 'latest',
           flip: 'oldest',
           label: t('最新', 'Latest'),
-          hint: tv
-            ? t('最近开播的在前，还没开播的不算', 'Latest premieres first, not counting upcoming ones')
-            : t('最近上映的在前，还没上映的不算', 'Latest releases first, not counting upcoming ones'),
+          hint: t(`最近${zhDebut}的在前，还没${zhDebut}的不算`, `Latest ${enDebut} first, not counting upcoming ones`),
           path: byDate('desc'),
         },
     {
@@ -125,7 +131,8 @@ export function genresOf(c: Category, genres: Genre[], t: Translate) {
 // than written out, so a 类型 TMDB adds shows up by itself.
 export function useGenres(c: Category | undefined) {
   const t = useT()
-  const { data } = useTmdbAll<{ genres: Genre[] }>(c?.votes ? [`/genre/${typeIn(c.path)}/list`] : [])
+  const type = c?.votes && typeIn(c.path)
+  const { data } = useTmdbAll<{ genres: Genre[] }>(type ? [`/genre/${type}/list`] : [])
   return c && data[0] ? genresOf(c, data[0].genres, t) : []
 }
 
@@ -354,17 +361,19 @@ function useTmdb<T>(path: string) {
   return { data: data[0], error }
 }
 
-// A list result as TMDB sends it: /discover and /trending/{movie,tv} leave out media_type, /trending/all mixes in people.
-type Listed = Omit<Media, 'media_type'> & { media_type?: MediaType | 'person' }
+// A list result as TMDB sends it: /discover and /trending/{movie,tv} leave out media_type, /trending/all and
+// /search/multi mix in people.
+type Listed = Omit<Media, 'media_type'> & { media_type?: string }
 type ListPage = { total_pages: number; results: Listed[] }
 
-// The 作品 in a list, each with its type: its own when TMDB sends one, else the one in the endpoint path. Pages are
-// numbered by offset and popularity shifts between requests, so a title can come back on the next page: kept once.
+// The 作品 in a list, each with its type: its own when TMDB sends one, else the one in the endpoint path. Only the
+// kinds in mediaTypes are kept: people, and any kind TMDB adds that has no page here, are dropped. Pages are numbered
+// by offset and popularity shifts between requests, so a title can come back on the next page: kept once.
 export const toTitles = (path: string, results: Listed[]): Media[] => {
   const seen = new Set<string>()
   return results.flatMap((m) => {
     const media_type = m.media_type ?? typeIn(path)
-    if (media_type === 'person' || seen.has(media_type + m.id)) return []
+    if (!isMediaType(media_type) || seen.has(media_type + m.id)) return []
     seen.add(media_type + m.id)
     return [{ ...m, media_type }]
   })

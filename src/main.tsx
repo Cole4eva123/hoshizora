@@ -5,6 +5,7 @@ import { RouterProvider } from 'react-router/dom'
 import '@fontsource/noto-serif-sc/900.css'
 import './index.css'
 import App from '@/App'
+import { type MediaType, mediaTypes } from '@/lib/tmdb'
 import Category from '@/pages/Category'
 import Detail from '@/pages/Detail'
 import Favorites from '@/pages/Favorites'
@@ -22,8 +23,11 @@ const router = createBrowserRouter(
       children: [
         { index: true, element: <Home /> }, //默认的主页面，App.tsx 是框，Home 是框里的一幅画。
         { path: 'category/:key', element: <Category /> },
-        { path: 'movie/:id', element: <Detail type="movie" /> },
-        { path: 'tv/:id', element: <Detail type="tv" /> },
+        // a 作品's page, /movie/:id, /tv/:id, one for each kind
+        ...(Object.keys(mediaTypes) as MediaType[]).map((type) => ({
+          path: `${type}/:id`,
+          element: <Detail type={type} />,
+        })),
         { path: 'person/:id', element: <Person /> },
         { path: 'favorites', element: <Favorites /> },
         { path: 'library', element: <Library /> },

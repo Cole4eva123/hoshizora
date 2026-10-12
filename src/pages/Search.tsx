@@ -56,7 +56,7 @@ export default function Search() {
   const scopes = scopesIn(t)
   const [params, setParams] = useSearchParams()
   // ponytail: TMDB is the default while no Emby server can be connected; make it 全部服务器 once one can
-  const scope = scopes.find((s) => s.key === params.get('scope')) ?? scopes[1]
+  const scope = scopes.find((s) => s.key === params.get('scope')) ?? scopes.find((s) => s.key === 'tmdb')!
   const q = params.get('q') ?? ''
 
   // What's typed is searched once typing pauses, and Chinese once the IME commits it, not while it's still pinyin.
