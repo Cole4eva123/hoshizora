@@ -164,6 +164,9 @@ fn read_version() -> Value {
           "IsDefault": true, "IsForced": true },
         { "Type": "Subtitle", "Index": 4, "Codec": "ass", "Language": "chi", "Title": "chs" },
         { "Type": "EmbeddedImage", "Index": 5, "Codec": "mjpeg" },
+        // files of their own beside the video, left out
+        { "Type": "Subtitle", "Index": 6, "Codec": "srt", "Language": "chi", "Title": "简体", "IsExternal": true },
+        { "Type": "Audio", "Index": 7, "Codec": "aac", "Language": "chi", "Channels": 2, "IsExternal": true },
     ]})
 }
 

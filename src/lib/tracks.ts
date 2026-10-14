@@ -49,17 +49,19 @@ const named = (code: string, lang: 'zh' | 'en') => {
   }
 }
 const base = (code: string) => code.split(/[-_]/)[0]
-const isIn = (tr: Track, code: string) => !!tr.language && named(base(tr.language), 'en') === named(code, 'en')
+// What a track is named by, as Emby lists it on the 作品 page and mpv in the player.
+type Named = Pick<Track, 'language' | 'title' | 'codec' | 'channels' | 'forced'>
+const isIn = (tr: Named, code: string) => !!tr.language && named(base(tr.language), 'en') === named(code, 'en')
 // Chinese told apart as files title it (chs and cht, 简 and 繁, Simplified and Traditional) or tag it (zh-Hans,
 // zh-CN; zh-Hant, zh-TW)
-const simplified = (tr: Track) =>
+const simplified = (tr: Named) =>
   /chs|简|simplified|\bsc\b|\bgb\b/i.test(tr.title ?? '') || /[-_](hans|cn|sg)\b/i.test(tr.language ?? '')
-const traditional = (tr: Track) =>
+const traditional = (tr: Named) =>
   /cht|繁|traditional|\btc\b|big5/i.test(tr.title ?? '') || /[-_](hant|tw|hk|mo)\b/i.test(tr.language ?? '')
-const forced = (tr: Track) => tr.forced || /forced|强制/i.test(tr.title ?? '')
+const forced = (tr: Named) => tr.forced || /forced|强制/i.test(tr.title ?? '')
 
 // A track's language in the language shown, 简体 and 繁体中文 apart; none when the file doesn't say.
-function languageOf(tr: Track, t: Translate) {
+function languageOf(tr: Named, t: Translate) {
   if (!tr.language || tr.language === 'und') return
   if (isIn(tr, 'zh') && simplified(tr)) return t('简体中文', 'Simplified Chinese')
   if (isIn(tr, 'zh') && traditional(tr)) return t('繁体中文', 'Traditional Chinese')
@@ -72,22 +74,25 @@ const codecs: Record<string, string> = {
   subrip: 'SRT',
   pgssub: 'PGS',
   dvdsub: 'VobSub',
+  // mpv's names for them, in the player
+  hdmv_pgs_subtitle: 'PGS',
+  dvd_subtitle: 'VobSub',
 }
 const codecOf = (c?: string) => c && (codecs[c.toLowerCase()] ?? (/^pcm/i.test(c) ? 'PCM' : c.toUpperCase()))
 const channelsOf = (n: number | undefined, t: Translate) =>
   ({ 1: t('单声道', 'mono'), 2: t('立体声', 'stereo'), 6: '5.1', 8: '7.1' })[n ?? 0] ?? (n && t(`${n} 声道`, `${n} ch`))
 // what a track's title says that its language doesn't: for the deaf and hard of hearing, or a commentary
-const notesOf = (tr: Track, t: Translate) => [
+const notesOf = (tr: Named, t: Translate) => [
   /sdh/i.test(tr.title ?? '') && 'SDH',
   /comment|评论|解说/i.test(tr.title ?? '') && t('评论', 'Commentary'),
 ]
 
 // An 音轨 in words: its language, how it's coded, its channels, and what its title adds.
-export const audioLabel = (a: Track, t: Translate) =>
+export const audioLabel = (a: Named, t: Translate) =>
   [languageOf(a, t), codecOf(a.codec), channelsOf(a.channels, t), ...notesOf(a, t)].filter(Boolean).join(' ')
 // A 字幕 in words: its language, 强制 for one of only what isn't spoken in the 音轨's language, what its title adds,
 // and how it's coded (PGS is pictures, SRT and ASS are text), as two of one language often differ only there.
-export const subtitleLabel = (s: Track, t: Translate) =>
+export const subtitleLabel = (s: Named, t: Translate) =>
   [
     languageOf(s, t) ?? t('未标语言', 'Unknown language'),
     forced(s) && t('强制', 'Forced'),
@@ -99,7 +104,7 @@ export const subtitleLabel = (s: Track, t: Translate) =>
 
 // What a 字幕's title in the file adds to its name (European, Brazilian), as two of one language may differ only there;
 // none when it says only what the name does: its language, 简繁, 强制, SDH or a commentary.
-export function asideOf(tr: Track, t: Translate) {
+export function asideOf(tr: Named, t: Translate) {
   const title = tr.title?.trim()
   if (!title || simplified(tr) || traditional(tr) || forced(tr) || notesOf(tr, t).some(Boolean)) return
   const code = tr.language && base(tr.language)
@@ -129,8 +134,9 @@ export function picksOf(v: Version, t: Translate) {
   return { audio: audio?.index ?? noTrack, subtitle: subtitle?.index ?? noTrack }
 }
 
-// The 字幕 in the order offered: those in the language shown first, each kept in the file's order.
-export const subtitlesOf = (v: Version, t: Translate) => {
+// The 字幕 in the order offered, on the 作品 page and in the player: those in the language shown first, each kept in
+// the file's order.
+export const subtitlesOf = <T extends Named>(subtitles: T[], t: Translate) => {
   const shown = langOf(t)
-  return [...v.subtitles.filter((s) => isIn(s, shown)), ...v.subtitles.filter((s) => !isIn(s, shown))]
+  return [...subtitles.filter((s) => isIn(s, shown)), ...subtitles.filter((s) => !isIn(s, shown))]
 }

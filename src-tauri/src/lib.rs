@@ -3,7 +3,7 @@
 mod player;
 
 use emby_core::{Emby, Episode, Error, Form, Kind, Library, Page, Server, Sort, Source, Status, Version};
-use player::{Command, Player};
+use player::{Command, Picks, Player};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
@@ -95,9 +95,10 @@ enum Failed {
     Player { kind: &'static str },
 }
 
-// Plays a version of a 作品 (a movie, an episode) in the player's window, from where the user left off; the page names
-// it for the window's title.
+// Plays a version of a 作品 (a movie, an episode) in the player's window, from where the user left off, on the 音轨 and
+// 字幕 picked (by their index in the file; none to leave them to the file); the page names it for the window's title.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn player_open(
     app: AppHandle,
     emby: State<'_, Emby>,
@@ -106,9 +107,11 @@ async fn player_open(
     item: String,
     version: String,
     title: String,
+    audio: Option<i64>,
+    subtitle: Option<i64>,
 ) -> Result<(), Failed> {
     let play = emby.play(&server, &user, &item, &version).await.map_err(Failed::Emby)?;
-    player::open(&app, play, title).await.map_err(|e| {
+    player::open(&app, play, title, Picks { audio, subtitle }).await.map_err(|e| {
         eprintln!("player: {e}");
         Failed::Player { kind: "player" }
     })

@@ -15,19 +15,21 @@ pub struct RenderContext {
     _private: [u8; 0],
 }
 
-// mpv_format: a property's value as a flag, a 64-bit integer, or a double
+// mpv_format: a property's value as nothing (only that it changed), a flag, a 64-bit integer, or a double
+pub const NONE: c_int = 0;
 pub const FLAG: c_int = 3;
 pub const INT64: c_int = 4;
 pub const DOUBLE: c_int = 5;
 
 // mpv_event_id, of the events read here
-const NONE: c_int = 0;
+const QUIET: c_int = 0;
 const SHUTDOWN: c_int = 1;
 const LOG_MESSAGE: c_int = 2;
 const START_FILE: c_int = 6;
 const END_FILE: c_int = 7;
 const PLAYBACK_RESTART: c_int = 21;
 const PROPERTY_CHANGE: c_int = 22;
+const HOOK: c_int = 25;
 // mpv_end_file_reason: the file couldn't be opened, or playing it failed
 const END_FILE_ERROR: c_int = 4;
 
@@ -44,6 +46,12 @@ struct EventProperty {
     name: *const c_char,
     format: c_int,
     data: *mut c_void,
+}
+
+#[repr(C)]
+struct EventHook {
+    name: *const c_char,
+    id: u64,
 }
 
 // the start of mpv_event_end_file; the playlist ids after it aren't read
@@ -99,7 +107,11 @@ unsafe extern "C" {
     fn mpv_command(ctx: *mut Handle, args: *mut *const c_char) -> c_int;
     fn mpv_set_property(ctx: *mut Handle, name: *const c_char, format: c_int, data: *mut c_void) -> c_int;
     fn mpv_get_property(ctx: *mut Handle, name: *const c_char, format: c_int, data: *mut c_void) -> c_int;
+    fn mpv_get_property_string(ctx: *mut Handle, name: *const c_char) -> *mut c_char;
+    fn mpv_free(data: *mut c_void);
     fn mpv_observe_property(ctx: *mut Handle, userdata: u64, name: *const c_char, format: c_int) -> c_int;
+    fn mpv_hook_add(ctx: *mut Handle, reply_userdata: u64, name: *const c_char, priority: c_int) -> c_int;
+    fn mpv_hook_continue(ctx: *mut Handle, id: u64) -> c_int;
     fn mpv_request_log_messages(ctx: *mut Handle, min_level: *const c_char) -> c_int;
     fn mpv_wait_event(ctx: *mut Handle, timeout: f64) -> *mut RawEvent;
     fn mpv_error_string(error: c_int) -> *const c_char;
@@ -134,6 +146,8 @@ pub enum Event {
     PlaybackRestart,
     /// a property observed changed: the id it was observed with, and its value
     Property(u64, Value),
+    /// mpv waiting at the hook asked for (`hook`), till `proceed` with this id
+    Hook(u64),
     Other,
 }
 
@@ -198,6 +212,16 @@ impl Mpv {
         Ok(value != 0)
     }
 
+    pub fn string(&self, name: &str) -> Option<String> {
+        let value = unsafe { mpv_get_property_string(self.0, text(name).as_ptr()) };
+        if value.is_null() {
+            return None;
+        }
+        let read = unsafe { CStr::from_ptr(value) }.to_string_lossy().into_owned();
+        unsafe { mpv_free(value.cast()) };
+        Some(read)
+    }
+
     pub fn set_double(&self, name: &str, mut value: f64) -> Result<(), String> {
         check(unsafe { mpv_set_property(self.0, text(name).as_ptr(), DOUBLE, (&raw mut value).cast()) })
     }
@@ -207,6 +231,15 @@ impl Mpv {
         check(unsafe { mpv_observe_property(self.0, id, text(name).as_ptr(), format) })
     }
 
+    /// Has mpv wait at one of its hooks (its manual's "Hooks"), each time till `proceed` is called with its id.
+    pub fn hook(&self, name: &str) -> Result<(), String> {
+        check(unsafe { mpv_hook_add(self.0, 0, text(name).as_ptr(), 0) })
+    }
+
+    pub fn proceed(&self, hook: u64) -> Result<(), String> {
+        check(unsafe { mpv_hook_continue(self.0, hook) })
+    }
+
     /// The next event, waiting for it as long as `timeout` (seconds; forever when negative). Only the event thread
     /// calls this.
     pub fn next(&self, timeout: f64) -> Event {
@@ -214,7 +247,7 @@ impl Mpv {
         let event = unsafe { &*mpv_wait_event(self.0, timeout) };
         unsafe {
             match event.event_id {
-                NONE => Event::Quiet,
+                QUIET => Event::Quiet,
                 SHUTDOWN => Event::Shutdown,
                 LOG_MESSAGE => {
                     let m = &*(event.data as *const LogMessage);
@@ -227,6 +260,7 @@ impl Mpv {
                     if end.reason == END_FILE_ERROR { Event::Failed(error_text(end.error)) } else { Event::Other }
                 }
                 PLAYBACK_RESTART => Event::PlaybackRestart,
+                HOOK => Event::Hook((*(event.data as *const EventHook)).id),
                 PROPERTY_CHANGE => {
                     let p = &*(event.data as *const EventProperty);
                     let value = match p.format {

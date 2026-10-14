@@ -186,6 +186,8 @@ struct Stream {
     is_default: bool,
     #[serde(default)]
     is_forced: bool,
+    #[serde(default)]
+    is_external: bool,
 }
 
 impl Emby {
@@ -313,8 +315,10 @@ fn version(m: MediaSource, server: Reach) -> Version {
             "Video" if video.is_none() => {
                 video = Some(Video { width: s.width.unwrap_or(0), height: s.height.unwrap_or(0), range: s.video_range })
             }
-            "Audio" => audio.push(track(s)),
-            "Subtitle" => subtitles.push(track(s)),
+            // an 音轨 or a 字幕 in a file beside the video only the server has, and the app plays nothing through it
+            // yet: none to pick
+            "Audio" if !s.is_external => audio.push(track(s)),
+            "Subtitle" if !s.is_external => subtitles.push(track(s)),
             _ => {}
         }
     }

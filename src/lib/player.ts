@@ -10,8 +10,8 @@ import type { EmbyError } from '@/lib/emby'
 // How playing goes, sent whole on each change (the Rust side's player::State): the 作品 as its page named it, where it's
 // at and how long it is (seconds, once the file says), whether it waits (opening, seeking, or the network behind), is
 // paused, has ended (on its last frame), or failed, why in mpv's words; where it picked up, when the user left off
-// there; the volume (0 to 100) and whether it's muted, whether the window is full screen, and how many seeks have
-// landed, for the page's corner to tell where.
+// there; the volume (0 to 100) and whether it's muted, whether the window is full screen, how many seeks have landed
+// (for the page's corner to tell where), the file's 音轨 and 字幕, and how late the subtitles are put (seconds).
 export type PlayerState = {
   title: string
   position?: number
@@ -25,12 +25,28 @@ export type PlayerState = {
   muted: boolean
   fullscreen: boolean
   seeks: number
+  audio: PlayerTrack[]
+  subtitles: PlayerTrack[]
+  subDelay: number
+}
+
+// An 音轨 or a 字幕 of the file playing, as mpv lists it: the id it's picked by, what lib/tracks.ts names it by, and
+// whether it's the one playing.
+export type PlayerTrack = {
+  id: number
+  language?: string
+  title?: string
+  codec?: string
+  channels?: number
+  forced: boolean
+  selected: boolean
 }
 
 // What the player's page asks of the player: pause or play (whichever it isn't, or from the start at the end), seek to
-// a time or by some seconds, set the volume or step it, mute or unmute, go full screen or back (or toggle it), and show
-// or hide the window's own title bar with the controls. A toggle or a step is worked out by the player from where it is, so presses
-// faster than its answers add up.
+// a time or by some seconds, set the volume or step it, mute or unmute, go full screen or back (or toggle it), show or
+// hide the window's own title bar with the controls, pick the 音轨 or 字幕 (noTrack: off), and put the 字幕 later or sooner
+// (seconds), or higher (`pos`, mpv's sub-pos: % of the window's height, 100 their own place). A toggle or a step is
+// worked out by the player from where it is, so presses faster than its answers add up.
 export type Command =
   | { kind: 'togglePause' }
   | { kind: 'seek'; to: number }
@@ -41,6 +57,10 @@ export type Command =
   | { kind: 'fullscreen'; on: boolean }
   | { kind: 'toggleFullscreen' }
   | { kind: 'chrome'; shown: boolean }
+  | { kind: 'audio'; id: number }
+  | { kind: 'subtitle'; id: number }
+  | { kind: 'subDelay'; by: number }
+  | { kind: 'subPos'; pos: number }
 export const command = (command: Command) => invoke('player_command', { command })
 
 // How playing goes, as the player's page draws it: asked once as it opens, then each change as it's heard; one heard
@@ -63,9 +83,16 @@ export function usePlayer() {
 export type PlayError = EmbyError | { kind: 'player' }
 
 // Plays a version of a 作品 (a movie, an episode) in the player's window, from where the user left off, named `title`
-// there.
-export const playVersion = (p: { server: string; user: string; item: string; version: string; title: string }) =>
-  invoke('player_open', p)
+// there, on the 音轨 and 字幕 picked by their index in the file (noTrack for no 字幕), if any were.
+export const playVersion = (p: {
+  server: string
+  user: string
+  item: string
+  version: string
+  title: string
+  audio?: number
+  subtitle?: number
+}) => invoke('player_open', p)
 
 // A time in seconds as a player shows it: 1:02:03, or 2:03 under an hour.
 export function clockOf(seconds: number) {

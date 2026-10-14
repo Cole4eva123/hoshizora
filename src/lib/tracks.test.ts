@@ -107,6 +107,6 @@ test('picksOf starts on the default 音轨, and on a 字幕 in the language show
 
 test('subtitlesOf offers those in the language shown first', () => {
   const both = { ...spring, subtitles: [track(1, { language: 'eng' }), ...spring.subtitles] }
-  expect(subtitlesOf(both, zh).map((s) => s.index)).toEqual([2, 3, 1])
-  expect(subtitlesOf(both, en).map((s) => s.index)).toEqual([1, 2, 3])
+  expect(subtitlesOf(both.subtitles, zh).map((s) => s.index)).toEqual([2, 3, 1])
+  expect(subtitlesOf(both.subtitles, en).map((s) => s.index)).toEqual([1, 2, 3])
 })

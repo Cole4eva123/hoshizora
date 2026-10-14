@@ -36,8 +36,9 @@ const STATE: &str = "player://state";
 
 // What the event thread hears of mpv: whether it's paused, where it's at and how long it is, whether it waits on the
 // network or a seek, whether it's at the end, the picture's size (as shown, its aspect applied), which comes some time
-// after mpv says the picture changed, and the volume and whether it's muted. One added here is asked for by
-// `property`, and handled in `listen`.
+// after mpv says the picture changed, the volume and whether it's muted, the file's tracks (read out whole when they
+// change, which a pick does too), and how late the subtitles are put. One added here is asked for by `property`, and
+// handled in `listen`.
 #[derive(Clone, Copy, PartialEq)]
 enum Watched {
     Pause,
@@ -50,10 +51,12 @@ enum Watched {
     Height,
     Volume,
     Muted,
+    Tracks,
+    SubDelay,
 }
 
 impl Watched {
-    const ALL: [Watched; 10] = [
+    const ALL: [Watched; 12] = [
         Watched::Pause,
         Watched::Position,
         Watched::Duration,
@@ -64,6 +67,8 @@ impl Watched {
         Watched::Height,
         Watched::Volume,
         Watched::Muted,
+        Watched::Tracks,
+        Watched::SubDelay,
     ];
 
     // mpv's name for it, and what it's heard as
@@ -81,6 +86,9 @@ impl Watched {
             // 0 to 100
             Watched::Volume => ("volume", mpv::DOUBLE),
             Watched::Muted => ("mute", mpv::FLAG),
+            // only that they changed: they're read out then (`tracks_in`)
+            Watched::Tracks => ("track-list", mpv::NONE),
+            Watched::SubDelay => ("sub-delay", mpv::DOUBLE),
         }
     }
 }
@@ -117,6 +125,16 @@ pub struct State {
     fullscreen: bool,
     /// how many seeks have landed, for the page's corner to tell where
     seeks: u64,
+    /// the file's 音轨 and 字幕, as mpv has them, and how late the subtitles are put (seconds; early when less than 0)
+    audio: Vec<Track>,
+    subtitles: Vec<Track>,
+    sub_delay: f64,
+    /// the 作品 page's picks for the version opening, with its link, put on as that file has opened
+    #[serde(skip)]
+    picks: Option<(String, Picks)>,
+    /// a version asked for and not yet started: the last file's time is told no more
+    #[serde(skip)]
+    next: bool,
 }
 
 impl State {
@@ -126,10 +144,55 @@ impl State {
     }
 }
 
+/// An 音轨 or a 字幕 of the file playing, as mpv lists it (`track-list`, read as JSON, its names): the id it's picked
+/// by, what the 作品 page names one by (lib/tracks.ts): its language, title, codec and channels, whether it's forced; and
+/// whether it's the one playing.
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Track {
+    id: i64,
+    // audio, sub or video
+    #[serde(rename(deserialize = "type"), skip_serializing)]
+    kind: String,
+    // its index in the file, FFmpeg's, which Emby's (ffprobe's) is too, so the 作品 page's pick finds it (a file beside
+    // the video, which mpv would number in its own, isn't offered: emby-core leaves those out)
+    // ponytail: matched by the index alone, as mpv's own mkv reader numbers tracks as FFmpeg does, though its manual
+    // gives no guarantee; one numbered apart gets another track: have the page send the language to check, if one does
+    #[serde(rename(deserialize = "ff-index"), skip_serializing)]
+    index: Option<i64>,
+    #[serde(rename(deserialize = "lang"), skip_serializing_if = "Option::is_none")]
+    language: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    codec: Option<String>,
+    #[serde(rename(deserialize = "demux-channel-count"), skip_serializing_if = "Option::is_none")]
+    channels: Option<i64>,
+    forced: bool,
+    selected: bool,
+}
+
+/// The 音轨 and 字幕 picked on the 作品 page, by their index in the file (Emby's), for a version opened; a 字幕 of
+/// `NO_TRACK`, none. Either may be left to the file, as for one the server hasn't read.
+#[derive(Clone)]
+pub struct Picks {
+    pub audio: Option<i64>,
+    pub subtitle: Option<i64>,
+}
+
+// the index that stands for no 字幕, as the 作品 page's noTrack does (lib/tracks.ts)
+const NO_TRACK: i64 = -1;
+
+// mpv's sid for a 字幕's id, or none
+fn sid_of(id: i64) -> String {
+    if id == NO_TRACK { "no".into() } else { id.to_string() }
+}
+
 /// What the page asks of the player (and the Mac's own controls, `now`): to pause or play, or whichever it isn't, seek
-/// to a time or by some seconds, set the volume or step it, mute or unmute, go full screen or back (or the other), and
-/// show the window's own title bar or hide it, as its controls are. A toggle or a step is worked out here from where it
-/// is, so presses faster than the page hears back add up.
+/// to a time or by some seconds, set the volume or step it, mute or unmute, go full screen or back (or the other), show
+/// the window's own title bar or hide it, as its controls are, pick the 音轨 or 字幕 (or none), and put the 字幕 later
+/// or sooner, or higher. A toggle or a step is worked out here from where it is, so presses faster than the page hears
+/// back add up.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Command {
@@ -143,6 +206,12 @@ pub enum Command {
     Fullscreen { on: bool },
     ToggleFullscreen,
     Chrome { shown: bool },
+    Audio { id: i64 },
+    /// `NO_TRACK` for none, as the 作品 page's picks have it
+    Subtitle { id: i64 },
+    SubDelay { by: f64 },
+    /// where the 字幕 sit, in % of the window's height (100: their own place)
+    SubPos { pos: f64 },
 }
 
 /// The player, as the app keeps it: nothing while its window is closed.
@@ -186,6 +255,9 @@ impl Playing {
             let (name, format) = watched.property();
             mpv.observe(watched as u64, name, format)?;
         }
+        // a file opened, before mpv picks its tracks and starts reading them: where the 作品 page's picks go on
+        // (`listen`), so it reads those from the start, not asking the network again for them once it's reading others
+        mpv.hook("on_preloaded")?;
         // before anything plays, as mpv's video output needs the renderer
         let picture = Picture::new(mtm, ns_window, &mpv)?;
         let state = Arc::new(Mutex::new(State::new()));
@@ -251,11 +323,45 @@ impl Player {
                 mpv.command(&["add", "volume", &by.to_string()])
             }),
             Command::ToggleMute => Box::new(|mpv| mpv.command(&["cycle", "mute"])),
+            Command::Audio { id } => Box::new(move |mpv| mpv.command(&["set", "aid", &id.to_string()])),
+            Command::Subtitle { id } => Box::new(move |mpv| mpv.command(&["set", "sid", &sid_of(id)])),
+            Command::SubDelay { by } => Box::new(move |mpv| mpv.command(&["add", "sub-delay", &by.to_string()])),
+            Command::SubPos { pos } => Box::new(move |mpv| mpv.set_double("sub-pos", pos.clamp(0.0, 100.0))),
         };
         if let Some(p) = self.0.lock().unwrap().as_ref() {
             let _ = p.jobs.send(job);
         }
     }
+}
+
+// The file's 音轨 and 字幕 in mpv's track list (its JSON); its video tracks and any of a type it adds are left out.
+fn tracks_in(list: &str) -> (Vec<Track>, Vec<Track>) {
+    let (mut audio, mut subtitles) = (vec![], vec![]);
+    let listed = serde_json::from_str::<Vec<Track>>(list).unwrap_or_else(|e| {
+        eprintln!("player: the track list: {e}");
+        vec![]
+    });
+    for track in listed {
+        match track.kind.as_str() {
+            "audio" => audio.push(track),
+            "sub" => subtitles.push(track),
+            _ => {}
+        }
+    }
+    (audio, subtitles)
+}
+
+// The 作品 page's picks as mpv's sets: the 音轨's and the 字幕's ids (or no 字幕), found among the file's tracks by
+// their index in it; one not found is left to the file.
+fn picked((audio, subtitles): &(Vec<Track>, Vec<Track>), picks: &Picks) -> Vec<(&'static str, String)> {
+    let id = |tracks: &[Track], index: i64| tracks.iter().find(|t| t.index == Some(index)).map(|t| t.id.to_string());
+    let aid = picks.audio.and_then(|index| id(audio, index));
+    let sid = match picks.subtitle {
+        Some(NO_TRACK) => Some(sid_of(NO_TRACK)),
+        Some(index) => id(subtitles, index),
+        None => None,
+    };
+    [("aid", aid), ("sid", sid)].into_iter().filter_map(|(name, id)| Some((name, id?))).collect()
 }
 
 // Plays: at the end, where keep-open holds it paused on the last frame, from the start again. (`eof-reached` has no
@@ -275,18 +381,18 @@ fn fullscreen(app: &AppHandle, on: impl FnOnce(&WebviewWindow) -> bool) {
 }
 
 /// Plays `play` in the player's window, opening it if it's closed, from where the user left off.
-pub async fn open(app: &AppHandle, play: Play, title: String) -> Result<(), String> {
+pub async fn open(app: &AppHandle, play: Play, title: String, picks: Picks) -> Result<(), String> {
     // on the main thread, where windows and their views are made
     let (done, mut answer) = tauri::async_runtime::channel(1);
     let on_main = app.clone();
     app.run_on_main_thread(move || {
-        let _ = done.try_send(open_here(&on_main, &play, title));
+        let _ = done.try_send(open_here(&on_main, &play, title, picks));
     })
     .map_err(|e| e.to_string())?;
     answer.recv().await.unwrap_or_else(|| Err("the main thread didn't answer".into()))
 }
 
-fn open_here(app: &AppHandle, play: &Play, title: String) -> Result<(), String> {
+fn open_here(app: &AppHandle, play: &Play, title: String, picks: Picks) -> Result<(), String> {
     let window = match app.get_webview_window(LABEL) {
         Some(window) => window,
         None => create(app, &title)?,
@@ -295,18 +401,30 @@ fn open_here(app: &AppHandle, play: &Play, title: String) -> Result<(), String> 
         let playing = app.state::<Player>();
         let playing = playing.0.lock().unwrap();
         let p = playing.as_ref().ok_or("the player has closed")?;
-        // what's playing now, which the page hears at once; the rest of the last file's state goes when mpv starts this
-        // one (`listen`), as till then it still tells of the last
+        // what's playing now, which the page hears at once, opening from here: the last file's time is told no more,
+        // so what mpv says of it as it ends (its options put back) is no one's change and the corner tells nothing; the
+        // rest of its state goes when mpv starts this one (`listen`)
         let mut s = p.state.lock().unwrap();
-        (s.title, s.from) = (title.clone(), (play.start > 0.0).then_some(play.start));
+        (s.title, s.from, s.position, s.next) = (title.clone(), (play.start > 0.0).then_some(play.start), None, true);
+        s.picks = Some((play.url.clone(), picks));
         let _ = app.emit_to(LABEL, STATE, s.clone());
         drop(s);
-        // through the queue, after what was asked of the version before, which mustn't land in this one; it plays,
-        // though the one before was paused
-        let (url, start) = (play.url.clone(), format!("start={}", play.start));
+        // through the queue, after what was asked of the version before, which mustn't land in this one; it starts on
+        // its own 音轨 and 字幕, playing, its 字幕 on time, whatever was changed before (a pick of the 作品 page's is
+        // put on after, `listen`), as the file's own options, which mpv sets once it has started it
+        let (url, options) = (play.url.clone(), format!("start={},aid=auto,sid=auto,pause=no,sub-delay=0", play.start));
+        let (app, state) = (app.clone(), p.state.clone());
         let _ = p.jobs.send(Box::new(move |mpv| {
-            mpv.set_flag("pause", false)?;
-            mpv.command(&["loadfile", &url, "replace", "-1", &start])
+            let asked = mpv.command(&["loadfile", &url, "replace", "-1", &options]);
+            // refused, no file starts and nothing else would tell: a failure, not an opening that never ends, and the
+            // last file stopped, as it's no longer the one named
+            if let Err(why) = &asked {
+                let _ = mpv.command(&["stop"]);
+                let mut s = state.lock().unwrap();
+                (s.failed, s.next, s.picks) = (Some(why.clone()), false, None);
+                let _ = app.emit_to(LABEL, STATE, s.clone());
+            }
+            asked
         }));
     }
     let _ = window.set_title(&title);
@@ -396,6 +514,22 @@ fn listen(app: &AppHandle, mpv: &Mpv, state: &Mutex<State>) {
     let mut wait = -1.0;
     loop {
         let event = mpv.next(wait);
+        // a file opened, mpv waiting to pick its tracks: the 作品 page's picks for it go on first; mpv asked with the
+        // state let go, as the main thread waits on it
+        if let Event::Hook(hook) = event {
+            let path = mpv.string("path");
+            let picks = state.lock().unwrap().picks.take_if(|(link, _)| path.as_ref() == Some(link));
+            if let Some((_, picks)) = picks {
+                for (name, id) in picked(&tracks_in(&mpv.string("track-list").unwrap_or_default()), &picks) {
+                    let _ = mpv.command(&["set", name, &id]);
+                }
+            }
+            let _ = mpv.proceed(hook);
+            continue;
+        }
+        // the file's tracks, read out when they change, with the state let go too
+        let tracks = matches!(event, Event::Property(id, _) if id == Watched::Tracks as u64)
+            .then(|| tracks_in(&mpv.string("track-list").unwrap_or_default()));
         let mut s = state.lock().unwrap();
         match event {
             Event::Quiet => {
@@ -427,7 +561,7 @@ fn listen(app: &AppHandle, mpv: &Mpv, state: &Mutex<State>) {
             // a file starting, in order after the last one's events, so its state goes here: the page's title card shows
             Event::StartFile => {
                 (loading, resized, sized) = (true, false, false);
-                (s.position, s.duration, s.ended, s.failed) = (None, None, false, None);
+                (s.position, s.duration, s.ended, s.failed, s.next) = (None, None, false, None, false);
             }
             // after the file's opening or a seek, which the page's corner tells
             Event::PlaybackRestart => {
@@ -442,7 +576,11 @@ fn listen(app: &AppHandle, mpv: &Mpv, state: &Mutex<State>) {
             }
             Event::Property(id, value) => match Watched::ALL.into_iter().find(|w| *w as u64 == id) {
                 Some(Watched::Pause) => s.paused = value.flag(),
-                Some(Watched::Position) => s.position = value.int(),
+                Some(Watched::Position) => {
+                    if !s.next {
+                        s.position = value.int();
+                    }
+                }
                 Some(Watched::Duration) => s.duration = value.double(),
                 Some(Watched::Stalled) => stalled = value.flag(),
                 Some(Watched::Seeking) => seeking = value.flag(),
@@ -451,6 +589,8 @@ fn listen(app: &AppHandle, mpv: &Mpv, state: &Mutex<State>) {
                 Some(Watched::Height) => (height, resized) = (value.int(), true),
                 Some(Watched::Volume) => s.volume = value.double().unwrap_or(s.volume),
                 Some(Watched::Muted) => s.muted = value.flag(),
+                Some(Watched::Tracks) => (s.audio, s.subtitles) = tracks.unwrap_or_default(),
+                Some(Watched::SubDelay) => s.sub_delay = value.double().unwrap_or(0.0),
                 None => {}
             },
             _ => {}
@@ -560,9 +700,50 @@ fn fitted(width: f64, height: f64, scale: f64, room: NSRect, frame: NSRect) -> N
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn rect(x: f64, y: f64, width: f64, height: f64) -> NSRect {
         NSRect::new(NSPoint::new(x, y), NSSize::new(width, height))
+    }
+
+    // mpv's list for a film with two 音轨 and two 字幕 (some of each track's keys; the last one's flags left out)
+    const LIST: &str = r#"[
+        {"id":1,"type":"video","ff-index":0,"codec":"h264","default":true,"forced":false,"selected":true},
+        {"id":1,"type":"audio","ff-index":1,"lang":"chi","title":"国语","codec":"aac","demux-channel-count":1,"forced":false,"selected":false},
+        {"id":2,"type":"audio","ff-index":2,"lang":"eng","title":"Commentary","codec":"ac3","demux-channel-count":6,"forced":false,"selected":true},
+        {"id":1,"type":"sub","ff-index":3,"codec":"hdmv_pgs_subtitle","forced":true,"selected":true},
+        {"id":2,"type":"sub","ff-index":4,"lang":"eng","codec":"subrip"}
+    ]"#;
+
+    #[test]
+    fn a_files_tracks_are_its_audio_and_subtitles_as_mpv_lists_them() {
+        let (audio, subtitles) = tracks_in(LIST);
+        let read: Vec<_> = audio.iter().map(|t| (t.id, t.index, t.channels)).collect();
+        assert_eq!(read, [(1, Some(1), Some(1)), (2, Some(2), Some(6))]);
+        // as the page has them: not mpv's names, nor its type and the index in the file
+        assert_eq!(
+            serde_json::to_value(&audio[1]).unwrap(),
+            json!({"id":2,"language":"eng","title":"Commentary","codec":"ac3","channels":6,"forced":false,"selected":true})
+        );
+        assert_eq!(
+            serde_json::to_value(&subtitles).unwrap(),
+            json!([
+                {"id":1,"codec":"hdmv_pgs_subtitle","forced":true,"selected":true},
+                {"id":2,"language":"eng","codec":"subrip","forced":false,"selected":false}
+            ])
+        );
+        // nothing read, nothing listed
+        assert!(tracks_in("").0.is_empty());
+    }
+
+    #[test]
+    fn the_pages_picks_are_mpvs_tracks_of_the_same_index_in_the_file() {
+        let tracks = tracks_in(LIST);
+        let sets = |audio, subtitle| picked(&tracks, &Picks { audio, subtitle });
+        assert_eq!(sets(Some(1), Some(4)), [("aid", "1".to_string()), ("sid", "2".to_string())]);
+        assert_eq!(sets(None, Some(NO_TRACK)), [("sid", "no".to_string())]);
+        // one the file hasn't (a 字幕 beside it on the server), left to the file
+        assert!(sets(Some(9), None).is_empty());
     }
 
     #[test]

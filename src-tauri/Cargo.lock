@@ -1411,6 +1411,7 @@ dependencies = [
  "objc2-media-player",
  "objc2-quartz-core",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
 ]
