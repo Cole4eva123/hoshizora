@@ -30,6 +30,8 @@
   --drop-shadow-glow: 0 0 6px var(--glow);
   --drop-shadow-glow-lg: 0 0 10px var(--glow);
   --text-shadow-glow: 0 0 12px var(--glow);
+  /* and night behind words over a film (the player's corner message), so they read on a bright frame */
+  --text-shadow-night: 0 1px 10px var(--night);
   --shadow-lit: 0 0 24px -6px var(--glow);
   --shadow-dot: 0 0 6px 1px var(--tone);
   --shadow-dot-lg: 0 0 8px 2px var(--tone);
@@ -79,6 +81,23 @@
   @keyframes trace {
     from {
       stroke-dashoffset: 1;
+    }
+  }
+  /* the player's corner message (IINA's OSD): there a second, then gone */
+  --animate-corner: corner 1.2s ease-out forwards;
+  @keyframes corner {
+    70% {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  /* shown only after a moment, so a short wait shows nothing: the player's mark while the network catches up */
+  --animate-appear: appear 0.2s 0.4s forwards;
+  @keyframes appear {
+    to {
+      opacity: 1;
     }
   }
 }

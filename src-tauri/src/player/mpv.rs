@@ -98,6 +98,7 @@ unsafe extern "C" {
     fn mpv_set_option_string(ctx: *mut Handle, name: *const c_char, data: *const c_char) -> c_int;
     fn mpv_command(ctx: *mut Handle, args: *mut *const c_char) -> c_int;
     fn mpv_set_property(ctx: *mut Handle, name: *const c_char, format: c_int, data: *mut c_void) -> c_int;
+    fn mpv_get_property(ctx: *mut Handle, name: *const c_char, format: c_int, data: *mut c_void) -> c_int;
     fn mpv_observe_property(ctx: *mut Handle, userdata: u64, name: *const c_char, format: c_int) -> c_int;
     fn mpv_request_log_messages(ctx: *mut Handle, min_level: *const c_char) -> c_int;
     fn mpv_wait_event(ctx: *mut Handle, timeout: f64) -> *mut RawEvent;
@@ -189,6 +190,16 @@ impl Mpv {
     pub fn set_flag(&self, name: &str, value: bool) -> Result<(), String> {
         let mut value = c_int::from(value);
         check(unsafe { mpv_set_property(self.0, text(name).as_ptr(), FLAG, (&raw mut value).cast()) })
+    }
+
+    pub fn flag(&self, name: &str) -> Result<bool, String> {
+        let mut value: c_int = 0;
+        check(unsafe { mpv_get_property(self.0, text(name).as_ptr(), FLAG, (&raw mut value).cast()) })?;
+        Ok(value != 0)
+    }
+
+    pub fn set_double(&self, name: &str, mut value: f64) -> Result<(), String> {
+        check(unsafe { mpv_set_property(self.0, text(name).as_ptr(), DOUBLE, (&raw mut value).cast()) })
     }
 
     /// Tells of the property's changes from now on, as `Event::Property` with `id`, in `format`.

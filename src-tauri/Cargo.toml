@@ -31,6 +31,8 @@ emby-core = { path = "emby-core" }
 serde = { version = "1", features = ["derive"] }
 # the player's window: its picture, an OpenGL layer under the page (src/player/layer.rs), the versions Tauri's own use
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSResponder", "NSGraphics", "NSScreen", "objc2-quartz-core"] }
-objc2-foundation = { version = "0.3", features = ["NSObject", "NSGeometry"] }
+objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSResponder", "NSGraphics", "NSScreen", "NSAnimation", "NSAnimationContext", "NSButton", "NSControl", "NSEvent", "block2", "objc2-quartz-core"] }
+objc2-foundation = { version = "0.3", features = ["NSObject", "NSGeometry", "NSProcessInfo", "NSString"] }
+# the title bar's fade (src/player/mod.rs)
+block2 = "0.6"
 objc2-quartz-core = { version = "0.3", features = ["CALayer", "CAOpenGLLayer", "CATransaction"] }

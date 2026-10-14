@@ -9,7 +9,9 @@ import type { EmbyError } from '@/lib/emby'
 
 // How playing goes, sent whole on each change (the Rust side's player::State): the 作品 as its page named it, where it's
 // at and how long it is (seconds, once the file says), whether it waits (opening, seeking, or the network behind), is
-// paused, has ended (on its last frame), or failed, why in mpv's words.
+// paused, has ended (on its last frame), or failed, why in mpv's words; where it picked up, when the user left off
+// there; the volume (0 to 100) and whether it's muted, whether the window is full screen, and how many seeks have
+// landed, for the page's corner to tell where.
 export type PlayerState = {
   title: string
   position?: number
@@ -18,10 +20,27 @@ export type PlayerState = {
   waiting: boolean
   ended: boolean
   failed?: string
+  from?: number
+  volume: number
+  muted: boolean
+  fullscreen: boolean
+  seeks: number
 }
 
-// What the player's page asks of the player.
-export type Command = { kind: 'pause'; paused: boolean }
+// What the player's page asks of the player: pause or play (whichever it isn't, or from the start at the end), seek to
+// a time or by some seconds, set the volume or step it, mute or unmute, go full screen or back (or toggle it), and show
+// or hide the window's own title bar with the controls. A toggle or a step is worked out by the player from where it is, so presses
+// faster than its answers add up.
+export type Command =
+  | { kind: 'togglePause' }
+  | { kind: 'seek'; to: number }
+  | { kind: 'skip'; by: number }
+  | { kind: 'volume'; volume: number }
+  | { kind: 'addVolume'; by: number }
+  | { kind: 'toggleMute' }
+  | { kind: 'fullscreen'; on: boolean }
+  | { kind: 'toggleFullscreen' }
+  | { kind: 'chrome'; shown: boolean }
 export const command = (command: Command) => invoke('player_command', { command })
 
 // How playing goes, as the player's page draws it: asked once as it opens, then each change as it's heard; one heard

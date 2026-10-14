@@ -120,10 +120,10 @@ fn player_state(player: State<'_, Player>) -> player::State {
     player.state()
 }
 
-// async, so off the main thread, as mpv may take its time to answer
+// what's asked of mpv queued, done in order off the main thread, as mpv may take its time to answer
 #[tauri::command]
-async fn player_command(app: AppHandle, command: Command) {
-    app.state::<Player>().command(command)
+fn player_command(app: AppHandle, player: State<'_, Player>, command: Command) {
+    player.command(&app, command)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

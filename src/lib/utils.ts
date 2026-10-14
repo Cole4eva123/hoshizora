@@ -13,7 +13,7 @@ export const cn = createCn({
       text: ["body", "name", "detail"],
       shadow: ["dot", "dot-lg", "lit"],
       "drop-shadow": ["glow", "glow-lg"],
-      "text-shadow": ["glow"],
+      "text-shadow": ["glow", "night"],
     },
   },
 })
