@@ -58,7 +58,7 @@ const subtitleText = (x: PlayerTrack, t: Translate) => {
   return aside ? t(`${name}（${aside}）`, `${name} (${aside})`) : name
 }
 
-// The Mac's glass, as IINA's controls, messages and waits are on macOS 26, in white and black (--shine, --film) rather
+// The Mac's glass, as IINA's controls and messages are on macOS 26, in white and black (--shine, --film) rather
 // than the app's night and starlight (the user's call: native first). An NSGlassEffectView put under the web view leaves the page unseen,
 // and CSS can't bend the light at the rim, so this is a frost with a lit edge, halving the film's light as that glass
 // does (measured over the same colours), and faintly grey over black; backdrop-filter reaches the film under the page.
@@ -300,9 +300,8 @@ export default function Player() {
 
       {/* waiting on the network mid-film, after a moment, as a seek within what's loaded takes none */}
       {s.waiting && !opening && (
-        <div className="pointer-events-none absolute inset-0 grid place-items-center">
-          {/* fading in itself, as glass inside something fading frosts nothing till it's done */}
-          <Waiting label={t('正在缓冲…', 'Buffering…')} className="animate-appear opacity-0" />
+        <div className="pointer-events-none absolute inset-0 grid animate-appear place-items-center opacity-0">
+          <Waiting label={t('正在缓冲…', 'Buffering…')} />
         </div>
       )}
 
@@ -333,7 +332,8 @@ export default function Player() {
         </div>
       )}
 
-      {/* the controls, IINA's floating ones: 460 wide, a tenth of the window's height up from its foot */}
+      {/* the controls, IINA's floating ones: 460 wide, near the window's foot (QuickTime's place, lower than IINA's tenth
+          of the height up, the user's call) */}
       <div
         ref={controls}
         // nor reached from the keyboard then: a skip would take the place of where a version picks up
@@ -341,7 +341,7 @@ export default function Player() {
         onPointerMove={() => setOver(true)}
         onPointerLeave={() => setOver(false)}
         className={cn(
-          'absolute bottom-[10%] left-1/2 w-[460px] max-w-[calc(100%-20px)] -translate-x-1/2 rounded-xl px-3 pt-3.5 pb-2 transition-[opacity,visibility] duration-300',
+          'absolute bottom-5 left-1/2 w-[460px] max-w-[calc(100%-20px)] -translate-x-1/2 rounded-xl px-3 pt-3.5 pb-2 transition-[opacity,visibility] duration-300',
           glass,
           (!shown || opening || s.failed) && 'pointer-events-none invisible opacity-0',
         )}
@@ -415,21 +415,21 @@ function Icon({ name, size, medium, className }: { name: string; size: number; m
   return <img alt="" srcSet={symbolOf(name, size, medium)} className={cn('pointer-events-none', className)} />
 }
 
-// A wait, as IINA's is: the system's spinner on glass, what it waits for (the 作品's name, as a full screen shows no
-// title bar), and a detail under it; `still` once it's over, as it fades.
+// A wait: the system's spinner, what it waits for (the 作品's name, as a full screen shows no title bar), and a detail
+// under it, bare on the film as QuickTime's is (the user found IINA's glass box abrupt), its shadow keeping it read over a
+// light frame (the first one shows through as the black fades); `still` once it's over, as it
+// fades.
 function Waiting({
   label,
   detail,
   still,
-  className,
 }: {
   label: string
   detail?: string
   still?: boolean
-  className?: string
 }) {
   return (
-    <div className={cn('flex w-[182px] flex-col items-center gap-1 rounded-2xl px-5 py-3 text-center', glass, className)}>
+    <div className="flex w-[182px] flex-col items-center gap-1 text-center drop-shadow-wait">
       <Spinner still={still} />
       <p className="text-name text-balance text-shine">{label}</p>
       {detail && <p className="text-detail text-shine/60 tabular-nums">{detail}</p>}

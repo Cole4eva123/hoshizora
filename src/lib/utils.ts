@@ -12,7 +12,7 @@ export const cn = createCn({
     theme: {
       text: ["body", "name", "detail"],
       shadow: ["dot", "dot-lg", "lit", "glass", "hairline"],
-      "drop-shadow": ["glow", "glow-lg", "knob"],
+      "drop-shadow": ["glow", "glow-lg", "knob", "wait"],
       "text-shadow": ["glow"],
     },
   },

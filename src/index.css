@@ -38,6 +38,8 @@
   --shadow-glass:
     inset 0 0 0 0.5px color-mix(in srgb, var(--shine) 20%, transparent), 0 8px 30px color-mix(in srgb, var(--film) 30%, transparent);
   --drop-shadow-knob: 0 0.5px 1px color-mix(in srgb, var(--film) 40%, transparent);
+  /* and a wait's over the film, there with no glass behind it, keeping it read over a light frame */
+  --drop-shadow-wait: 0 0 6px color-mix(in srgb, var(--film) 60%, transparent);
   /* starlight's glow, all of it here: on a lit icon (drop-shadow-glow), the 播放 triangle (drop-shadow-glow-lg), the
      language shown (text-shadow-glow), a picked picture among radios (shadow-lit), and a star's dot under a word or
      standing alone (shadow-dot, shadow-dot-lg), which glows in --tone unless given --glow (shadow-(color:--glow)) */
