@@ -5,8 +5,8 @@
 //!
 //! Behind it, each module is where one kind of change lands: `find`, where a server answers; `session`, asking as this
 //! device and its signed-in user; `kept`, the servers kept on this device; `browse`, the 媒体库 and 作品; `sources`,
-//! where a 作品 can be played, its 片源 and their versions and tracks. This file ties them together: adding a server,
-//! changing it, removing it, and how it answers now.
+//! where a 作品 can be played, its 片源 and their versions and tracks, and what a version plays (its link, and where
+//! the user left off). This file ties them together: adding a server, changing it, removing it, and how it answers now.
 
 mod browse;
 mod find;
@@ -23,7 +23,7 @@ use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 
 pub use browse::{Item, Library, Page, Sort, Tmdb};
-pub use sources::{Episode, Source, Track, Version, Video};
+pub use sources::{Episode, Play, Source, Track, Version, Video};
 use find::Info;
 
 // How long a request asked of a kept server may take: whether it answers now, and the 媒体库 and 作品. Finding a
@@ -39,6 +39,12 @@ const BROWSE: Duration = Duration::from_secs(15);
 // alike (src-tauri/Cargo.toml).
 const APP: &str = "Hoshizora";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// The app as it names itself to what it asks over the network (Hoshizora/0.1.0): servers, and the player, which asks
+/// for a version's link with it too.
+pub fn user_agent() -> String {
+    format!("{APP}/{VERSION}")
+}
 
 /// A kind of 作品, as TMDB and the pages' routes name it (`movie`, `tv`), so the pages' `mediaTypes` and this agree
 /// on the wire. A kind added here (and to `ALL`) is listed in the 媒体库 and found by its TMDB entry; each `match`
@@ -147,6 +153,9 @@ pub enum Error {
     Refused,
     /// The server answered with another error.
     Server { status: u16 },
+    /// The version can't be played from where it is, but only through the server (a file on its disk, or a link that
+    /// needs headers of the server's), which the app doesn't do yet.
+    NotDirect,
     /// No such server is kept here (removed meanwhile).
     NoServer,
     /// What's kept couldn't be written.
@@ -189,7 +198,7 @@ impl Emby {
     /// is there but can't be read now.
     pub fn open(file: PathBuf) -> Emby {
         let (kept, file) = kept::read(file);
-        let client = || Client::builder().user_agent(format!("{APP}/{VERSION}"));
+        let client = || Client::builder().user_agent(user_agent());
         Emby {
             http: client().redirect(reqwest::redirect::Policy::none()).build().expect("no TLS backend"),
             probing: client().build().expect("no TLS backend"),

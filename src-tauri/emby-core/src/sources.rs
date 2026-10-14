@@ -1,13 +1,18 @@
 //! Where a 作品 can be played on a 服务器: its 片源 there, the versions of each (their 清晰度), and the 音轨 and 字幕
-//! of each version.
+//! of each version; and what a version plays, its own link and where the user left off.
 
+use std::net::IpAddr;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use url::Url;
+use serde_json::{Map, Value};
+use url::{Host, Url};
 
 use crate::browse::{Ids, Listing, items_of};
 use crate::{BROWSE, Emby, Error, Kind};
+
+// how long resolving a server's name may take, for how far it is (`reach_of`): it just answered, so it's known
+const RESOLVE: Duration = Duration::from_secs(2);
 
 // How long a server may take to read a file it hasn't yet: a .strm's start comes from the cloud, about 5 s the first
 // time on the user's server.
@@ -38,10 +43,12 @@ pub struct Episode {
 /// A version of a 片源, one file: its name (as a release names itself, the 作品's name, 清晰度, source and group),
 /// its picture, bitrate, and its 音轨 and 字幕, once the server has read it. One it hasn't read yet (a .strm) has
 /// neither picture nor bitrate nor tracks, till `versions` has it read; its `name` and `file` often say its 清晰度 anyway.
+/// `direct` when the app can play it (`play`).
 #[derive(Debug, PartialEq, Serialize)]
 pub struct Version {
     pub id: String,
     pub name: String,
+    pub direct: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file: Option<String>,
     /// bits a second
@@ -117,6 +124,7 @@ struct PlaybackInfo {
     media_sources: Vec<MediaSource>,
 }
 
+// A version as Emby has it; with how Emby says it can be played (`link_of`).
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct MediaSource {
@@ -127,6 +135,38 @@ struct MediaSource {
     bitrate: Option<u64>,
     #[serde(default)]
     media_streams: Vec<Stream>,
+    // Http for a link (a .strm's), File for one on the server's disk
+    protocol: Option<String>,
+    #[serde(default)]
+    is_remote: bool,
+    #[serde(default)]
+    supports_direct_play: bool,
+    required_http_headers: Option<Map<String, Value>>,
+}
+
+/// What a version plays: its own link, played from where it is, and where the user left off (seconds in, 0 for the
+/// start).
+#[derive(Debug, PartialEq)]
+pub struct Play {
+    pub url: String,
+    pub start: f64,
+}
+
+// The parts of a 作品's own answer `play` reads: its versions, and the user's place in it.
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct Playing {
+    #[serde(default)]
+    media_sources: Vec<MediaSource>,
+    user_data: Option<UserData>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct UserData {
+    // in Emby's ticks, 10 million a second
+    #[serde(default)]
+    playback_position_ticks: u64,
 }
 
 #[derive(Deserialize)]
@@ -169,6 +209,7 @@ impl Emby {
             ("EnableImages", "false"),
         ];
         let found: Listing<Found> = self.get(&s, &items_of(&s), &query, BROWSE).await?;
+        let server = reach_for(&s.server.address, found.items.iter().flat_map(|f| &f.media_sources)).await;
         let tmdb = tmdb.to_string();
         let mut sources: Vec<Source> = found
             .items
@@ -176,7 +217,7 @@ impl Emby {
             .filter(|f| f.kind == kind.item_type() && f.provider_ids.tmdb.as_ref() == Some(&tmdb))
             .map(|f| Source {
                 seasons: series.then(|| f.child_count.unwrap_or(0)),
-                versions: f.media_sources.into_iter().map(version).collect(),
+                versions: f.media_sources.into_iter().map(|m| version(m, server)).collect(),
                 item: f.id,
                 name: f.name,
             })
@@ -205,6 +246,7 @@ impl Emby {
             ("EnableUserData", "false"),
         ];
         let aired: Listing<Aired> = self.get(&s, &format!("Shows/{series}/Episodes"), &query, BROWSE).await?;
+        let server = reach_for(&s.server.address, aired.items.iter().flat_map(|e| &e.media_sources)).await;
         Ok(aired
             .items
             .into_iter()
@@ -215,7 +257,7 @@ impl Emby {
                     season: e.parent_index_number?,
                     episode: e.index_number?,
                     last: e.index_number_end,
-                    versions: e.media_sources.into_iter().map(version).collect(),
+                    versions: e.media_sources.into_iter().map(|m| version(m, server)).collect(),
                     item: e.id,
                 })
             })
@@ -234,7 +276,25 @@ impl Emby {
         let query =
             [("UserId", s.server.user_id.as_str()), ("IsPlayback", "true"), ("AutoOpenLiveStream", "false")];
         let info: PlaybackInfo = self.post(&s, &format!("Items/{item}/PlaybackInfo"), &query, READ).await?;
-        Ok(info.media_sources.into_iter().map(version).collect())
+        let server = reach_for(&s.server.address, &info.media_sources).await;
+        Ok(info.media_sources.into_iter().map(|m| version(m, server)).collect())
+    }
+
+    /// What a version of a 作品 (a movie, or an episode) plays: its own link, which the player is given to play
+    /// from where it is, never the server's stream with the token, and where the user left off. `NotDirect` for one
+    /// that only the server can play (`link_of`).
+    pub async fn play(&self, server: &str, user: &str, item: &str, version: &str) -> Result<Play, Error> {
+        let s = self.signed(server, user)?;
+        // as for one the server doesn't have, never put in a path
+        let gone = Error::Server { status: 404 };
+        if !plain(item) {
+            return Err(gone);
+        }
+        let playing: Playing = self.get(&s, &format!("{}/{item}", items_of(&s)), &[], BROWSE).await?;
+        let m = playing.media_sources.into_iter().find(|m| m.id == version).ok_or(gone)?;
+        let url = link_of(&m, reach_for(&s.server.address, [&m]).await).ok_or(Error::NotDirect)?;
+        let ticks = playing.user_data.map_or(0, |u| u.playback_position_ticks);
+        Ok(Play { url, start: ticks as f64 / 1e7 })
     }
 }
 
@@ -243,8 +303,10 @@ fn plain(id: &str) -> bool {
     !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric())
 }
 
-// A version as Emby lists it: its first picture, its 音轨 and 字幕; none of them while the server hasn't read it.
-fn version(m: MediaSource) -> Version {
+// A version as Emby lists it, on a `server` that far away: its first picture, its 音轨 and 字幕, none of them while
+// the server hasn't read it; and whether the app can play it.
+fn version(m: MediaSource, server: Reach) -> Version {
+    let direct = link_of(&m, server).is_some();
     let (mut video, mut audio, mut subtitles) = (None, vec![], vec![]);
     for s in m.media_streams {
         match s.kind.as_str() {
@@ -257,6 +319,7 @@ fn version(m: MediaSource) -> Version {
         }
     }
     Version {
+        direct,
         id: m.id,
         name: m.name,
         file: m.path.as_deref().and_then(file_name),
@@ -279,6 +342,77 @@ fn file_name(path: &str) -> Option<String> {
     Some(name).filter(|name| !name.is_empty())
 }
 
+// The link a version plays by, from where it is, when Emby would play it so (as its web app plays a .strm's): a remote
+// http(s) link the server says plays directly and asks no headers for, as nothing but the link goes to the player, the
+// token least of all. One on this Mac or a local network only when the `server` is there too: the server's 127.0.0.1
+// is another machine than this one, and its network may not be this one's. Any other is played through the server,
+// which isn't done yet.
+// ponytail: tells a link's host by its IP (and localhost), so a link to nas.local from a server out on the internet
+// still goes to the player, which then fails to open it. Resolve its name too (as `reach_of` does the server's) if one
+// ever turns up.
+fn link_of(m: &MediaSource, server: Reach) -> Option<String> {
+    let mut link = Url::parse(m.path.as_deref()?).ok()?;
+    let plays = m.supports_direct_play
+        && m.is_remote
+        && m.protocol.as_deref() == Some("Http")
+        && m.required_http_headers.as_ref().is_none_or(Map::is_empty)
+        && matches!(link.scheme(), "http" | "https");
+    // as the url crate writes it, percent-encoded, which the player sends as it is; and without a fragment, which a
+    // browser wouldn't send either
+    link.set_fragment(None);
+    (plays && reach(&link) >= server).then(|| link.into())
+}
+
+// How far a host is from this Mac: the Mac itself, a local network (as reached from it), or anywhere.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Reach {
+    Here,
+    Near,
+    Anywhere,
+}
+
+// How far the host of `url` is, as its IP says, or `localhost`: any other name may be anywhere.
+fn reach(url: &Url) -> Reach {
+    match url.host() {
+        Some(Host::Domain("localhost")) => Reach::Here,
+        Some(Host::Ipv4(ip)) => reach_ip(ip.into()),
+        Some(Host::Ipv6(ip)) => reach_ip(ip.into()),
+        _ => Reach::Anywhere,
+    }
+}
+
+// How far the server at `address` is, which only a version's link on this Mac or a local network asks (`link_of`), so
+// it's looked up only for those: anywhere otherwise.
+async fn reach_for<'a>(address: &str, versions: impl IntoIterator<Item = &'a MediaSource>) -> Reach {
+    let local = |m: &MediaSource| m.path.as_deref().and_then(|p| Url::parse(p).ok()).is_some_and(|l| reach(&l) < Reach::Anywhere);
+    if versions.into_iter().any(local) { reach_of(address).await } else { Reach::Anywhere }
+}
+
+// How far the server at `address` is, its name resolved to its IPs, the nearest of them counting: a NAS added by its
+// name (nas.local, or nas) is on this network. Anywhere when it doesn't resolve within RESOLVE.
+async fn reach_of(address: &str) -> Reach {
+    let Ok(url) = Url::parse(address) else { return Reach::Anywhere };
+    match (url.host(), url.port_or_known_default()) {
+        (Some(Host::Domain(name)), Some(port)) if name != "localhost" => {
+            match tokio::time::timeout(RESOLVE, tokio::net::lookup_host((name, port))).await {
+                Ok(Ok(found)) => found.map(|at| reach_ip(at.ip())).min().unwrap_or(Reach::Anywhere),
+                _ => Reach::Anywhere,
+            }
+        }
+        _ => reach(&url),
+    }
+}
+
+fn reach_ip(ip: IpAddr) -> Reach {
+    // an IPv4 address written as IPv6 (::ffff:127.0.0.1) is the IPv4 one
+    match ip.to_canonical() {
+        IpAddr::V4(ip) if ip.is_loopback() || ip.is_unspecified() => Reach::Here,
+        IpAddr::V4(ip) if ip.is_private() || ip.is_link_local() => Reach::Near,
+        IpAddr::V6(ip) if ip.is_loopback() || ip.is_unspecified() => Reach::Here,
+        IpAddr::V6(ip) if ip.is_unique_local() || ip.is_unicast_link_local() => Reach::Near,
+        _ => Reach::Anywhere,
+    }
+}
 
 fn track(s: Stream) -> Track {
     Track {
@@ -305,5 +439,59 @@ mod tests {
         assert_eq!(file_name("http://192.168.1.5:5244"), None);
         assert_eq!(file_name("http://192.168.1.5:5244?path=/X.2160p.mkv"), None);
         assert_eq!(file_name("https://drive/d/"), None);
+    }
+
+    // A version as Emby lists a .strm's, its link at `path`: all it takes to play from there.
+    fn remote(path: &str) -> Value {
+        serde_json::json!({ "Id": "v", "Path": path, "Protocol": "Http", "IsRemote": true, "SupportsDirectPlay": true,
+            "RequiredHttpHeaders": {} })
+    }
+
+    fn link(m: Value, address: &str) -> Option<String> {
+        link_of(&serde_json::from_value(m).unwrap(), reach(&Url::parse(address).unwrap()))
+    }
+
+    #[test]
+    fn a_version_plays_from_its_link_when_emby_would_and_this_mac_can_reach_it() {
+        let out = "https://emby.example/emby";
+        assert_eq!(link(remote("https://drive/d/X.mkv"), out).as_deref(), Some("https://drive/d/X.mkv"));
+        // over http too, encoded as it goes out, without a fragment
+        assert_eq!(link(remote("http://drive/d/春江.mkv#t=0"), out).as_deref(), Some("http://drive/d/%E6%98%A5%E6%B1%9F.mkv"));
+        let mut no_headers = remote("https://drive/d/X.mkv");
+        no_headers["RequiredHttpHeaders"] = Value::Null;
+        assert!(link(no_headers, out).is_some());
+        // not one Emby would play so: a file on the server's disk, a link it reads itself, or one needing headers
+        for (field, value) in [
+            ("Protocol", serde_json::json!("File")),
+            ("IsRemote", serde_json::json!(false)),
+            ("SupportsDirectPlay", serde_json::json!(false)),
+            ("RequiredHttpHeaders", serde_json::json!({ "Cookie": "c" })),
+        ] {
+            let mut m = remote("https://drive/d/X.mkv");
+            m[field] = value;
+            assert_eq!(link(m, out), None, "{field}");
+        }
+        assert_eq!(link(remote("rtsp://drive/X.mkv"), out), None);
+        assert_eq!(link(remote("/mnt/movies/X.mkv"), out), None);
+        // none on the server's own machine or network, from a server out on the internet
+        for near in ["http://127.0.0.1:5244/X.mkv", "http://localhost/X.mkv", "http://0.0.0.0/X.mkv", "http://192.168.1.5/X.mkv",
+            "http://169.254.0.5/X.mkv", "http://[::1]/X.mkv", "http://[fd00::5]/X.mkv", "http://[::ffff:127.0.0.1]/X.mkv"]
+        {
+            assert_eq!(link(remote(near), out), None, "{near}");
+        }
+        // but one on this network from a server on it, or on this Mac; and one on this Mac from a server on it
+        let lan = "http://192.168.1.5:5244/X.mkv";
+        assert!(link(remote(lan), "http://192.168.1.2:8096/emby").is_some());
+        assert!(link(remote(lan), "http://127.0.0.1:8096/emby").is_some());
+        assert!(link(remote("http://127.0.0.1:5244/X.mkv"), "http://192.168.1.2:8096/emby").is_none());
+        assert!(link(remote("http://127.0.0.1:5244/X.mkv"), "http://localhost:8096/emby").is_some());
+    }
+
+    #[tokio::test]
+    async fn a_server_named_by_its_ip_or_localhost_is_as_far_as_that_says() {
+        assert!(reach_of("http://localhost:8096/emby").await == Reach::Here);
+        assert!(reach_of("http://192.168.1.2:8096/emby").await == Reach::Near);
+        assert!(reach_of("http://[::ffff:10.0.0.2]:8096/emby").await == Reach::Near);
+        assert!(reach_of("https://203.0.113.9/emby").await == Reach::Anywhere);
     }
 }

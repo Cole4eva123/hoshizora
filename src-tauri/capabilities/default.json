@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "the main window: the window's own permissions, and Emby's commands (build.rs)",
+  "description": "the main window: the window's own permissions, Emby's commands, and opening the player (build.rs)",
   "windows": [
     "main"
   ],
@@ -17,6 +17,7 @@
     "allow-emby-items",
     "allow-emby-sources",
     "allow-emby-episodes",
-    "allow-emby-versions"
+    "allow-emby-versions",
+    "allow-player-open"
   ]
 }

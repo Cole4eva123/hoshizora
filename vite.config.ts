@@ -10,6 +10,14 @@ export default defineConfig({
   base: process.env.TAURI_ENV_PLATFORM ? '/' : '/hoshizora/',
   // keep the Rust build's output on screen under `tauri dev`
   clearScreen: false,
+  // the app has a second page, its player's window (player.html); the site has none
+  ...(process.env.TAURI_ENV_PLATFORM && {
+    build: {
+      rolldownOptions: {
+        input: { main: path.resolve(import.meta.dirname, 'index.html'), player: path.resolve(import.meta.dirname, 'player.html') },
+      },
+    },
+  }),
   resolve: {
     alias: { '@': path.resolve(import.meta.dirname, './src') },
   },

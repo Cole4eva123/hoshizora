@@ -23,7 +23,9 @@ export type Copy = [zh: string, en: string]
 const key = storageKey('lang')
 // 显示的语言，存的是它的 `t`（就是 zh 或 en 本身）。放在模块里而不是 Context 里，LangSwitch 改它、任何组件读它，
 // 都不用在应用外面包一层 Provider。
-let shown: Translate = storage?.getItem(key) === langOf(en) ? en : zh
+// 存着的选择读成它的 `t`：存的是 'en' 就是英文，其余（没选过）都是中文。
+const stored = (value?: string | null) => (value === langOf(en) ? en : zh)
+let shown: Translate = stored(storage?.getItem(key))
 // 用 useT 绘制的组件。组件挂载时 React 调 subscribe，卸载时调它返回的函数。
 const listeners = new Set<() => void>()
 const subscribe = (listener: () => void) => {
@@ -37,6 +39,13 @@ export function setLang(lang: Translate) {
   listeners.forEach((l) => l())
   storage?.setItem(key, langOf(lang))
 }
+
+// 另一个窗口换了语言（在主窗口换，播放窗口跟着）：跟着换，只通知重绘，不再存一遍。没有 window（bun test）时不听。
+globalThis.window?.addEventListener('storage', (e) => {
+  if (e.key !== key) return
+  shown = stored(e.newValue)
+  listeners.forEach((l) => l())
+})
 
 // 显示语言的 `t`。调用它的组件会在语言切换时重绘，所以每个有自己文案的组件都自己调它，不从父组件接 `t`。React 会拿
 // 读到的 `t` 和上一次比：zh 和 en 是两个固定的函数，语言没变就是同一个函数，什么都不重绘。

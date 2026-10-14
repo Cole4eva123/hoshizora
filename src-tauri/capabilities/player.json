@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "player",
+  "description": "the player's window: hearing how playing goes, telling the player what to do (build.rs), and being moved by its top",
+  "windows": [
+    "player"
+  ],
+  "permissions": [
+    "core:event:default",
+    "core:window:allow-start-dragging",
+    "allow-player-state",
+    "allow-player-command"
+  ]
+}

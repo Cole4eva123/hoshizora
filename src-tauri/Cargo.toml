@@ -28,3 +28,9 @@ rust-version = "1.90"
 # held to 2.12 as @tauri-apps/api and the CLI are (package.json): the CLI won't build with them a minor apart
 tauri = { version = "~2.12.1", features = [] }
 emby-core = { path = "emby-core" }
+serde = { version = "1", features = ["derive"] }
+# the player's window: its picture, an OpenGL layer under the page (src/player/layer.rs), the versions Tauri's own use
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSResponder", "NSGraphics", "NSScreen", "objc2-quartz-core"] }
+objc2-foundation = { version = "0.3", features = ["NSObject", "NSGeometry"] }
+objc2-quartz-core = { version = "0.3", features = ["CALayer", "CAOpenGLLayer", "CATransaction"] }

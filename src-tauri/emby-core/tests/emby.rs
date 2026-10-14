@@ -10,7 +10,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use emby_core::{Emby, Error, Form, Item, Kind, Library, Page, Server, Sort, Source, Status, Tmdb, Track, Version, Video};
+use emby_core::{Emby, Error, Form, Item, Kind, Library, Page, Play, Server, Sort, Source, Status, Tmdb, Track, Version, Video};
 use serde_json::{Value, json};
 
 // What the stand-in server handed out and was told.
@@ -151,9 +151,11 @@ async fn items(State(seen): State<Shared>, headers: HeaderMap, Query(q): Query<H
     Json(json!({ "Items": page, "TotalRecordCount": total })).into_response()
 }
 
-// A version the server has read: a 4K file with two 音轨 and two 字幕, and a cover picture, which isn't a track.
+// A version the server has read: a 4K file on its disk with two 音轨 and two 字幕, and a cover picture, which isn't a
+// track.
 fn read_version() -> Value {
-    json!({ "Id": "v1", "Name": "2160p - BluRay", "Size": 21_800_000_000u64, "Bitrate": 30_481_253,
+    json!({ "Id": "v1", "Name": "2160p - BluRay", "Size": 21_800_000_000u64, "Bitrate": 30_481_253, "Protocol": "File",
+        "SupportsDirectPlay": true,
         "Path": "/mnt/movies/X加Y #1 (2014)/X+Y.2014.2160p.BluRay.x265.10bit.DTS-HD.MA.7.1-SWTYBLZ.mkv", "MediaStreams": [
         { "Type": "Video", "Index": 0, "Codec": "hevc", "Width": 3840, "Height": 1600, "VideoRange": "HDR 10" },
         { "Type": "Audio", "Index": 1, "Codec": "dts", "Language": "eng", "Channels": 8, "IsDefault": true },
@@ -165,10 +167,24 @@ fn read_version() -> Value {
     ]})
 }
 
-// A .strm the server hasn't read: nothing known of it but its name and its link.
+// A .strm the server hasn't read: nothing known of it but its name and its link, which plays from where it is.
 fn unread_version() -> Value {
     json!({ "Id": "v2", "Name": "1080p - BluRay", "Size": 0, "MediaStreams": [],
-        "Path": "https://drive.example/d/%E6%98%A5%E6%B1%9F.1080p.BluRay.mkv?sign=secret#t=0" })
+        "Path": "https://drive.example/d/%E6%98%A5%E6%B1%9F.1080p.BluRay.mkv?sign=secret#t=0",
+        "Protocol": "Http", "IsRemote": true, "SupportsDirectPlay": true, "RequiredHttpHeaders": {} })
+}
+
+// A 作品's own answer: its versions, and where the user left off.
+async fn item(State(seen): State<Shared>, headers: HeaderMap, Path(item): Path<String>) -> Response {
+    if !signed_in(&seen, &headers) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let (version, ticks) = match item.as_str() {
+        "m1" => (read_version(), 0),
+        "m2" => (unread_version(), 12_345_000_000u64),
+        _ => return StatusCode::NOT_FOUND.into_response(),
+    };
+    Json(json!({ "Id": item, "MediaSources": [version], "UserData": { "PlaybackPositionTicks": ticks } })).into_response()
 }
 
 // A season of a series' 片源, as Emby numbers it.
@@ -251,6 +267,7 @@ async fn emby() -> (String, Shared) {
         .route("/emby/System/Info", get(system_info))
         .route("/emby/Users/u1/Views", get(views))
         .route("/emby/Users/u1/Items", get(items))
+        .route("/emby/Users/u1/Items/{item}", get(item))
         .route("/emby/Shows/{series}/Episodes", get(episodes))
         .route("/emby/Items/{item}/PlaybackInfo", post(playback_info))
         .route("/emby/Sessions/Logout", post(logout))
@@ -711,6 +728,8 @@ async fn a_movies_sources_are_found_by_its_tmdb_entry_with_their_versions_and_tr
             versions: vec![Version {
                 id: "v1".into(),
                 name: "2160p - BluRay".into(),
+                // on the server's disk
+                direct: false,
                 file: Some("X+Y.2014.2160p.BluRay.x265.10bit.DTS-HD.MA.7.1-SWTYBLZ.mkv".into()),
                 bitrate: Some(30_481_253),
                 video: Some(Video { width: 3840, height: 1600, range: Some("HDR 10".into()) }),
@@ -734,6 +753,8 @@ async fn a_movies_sources_are_found_by_its_tmdb_entry_with_their_versions_and_tr
     let unread = &emby.sources("srv", "u1", Kind::Movie, 596881).await.unwrap()[0].versions[0];
     assert_eq!((unread.bitrate, &unread.video, unread.audio.len()), (None, &None, 0));
     assert_eq!(unread.file.as_deref(), Some("%E6%98%A5%E6%B1%9F.1080p.BluRay.mkv"));
+    // and it plays from its link
+    assert!(unread.direct);
     assert_eq!(emby.sources("gone", "u1", Kind::Movie, 278236).await, Err(Error::NoServer));
 }
 
@@ -772,6 +793,22 @@ async fn versions_have_the_server_read_a_file_it_has_not_yet() {
     assert_eq!(read[0].audio, [track(1, "ac3", None, None, Some(6), (true, false))]);
     assert_eq!(read[0].subtitles[0].title.as_deref(), Some("chs"));
     assert_eq!(emby.versions("srv", "u1", "Items/x").await.unwrap(), []);
+}
+
+#[tokio::test]
+async fn a_version_plays_from_its_own_link_where_the_user_left_off() {
+    let (at, _) = emby().await;
+    let emby = Emby::open(file("play"));
+    emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
+    // the link alone, which carries no token, without the fragment
+    let url = "https://drive.example/d/%E6%98%A5%E6%B1%9F.1080p.BluRay.mkv?sign=secret".to_owned();
+    assert_eq!(emby.play("srv", "u1", "m2", "v2").await, Ok(Play { url, start: 1234.5 }));
+    // a file on the server's disk plays only through the server
+    assert_eq!(emby.play("srv", "u1", "m1", "v1").await, Err(Error::NotDirect));
+    // a version the 作品 no longer has, and an id that isn't one Emby gives, as if the server had neither
+    assert_eq!(emby.play("srv", "u1", "m2", "v9").await, Err(Error::Server { status: 404 }));
+    assert_eq!(emby.play("srv", "u1", "../m2", "v2").await, Err(Error::Server { status: 404 }));
+    assert_eq!(emby.play("gone", "u1", "m2", "v2").await, Err(Error::NoServer));
 }
 
 #[tokio::test]

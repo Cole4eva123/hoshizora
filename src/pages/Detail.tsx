@@ -235,6 +235,9 @@ function Episodes({ tv, on }: { tv: Details; on?: { s: Server; series: string } 
   const at = (item: string) => `${on?.s.id}/${on?.s.userId}/${item}`
   const there = useEpisodes(on?.s, on?.series, season)
   const picked = there.episodes?.find((x) => at(x.item) === watching)
+  // by its season too where there are several, as the next episode's line says it
+  const label =
+    picked && episodeText({ ...picked, season: (tv.number_of_seasons ?? 1) > 1 ? picked.season : undefined }, t)
   const name = useId()
   // the latest five seasons get a button each; older ones and specials go in the 更多 menu
   const latest = seasons.slice(-5)
@@ -303,11 +306,8 @@ function Episodes({ tv, on }: { tv: Details; on?: { s: Server; series: string } 
       </Row>
       {on && picked && (
         <div className="mt-6 px-(--gutter)">
-          <p className="mb-3 text-sm text-muted-foreground">
-            {/* by its season too where there are several, as the next episode's line says it */}
-            {episodeText({ ...picked, season: (tv.number_of_seasons ?? 1) > 1 ? picked.season : undefined }, t)}
-          </p>
-          <Tracks s={on.s} item={picked.item} given={picked.versions} eager />
+          <p className="mb-3 text-sm text-muted-foreground">{label}</p>
+          <Tracks s={on.s} item={picked.item} given={picked.versions} eager title={`${titleOf(tv)} · ${label}`} />
         </div>
       )}
     </div>

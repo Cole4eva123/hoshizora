@@ -139,6 +139,15 @@ _English_: audio (the row), audio track (one of them)
 片源里的一路字幕，按语言区分，简体和繁体中文按字幕的标题分开。只翻译不是原声语言那几句的，叫强制字幕。
 _English_: subtitles; forced
 
+**播放窗口**:
+放映室播放作品的窗口，从作品页的「播放」打开，接着上次看到的地方播。一次只有一个：开着时再点播放，就在里面换成新的。
+_English_: player
+_Avoid_: 播放页
+
+**直接播放**:
+播放窗口从片源自己的链接（网盘文件的 .strm 里那个）取片子，不经过服务器，也不带登录凭据。服务器硬盘上的文件只能经服务器播放，放映室还不支持。
+_English_: direct play; through the server
+
 **继续观看**:
 在任一台服务器上看了一部分、还没看完的电影或集。
 _English_: Continue Watching

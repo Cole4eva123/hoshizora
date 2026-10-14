@@ -9,14 +9,16 @@ import {
   type Source,
   type Status,
   type Version,
+  errorText,
   nameOf,
   readAheadOn,
   useServers,
   useVersions,
 } from '@/lib/emby'
 import { useT } from '@/lib/i18n'
+import { type PlayError, playVersion } from '@/lib/player'
 import { asideOf, audioLabel, noTrack, picksOf, releaseNameOf, specOf, subtitleLabel, subtitlesOf } from '@/lib/tracks'
-import { type Media, mediaTypes } from '@/lib/tmdb'
+import { type Card, mediaTypes, titleOf } from '@/lib/tmdb'
 import { cn, play, star } from '@/lib/utils'
 
 // The 片源 picked: on which server, signed in as whom, and the server's own id for the 作品 there.
@@ -68,7 +70,7 @@ export function Sources({
   eager,
   extra,
 }: {
-  m: Pick<Media, 'media_type'>
+  m: Card
   found: ServerSource[]
   pick?: ServerSource
   searching: boolean
@@ -147,7 +149,15 @@ export function Sources({
           {extra}
         </div>
       ) : (
-        <Tracks s={pick?.s} item={pick?.src.item} given={pick?.src.versions ?? []} eager={eager} why={none} after={extra}>
+        <Tracks
+          s={pick?.s}
+          item={pick?.src.item}
+          given={pick?.src.versions ?? []}
+          eager={eager}
+          why={none}
+          title={titleOf(m)}
+          after={extra}
+        >
           {list}
         </Tracks>
       )}
@@ -203,14 +213,16 @@ function SourceOption({
 // 播放, then what a movie's 片源 or an episode plays: its 版本, 音频 and 字幕, each an icon opening its list, with
 // `children` (the 片源's list, on the 画报墙) before them. A file the server hasn't read is read once its tracks are
 // wanted: at once when `eager` (a 片源 or an episode picked), else once one of these is pointed at or opened; till then,
-// and if it can't be, they're picked in the player. Without an item the three don't open, and say `why`. `after` (收藏,
-// on the 画报墙) follows 字幕.
+// and if it can't be, they're picked in the player. Without an item the three don't open, and say `why`. 播放 opens the
+// version picked in the player's window, named `title` there; one that couldn't be opened says why under the row.
+// `after` (收藏, on the 画报墙) follows 字幕.
 export function Tracks({
   s,
   item,
   given,
   eager,
   why,
+  title,
   children,
   after,
 }: {
@@ -219,6 +231,7 @@ export function Tracks({
   given: Version[]
   eager: boolean
   why?: string
+  title: string
   children?: ReactNode
   after?: ReactNode
 }) {
@@ -244,6 +257,29 @@ export function Tracks({
     onOpen: () => setOpened(at),
     intent: s && item ? readAheadOn(s, item, given) : undefined,
   }
+  // the version being opened, and why the last one tried couldn't be, shown while it's still the one picked
+  const [opening, setOpening] = useState(false)
+  const [failed, setFailed] = useState<{ on: string; error: PlayError }>()
+  const on = `${at}/${v?.id}`
+  // why 播放 can't: no 片源 picked (`why`), no version on it, or one only the server can play
+  const whyNot = !item
+    ? why
+    : !v
+      ? t('这里没有能播放的版本', 'No version here to play')
+      : v.direct
+        ? undefined
+        : errorText({ kind: 'notDirect' }, t)
+  // one at a time; but not held up by the server reading the tracks, which playing doesn't need
+  const start = () => {
+    if (!s || !item || !v || opening) return
+    setOpening(true)
+    playVersion({ server: s.id, user: s.userId, item, version: v.id, title })
+      .then(
+        () => setFailed(undefined),
+        (error: PlayError) => setFailed({ on, error }),
+      )
+      .finally(() => setOpening(false))
+  }
   // in place of the 音轨 and 字幕 while the server reads the file, or when it can't
   const unread = (
     <div role="status" className="max-w-64 px-2.5 py-1.5 text-name leading-5 text-muted-foreground">
@@ -257,84 +293,94 @@ export function Tracks({
     </div>
   )
   return (
-    <div className="flex items-center gap-7">
-      <Play reading={reading} />
-      <div className="flex items-start gap-5">
-        {children}
-        <Menu
-          kind="version"
-          label={t('版本', 'Version')}
-          icon={(className) => <Constellation lines={gem} className={className} />}
-          current={v && releaseNameOf(v)}
-          {...menu}
-        >
-          {versions.map((x) => (
-            <Option
-              key={x.id}
-              name={`${name}v`}
-              picked={x.id === v?.id}
-              onPick={() => setPicks({ at, version: x.id })}
-              label={releaseNameOf(x)}
-              // the server's name for it too, where two are one release (copies in two folders)
-              aside={versions.some((y) => y !== x && releaseNameOf(y) === releaseNameOf(x)) ? x.name : undefined}
-              detail={specOf(x)}
-            />
-          ))}
-        </Menu>
-        <Menu
-          kind="audio"
-          label={t('音频', 'Audio')}
-          icon={(className) => <Constellation lines={wave} className={className} />}
-          current={v?.video && a && audioLabel(a, t)}
-          {...menu}
-        >
-          {!v?.video
-            ? unread
-            : v.audio.length
-              ? v.audio.map((x) => (
+    <div>
+      <div className="flex items-center gap-7">
+        <Play busy={reading || opening} why={whyNot} onPlay={start} />
+        <div className="flex items-start gap-5">
+          {children}
+          <Menu
+            kind="version"
+            label={t('版本', 'Version')}
+            icon={(className) => <Constellation lines={gem} className={className} />}
+            current={v && releaseNameOf(v)}
+            {...menu}
+          >
+            {versions.map((x) => (
+              <Option
+                key={x.id}
+                name={`${name}v`}
+                picked={x.id === v?.id}
+                onPick={() => setPicks({ at, version: x.id })}
+                label={releaseNameOf(x)}
+                // the server's name for it too, where two are one release (copies in two folders)
+                aside={versions.some((y) => y !== x && releaseNameOf(y) === releaseNameOf(x)) ? x.name : undefined}
+                detail={specOf(x)}
+              />
+            ))}
+          </Menu>
+          <Menu
+            kind="audio"
+            label={t('音频', 'Audio')}
+            icon={(className) => <Constellation lines={wave} className={className} />}
+            current={v?.video && a && audioLabel(a, t)}
+            {...menu}
+          >
+            {!v?.video
+              ? unread
+              : v.audio.length
+                ? v.audio.map((x) => (
+                    <Option
+                      key={x.index}
+                      name={`${name}a`}
+                      picked={x.index === audio}
+                      onPick={() => setPicks({ ...own, audio: x.index })}
+                      label={audioLabel(x, t)}
+                    />
+                  ))
+                : <p className="px-2.5 py-1.5 text-name text-muted-foreground">{t('没有音轨', 'No audio')}</p>}
+          </Menu>
+          <Menu
+            kind="subtitle"
+            label={t('字幕', 'Subtitles')}
+            icon={(className) => <Constellation lines={captions} className={className} />}
+            current={v?.video && (subtitle === noTrack ? t('关闭', 'Off') : sub && subtitleLabel(sub, t))}
+            {...menu}
+          >
+            {!v?.video ? (
+              unread
+            ) : (
+              <>
+                <Option
+                  name={`${name}s`}
+                  picked={subtitle === noTrack}
+                  onPick={() => setPicks({ ...own, subtitle: noTrack })}
+                  label={t('关闭', 'Off')}
+                />
+                {/* those in the language shown first; a film can carry thirty, so the list scrolls */}
+                {subtitles.map((x) => (
                   <Option
                     key={x.index}
-                    name={`${name}a`}
-                    picked={x.index === audio}
-                    onPick={() => setPicks({ ...own, audio: x.index })}
-                    label={audioLabel(x, t)}
+                    name={`${name}s`}
+                    picked={x.index === subtitle}
+                    onPick={() => setPicks({ ...own, subtitle: x.index })}
+                    label={subtitleLabel(x, t)}
+                    aside={asideOf(x, t)}
                   />
-                ))
-              : <p className="px-2.5 py-1.5 text-name text-muted-foreground">{t('没有音轨', 'No audio')}</p>}
-        </Menu>
-        <Menu
-          kind="subtitle"
-          label={t('字幕', 'Subtitles')}
-          icon={(className) => <Constellation lines={captions} className={className} />}
-          current={v?.video && (subtitle === noTrack ? t('关闭', 'Off') : sub && subtitleLabel(sub, t))}
-          {...menu}
-        >
-          {!v?.video ? (
-            unread
-          ) : (
-            <>
-              <Option
-                name={`${name}s`}
-                picked={subtitle === noTrack}
-                onPick={() => setPicks({ ...own, subtitle: noTrack })}
-                label={t('关闭', 'Off')}
-              />
-              {/* those in the language shown first; a film can carry thirty, so the list scrolls */}
-              {subtitles.map((x) => (
-                <Option
-                  key={x.index}
-                  name={`${name}s`}
-                  picked={x.index === subtitle}
-                  onPick={() => setPicks({ ...own, subtitle: x.index })}
-                  label={subtitleLabel(x, t)}
-                  aside={asideOf(x, t)}
-                />
-              ))}
-            </>
-          )}
-        </Menu>
-        {after}
+                ))}
+              </>
+            )}
+          </Menu>
+          {after}
+        </div>
       </div>
+      {failed?.on === on && (
+        <Failed
+          // in words as it's drawn, so in the language shown
+          error={failed.error?.kind === 'player' ? t('播放器没能打开', "The player couldn't start") : errorText(failed.error, t)}
+          retry={start}
+          className="mt-4"
+        />
+      )}
     </div>
   )
 }
@@ -475,27 +521,26 @@ export function Option({
   )
 }
 
-// 播放, the logo's triangle alone, glowing, its lines drawing in as the page opens and over and over while the server
-// reads the file. It plays nothing yet: the player comes next (docs/playback-plan.md, M1 and M2).
-function Play({ reading }: { reading: boolean }) {
+// 播放, the logo's triangle alone, glowing, its lines drawing in as the page opens and over and over while `busy` (the
+// server reading the file, or the version being opened). One that can't play says `why` in its title, and stays
+// focusable to say it.
+function Play({ busy, why, onPlay }: { busy: boolean; why?: string; onPlay: () => void }) {
   const t = useT()
   return (
-    // focusable, though it does nothing, so its title can say why
     <button
       type="button"
-      aria-disabled
+      aria-disabled={!!why}
       aria-label={t('播放', 'Play')}
-      title={t('播放器还在做', "The player isn't ready yet")}
-      className="grid size-11 shrink-0 cursor-not-allowed place-items-center text-star drop-shadow-glow-lg"
+      title={why}
+      onClick={() => why || onPlay()}
+      className="grid size-11 shrink-0 cursor-pointer place-items-center text-star drop-shadow-glow-lg transition-colors not-aria-disabled:hover:text-shine aria-disabled:cursor-not-allowed aria-disabled:opacity-35"
     >
       <Constellation
         lines={play}
         className={cn(
           'size-full [&_polyline]:[stroke-dasharray:1]',
           // one of the two only: both set the animation, and the stylesheet's order would pick, not the order here
-          reading
-            ? 'motion-safe:[&_polyline]:animate-trace-loop'
-            : 'motion-safe:[&_polyline]:animate-trace',
+          busy ? 'motion-safe:[&_polyline]:animate-trace-loop' : 'motion-safe:[&_polyline]:animate-trace',
         )}
       />
     </button>

@@ -13,7 +13,8 @@ reqwest = { version = "0.13", features = ["json", "query"] }
 rustls = { version = "0.23", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["rt", "sync"] }
+# and net and time, to resolve a server's name in time, as its links play only from near enough (sources.rs)
+tokio = { version = "1", features = ["rt", "sync", "net", "time"] }
 url = "2"
 
 [dev-dependencies]
