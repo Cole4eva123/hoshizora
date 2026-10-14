@@ -88,15 +88,6 @@
       scale: 0 1;
     }
   }
-  /* a constellation's lines drawing themselves in (a dash of 1, its polylines' pathLength): the 播放 triangle as a 片源
-     opens, and over and over while the server reads the file */
-  --animate-trace: trace 0.9s ease-out both;
-  --animate-trace-loop: trace 1.6s ease-in-out infinite;
-  @keyframes trace {
-    from {
-      stroke-dashoffset: 1;
-    }
-  }
   /* the player's corner message (IINA's OSD): there a second, then gone */
   --animate-corner: corner 1.2s ease-out forwards;
   @keyframes corner {

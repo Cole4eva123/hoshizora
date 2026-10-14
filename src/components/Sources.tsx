@@ -297,7 +297,7 @@ export function Tracks({
   return (
     <div>
       <div className="flex items-center gap-7">
-        <Play busy={reading || opening} why={whyNot} onPlay={start} />
+        <Play opening={opening} why={whyNot} onPlay={start} />
         <div className="flex items-start gap-5">
           {children}
           <Menu
@@ -457,28 +457,22 @@ export function Menu({
   )
 }
 
-// 播放, the logo's triangle alone, glowing, its lines drawing in as the page opens and over and over while `busy` (the
-// server reading the file, or the version being opened). One that can't play says `why` in its title, and stays
-// focusable to say it.
-function Play({ busy, why, onPlay }: { busy: boolean; why?: string; onPlay: () => void }) {
+// 播放, the logo's triangle alone, glowing, and still (the user wants no motion on it): dimmed while the version is
+// `opening`, as a press then does nothing (one while the server reads the file plays at once, on the file's own
+// tracks). One that can't play says `why` in its title, and stays focusable to say it.
+function Play({ opening, why, onPlay }: { opening: boolean; why?: string; onPlay: () => void }) {
   const t = useT()
   return (
     <button
       type="button"
       aria-disabled={!!why}
+      aria-busy={opening}
       aria-label={t('播放', 'Play')}
       title={why}
       onClick={() => why || onPlay()}
-      className="grid size-11 shrink-0 cursor-pointer place-items-center text-star drop-shadow-glow-lg transition-colors not-aria-disabled:hover:text-shine aria-disabled:cursor-not-allowed aria-disabled:opacity-35"
+      className="grid size-11 shrink-0 cursor-pointer place-items-center text-star drop-shadow-glow-lg transition-colors not-aria-disabled:not-aria-busy:hover:text-shine aria-busy:cursor-progress aria-busy:opacity-60 aria-disabled:cursor-not-allowed aria-disabled:opacity-35"
     >
-      <Constellation
-        lines={play}
-        className={cn(
-          'size-full [&_polyline]:[stroke-dasharray:1]',
-          // one of the two only: both set the animation, and the stylesheet's order would pick, not the order here
-          busy ? 'motion-safe:[&_polyline]:animate-trace-loop' : 'motion-safe:[&_polyline]:animate-trace',
-        )}
-      />
+      <Constellation lines={play} className="size-full" />
     </button>
   )
 }
