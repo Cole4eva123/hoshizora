@@ -4,6 +4,7 @@
 
 mod layer;
 mod mpv;
+mod now;
 
 use std::ffi::c_int;
 use std::ptr::NonNull;
@@ -26,6 +27,7 @@ use tauri::WindowEvent;
 
 use layer::Picture;
 use mpv::{Event, Mpv};
+use now::Remote;
 
 // the player's window, as its capability names it (capabilities/player.json)
 const LABEL: &str = "player";
@@ -124,13 +126,14 @@ impl State {
     }
 }
 
-/// What the page asks of the player: to pause or play (whichever it isn't), seek to a time or by some seconds,
-/// set the volume or step it, mute or unmute, go full screen or back (or the other), and show the window's own title bar
-/// or hide it, as its controls are. A toggle or a step is worked out here from where it is, so presses faster than the
-/// page hears back add up.
+/// What the page asks of the player (and the Mac's own controls, `now`): to pause or play, or whichever it isn't, seek
+/// to a time or by some seconds, set the volume or step it, mute or unmute, go full screen or back (or the other), and
+/// show the window's own title bar or hide it, as its controls are. A toggle or a step is worked out here from where it
+/// is, so presses faster than the page hears back add up.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Command {
+    Pause { paused: bool },
     TogglePause,
     Seek { to: f64 },
     Skip { by: f64 },
@@ -152,6 +155,8 @@ struct Playing {
     state: Arc<Mutex<State>>,
     // what's asked of mpv, done one after another, in the order asked, off the main thread (as IINA's queue does)
     jobs: Sender<Job>,
+    // the Mac's media keys and 正在播放, taken while the player is open
+    _remote: Remote,
 }
 
 // one thing asked of mpv, done on the jobs' thread
@@ -205,7 +210,7 @@ impl Playing {
                 move || listen(&app, &mpv, &state)
             })
             .map_err(|e| e.to_string())?;
-        Ok(Playing { picture: Some(picture), state, jobs })
+        Ok(Playing { picture: Some(picture), state, jobs, _remote: Remote::take(app) })
     }
 }
 
@@ -230,16 +235,9 @@ impl Player {
             Command::Fullscreen { on } => return fullscreen(app, |_| on),
             Command::ToggleFullscreen => return fullscreen(app, |window| !window.is_fullscreen().unwrap_or_default()),
             Command::Chrome { shown } => return chrome(app, shown),
-            // at the end, where keep-open holds it paused on the last frame, playing again starts it over
-            Command::TogglePause => Box::new(|mpv| {
-                // none while a version opens, which pausing is still for
-                if mpv.flag("eof-reached").unwrap_or(false) {
-                    mpv.command(&["seek", "0", "absolute"])?;
-                    mpv.set_flag("pause", false)
-                } else {
-                    mpv.command(&["cycle", "pause"])
-                }
-            }),
+            Command::Pause { paused: true } => Box::new(|mpv| mpv.set_flag("pause", true)),
+            Command::Pause { paused: false } => Box::new(play),
+            Command::TogglePause => Box::new(|mpv| if mpv.flag("pause")? { play(mpv) } else { mpv.set_flag("pause", true) }),
             Command::Seek { to } => Box::new(move |mpv| mpv.command(&["seek", &to.to_string(), "absolute"])),
             // exact, as mpv's relative seeks go to a keyframe, which a film may have only every 10 s
             Command::Skip { by } => Box::new(move |mpv| mpv.command(&["seek", &by.to_string(), "relative+exact"])),
@@ -258,6 +256,15 @@ impl Player {
             let _ = p.jobs.send(job);
         }
     }
+}
+
+// Plays: at the end, where keep-open holds it paused on the last frame, from the start again. (`eof-reached` has no
+// value while a version opens, which playing is still for.)
+fn play(mpv: &Mpv) -> Result<(), String> {
+    if mpv.flag("eof-reached").unwrap_or(false) {
+        mpv.command(&["seek", "0", "absolute"])?;
+    }
+    mpv.set_flag("pause", false)
 }
 
 // Full screen or back, as `on` says of the window as it is now.
@@ -379,6 +386,7 @@ fn listen(app: &AppHandle, mpv: &Mpv, state: &Mutex<State>) {
     let (mut width, mut height, mut resized, mut sized) = (None, None, false, false);
     // while it plays, the screen doesn't dim or sleep, as IINA keeps it (SleepPreventer.swift); paused or done, it may
     let mut awake: Option<Activity> = None;
+    let mut teller = now::Teller::default();
     let info = NSProcessInfo::processInfo();
     let let_sleep = |awake: &mut Option<Activity>| {
         if let Some(activity) = awake.take() {
@@ -406,6 +414,7 @@ fn listen(app: &AppHandle, mpv: &Mpv, state: &Mutex<State>) {
                 }
                 let now = s.clone();
                 drop(s);
+                teller.tell(app, &now);
                 let _ = app.emit_to(LABEL, STATE, now);
                 wait = -1.0;
                 continue;
