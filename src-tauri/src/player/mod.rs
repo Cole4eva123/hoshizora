@@ -5,6 +5,7 @@
 mod layer;
 mod mpv;
 mod now;
+mod symbol;
 
 use std::ffi::c_int;
 use std::ptr::NonNull;
@@ -28,6 +29,7 @@ use tauri::WindowEvent;
 use layer::Picture;
 use mpv::{Event, Mpv};
 use now::Remote;
+pub use symbol::symbol;
 
 // the player's window, as its capability names it (capabilities/player.json)
 const LABEL: &str = "player";
@@ -100,7 +102,8 @@ const LEAST: (f64, f64) = (480.0, 270.0);
 #[derive(Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct State {
-    /// the 作品, as the page that opened the player names it
+    /// the 作品, as the page that opened the player names it: the window's title, 正在播放's (now.rs), and the page's
+    /// while a version opens, as a full screen shows no title bar
     title: String,
     /// where it's at and how long it is, in seconds; none till the file says
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -125,6 +128,8 @@ pub struct State {
     fullscreen: bool,
     /// how many seeks have landed, for the page's corner to tell where
     seeks: u64,
+    /// how many versions have been asked for, so a pick from a menu shown for one isn't put on the next
+    opens: u64,
     /// the file's 音轨 and 字幕, as mpv has them, and how late the subtitles are put (seconds; early when less than 0)
     audio: Vec<Track>,
     subtitles: Vec<Track>,
@@ -192,7 +197,8 @@ fn sid_of(id: i64) -> String {
 /// to a time or by some seconds, set the volume or step it, mute or unmute, go full screen or back (or the other), show
 /// the window's own title bar or hide it, as its controls are, pick the 音轨 or 字幕 (or none), and put the 字幕 later
 /// or sooner, or higher. A toggle or a step is worked out here from where it is, so presses faster than the page hears
-/// back add up.
+/// back add up. A pick names the version it was shown for (`State.opens`), and one shown for an earlier one is dropped,
+/// as the 作品 page may have asked for another meanwhile.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Command {
@@ -206,9 +212,9 @@ pub enum Command {
     Fullscreen { on: bool },
     ToggleFullscreen,
     Chrome { shown: bool },
-    Audio { id: i64 },
+    Audio { id: i64, opens: u64 },
     /// `NO_TRACK` for none, as the 作品 page's picks have it
-    Subtitle { id: i64 },
+    Subtitle { id: i64, opens: u64 },
     SubDelay { by: f64 },
     /// where the 字幕 sit, in % of the window's height (100: their own place)
     SubPos { pos: f64 },
@@ -302,6 +308,8 @@ impl Player {
     }
 
     pub fn command(&self, app: &AppHandle, command: Command) {
+        // the version a pick was shown for, checked as it's queued (below)
+        let mut shown_for = None;
         let job: Job = match command {
             // the window's, done at once, needing no mpv; a toggle mid-way waits for the change under way (tao)
             Command::Fullscreen { on } => return fullscreen(app, |_| on),
@@ -323,12 +331,23 @@ impl Player {
                 mpv.command(&["add", "volume", &by.to_string()])
             }),
             Command::ToggleMute => Box::new(|mpv| mpv.command(&["cycle", "mute"])),
-            Command::Audio { id } => Box::new(move |mpv| mpv.command(&["set", "aid", &id.to_string()])),
-            Command::Subtitle { id } => Box::new(move |mpv| mpv.command(&["set", "sid", &sid_of(id)])),
+            Command::Audio { id, opens } => {
+                shown_for = Some(opens);
+                Box::new(move |mpv| mpv.command(&["set", "aid", &id.to_string()]))
+            }
+            Command::Subtitle { id, opens } => {
+                shown_for = Some(opens);
+                Box::new(move |mpv| mpv.command(&["set", "sid", &sid_of(id)]))
+            }
             Command::SubDelay { by } => Box::new(move |mpv| mpv.command(&["add", "sub-delay", &by.to_string()])),
             Command::SubPos { pos } => Box::new(move |mpv| mpv.set_double("sub-pos", pos.clamp(0.0, 100.0))),
         };
+        // checked and queued under the lock open_here counts and queues a version under, so a pick is either in the queue
+        // before that version's loadfile or seen to be shown for the last one
         if let Some(p) = self.0.lock().unwrap().as_ref() {
+            if shown_for.is_some_and(|opens| opens != p.state.lock().unwrap().opens) {
+                return;
+            }
             let _ = p.jobs.send(job);
         }
     }
@@ -406,6 +425,7 @@ fn open_here(app: &AppHandle, play: &Play, title: String, picks: Picks) -> Resul
         // rest of its state goes when mpv starts this one (`listen`)
         let mut s = p.state.lock().unwrap();
         (s.title, s.from, s.position, s.next) = (title.clone(), (play.start > 0.0).then_some(play.start), None, true);
+        s.opens += 1;
         s.picks = Some((play.url.clone(), picks));
         let _ = app.emit_to(LABEL, STATE, s.clone());
         drop(s);
@@ -558,7 +578,7 @@ fn listen(app: &AppHandle, mpv: &Mpv, state: &Mutex<State>) {
                 return;
             }
             Event::Log(line) => eprint!("mpv: {line}"),
-            // a file starting, in order after the last one's events, so its state goes here: the page's title card shows
+            // a file starting, in order after the last one's events, so its state goes here: the page's wait shows
             Event::StartFile => {
                 (loading, resized, sized) = (true, false, false);
                 (s.position, s.duration, s.ended, s.failed, s.next) = (None, None, false, None, false);

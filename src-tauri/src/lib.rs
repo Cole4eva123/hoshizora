@@ -138,6 +138,12 @@ pub fn run() {
             app.manage(Player::default());
             Ok(())
         })
+        // the Mac's own symbols, which the player's controls are drawn with (player/symbol.rs): off the main thread, which
+        // a window opening asks for a dozen of at once
+        .register_asynchronous_uri_scheme_protocol("symbol", |asked, request, responder| {
+            let webview = asked.webview_label().to_owned();
+            tauri::async_runtime::spawn_blocking(move || responder.respond(player::symbol(&webview, &request)));
+        })
         .invoke_handler(tauri::generate_handler![
             emby_servers,
             emby_add,

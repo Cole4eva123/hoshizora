@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "player",
-  "description": "the player's window: hearing how playing goes, telling the player what to do (build.rs), and being moved by a press dragged on the picture",
+  "description": "the player's window: hearing how playing goes, telling the player what to do (build.rs), being moved by a press dragged on the picture, and its 音轨 and 字幕 menu (made, shown, and freed for the next)",
   "windows": [
     "player"
   ],
@@ -9,6 +9,9 @@
     "core:event:default",
     "core:window:allow-start-dragging",
     "allow-player-state",
-    "allow-player-command"
+    "allow-player-command",
+    "core:menu:allow-new",
+    "core:menu:allow-popup",
+    "core:resources:allow-close"
   ]
 }

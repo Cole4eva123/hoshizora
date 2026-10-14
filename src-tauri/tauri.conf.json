@@ -25,7 +25,7 @@
       "csp": {
         "default-src": "'self'",
         "connect-src": "'self' ipc: http://ipc.localhost https://api.themoviedb.org https://api.mdblist.com",
-        "img-src": "'self' data: https: http:",
+        "img-src": "'self' data: https: http: symbol:",
         "font-src": "'self' data:",
         "object-src": "'none'",
         "base-uri": "'self'"

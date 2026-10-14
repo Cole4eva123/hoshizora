@@ -2,8 +2,8 @@ import { type ReactNode, useRef } from 'react'
 import type { readAheadOn } from '@/lib/emby'
 import { cn } from '@/lib/utils'
 
-// The lists of the 作品 page's `Menu` and the player's 音轨 and 字幕, in a file of their own, so the player's page takes
-// them without the 作品 page's Emby.
+// The lists of the 作品 page's menus, in a file of their own as two components draw them: `Menu`'s (Sources.tsx) and
+// `Favorite`'s.
 
 // A list of Options under its icon and name, opening from the button whose popoverTarget is its `id` (a native popover,
 // placed and drawn by the caller's classes): a pointer's pick or Enter puts it away, as a menu's does, where the arrow

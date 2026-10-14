@@ -1,6 +1,6 @@
 # 播放方案
 
-照 IINA 的路线做：点「播放」弹出播放窗口，mpv 画画面，控制条浮在上面。和 IINA 不同的只有两处：控制条用 React 画（放映室的样子），地址由 Rust 从 Emby 拿。
+照 IINA 的路线做：点「播放」弹出播放窗口，mpv 画画面，控制条浮在上面。和 IINA 不同的只有两处：控制条用 React 画（样子照 IINA 在 macOS 26 上的，原生最要紧，不套放映室的主题），地址由 Rust 从 Emby 拿。
 
 ## 框架
 
@@ -20,7 +20,7 @@ Rust ── emby-core：拿到片源自己的链接（.strm 里的那个），to
 
 - **地址**：能直接播的片源（远程链接）直接给 mpv；服务器硬盘上的文件这一轮先不播。
 - **画面层**：照 IINA 的写法，后台线程画，跟屏幕刷新同步。走不通就换 MaxVideoPlayer 的 NSOpenGLView。
-- **交互**：照 IINA 的默认习惯（自动隐藏、提示文字、鼠标和键盘、媒体键），样子用放映室的。
+- **交互和样子**：都照 IINA 的默认（自动隐藏、提示文字、鼠标和键盘、媒体键；浮动控制条、系统图标、原生菜单）。
 - **mpv 设置**：不带请求头、校验证书、User-Agent 和 Rust 一致。
 
 ## 借鉴 IINA
@@ -49,6 +49,12 @@ Rust ── emby-core：拿到片源自己的链接（.strm 里的那个），to
 - 角落提示文字显示 1 秒：暂停、跳转、音量、倍速、换轨、静音
 - 鼠标：双击全屏；单击只隐藏控制条，不暂停；右键暂停；竖向滚动调音量，横向滚动拖进度
 - 键盘：空格暂停，← → 跳 5 秒，↑ ↓ 音量，回车/Esc 进出全屏，f 切全屏，m 静音，Shift+← → 调字幕时间
+
+**样子（M3，原生化时重做）**（`OSCFloatingView.swift`、`TranslucentView.swift`、`OSDView.swift`、`BufferIndicatorView.swift`、`PlaySliderCell.swift`、`VolumeButton.swift`）
+- 底部居中的浮动控制条：宽 460、圆角 12，离底部一成窗高；上排音量、◀◀ ▶ ▶▶、字幕菜单和全屏，下排两个时间夹着进度条
+- macOS 26 上是 Liquid Glass。原生的 `NSGlassEffectView` 垫在 WebView 下面会让整个网页看不见，所以用 CSS 仿：`backdrop-filter` 能模糊到下面 mpv 的画面，亮度照原生玻璃量过的减半
+- 图标是系统的 SF Symbols，由 Rust 现画成图片（`symbol://`），不随 App 打包；音轨字幕用原生菜单
+- 角落提示、等待（系统样式的转圈）也在玻璃框里
 
 **HDR（M6）**（`VideoView.swift`）
 - HDR 片源配上支持 EDR 的屏幕：画面层开 EDR，色彩空间用 BT.2100 PQ，mpv 输出 PQ；其他情况用屏幕自己的色彩配置

@@ -8,10 +8,11 @@ import type { EmbyError } from '@/lib/emby'
 // hears how playing goes.
 
 // How playing goes, sent whole on each change (the Rust side's player::State): the 作品 as its page named it, where it's
-// at and how long it is (seconds, once the file says), whether it waits (opening, seeking, or the network behind), is
-// paused, has ended (on its last frame), or failed, why in mpv's words; where it picked up, when the user left off
-// there; the volume (0 to 100) and whether it's muted, whether the window is full screen, how many seeks have landed
-// (for the page's corner to tell where), the file's 音轨 and 字幕, and how late the subtitles are put (seconds).
+// at and how long it is (seconds, once the file says), whether it waits (opening, seeking,
+// or the network behind), is paused, has ended (on its last frame), or failed, why in mpv's words; where it picked up,
+// when the user left off there; the volume (0 to 100) and whether it's muted, whether the window is full screen, how
+// many seeks have landed (for the page's corner to tell where) and how many versions have been asked for, the file's 音轨
+// and 字幕, and how late the subtitles are put (seconds).
 export type PlayerState = {
   title: string
   position?: number
@@ -25,6 +26,7 @@ export type PlayerState = {
   muted: boolean
   fullscreen: boolean
   seeks: number
+  opens: number
   audio: PlayerTrack[]
   subtitles: PlayerTrack[]
   subDelay: number
@@ -44,9 +46,10 @@ export type PlayerTrack = {
 
 // What the player's page asks of the player: pause or play (whichever it isn't, or from the start at the end), seek to
 // a time or by some seconds, set the volume or step it, mute or unmute, go full screen or back (or toggle it), show or
-// hide the window's own title bar with the controls, pick the 音轨 or 字幕 (noTrack: off), and put the 字幕 later or sooner
-// (seconds), or higher (`pos`, mpv's sub-pos: % of the window's height, 100 their own place). A toggle or a step is
-// worked out by the player from where it is, so presses faster than its answers add up.
+// hide the window's own title bar with the controls, pick the 音轨 or 字幕 (noTrack: off) from a menu shown for the
+// `opens`th version (the player drops a pick shown for an earlier one), and put the 字幕 later or sooner (seconds), or
+// higher (`pos`, mpv's sub-pos: % of the window's height, 100 their own place). A toggle or a step is worked out by the
+// player from where it is, so presses faster than its answers add up.
 export type Command =
   | { kind: 'togglePause' }
   | { kind: 'seek'; to: number }
@@ -57,8 +60,8 @@ export type Command =
   | { kind: 'fullscreen'; on: boolean }
   | { kind: 'toggleFullscreen' }
   | { kind: 'chrome'; shown: boolean }
-  | { kind: 'audio'; id: number }
-  | { kind: 'subtitle'; id: number }
+  | { kind: 'audio'; id: number; opens: number }
+  | { kind: 'subtitle'; id: number; opens: number }
   | { kind: 'subDelay'; by: number }
   | { kind: 'subPos'; pos: number }
 export const command = (command: Command) => invoke('player_command', { command })
@@ -100,4 +103,14 @@ export function clockOf(seconds: number) {
   const [h, m, sec] = [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60]
   const two = (n: number) => String(n).padStart(2, '0')
   return h ? `${h}:${two(m)}:${two(sec)}` : `${m}:${two(sec)}`
+}
+
+// The speaker as IINA draws it, an SF Symbol: crossed out when muted, its waves as loud as it is.
+export function speakerOf({ muted, volume }: Pick<PlayerState, 'muted' | 'volume'>) {
+  const v = Math.round(volume)
+  if (muted) return 'speaker.slash.fill'
+  if (v === 0) return 'speaker.fill'
+  if (v <= 33) return 'speaker.wave.1.fill'
+  if (v <= 66) return 'speaker.wave.2.fill'
+  return 'speaker.wave.3.fill'
 }

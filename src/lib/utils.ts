@@ -11,9 +11,9 @@ export const cn = createCn({
   extend: {
     theme: {
       text: ["body", "name", "detail"],
-      shadow: ["dot", "dot-lg", "lit"],
-      "drop-shadow": ["glow", "glow-lg"],
-      "text-shadow": ["glow", "night"],
+      shadow: ["dot", "dot-lg", "lit", "glass", "hairline"],
+      "drop-shadow": ["glow", "glow-lg", "knob"],
+      "text-shadow": ["glow"],
     },
   },
 })
@@ -84,15 +84,6 @@ export const dialogBox =
 
 // The logo's play triangle, three stars: the 播放 button on a 作品's 画报墙.
 export const play: Star[][] = [[[7, 4], [20, 12], [7, 20], [7, 4]]]
-
-// A sound wave (音频) and a screen with two lines of words along its foot (字幕): a 片源's on the 作品 page, and the
-// player's.
-export const wave: Star[][] = [[[2, 13, 1.1], [6, 13], [9, 5.5], [13, 19], [16, 8.5], [19, 13], [22, 13, 1.1]]]
-export const captions: Star[][] = [
-  [[2, 5], [22, 5], [22, 19], [2, 19], [2, 5]],
-  [[6, 12.5, 1.1], [18, 12.5, 1.1]],
-  [[6, 15.5, 1.1], [13, 15.5, 1.1]],
-]
 
 // Two sliders, bigger stars for their knobs: the corner menu's 设置, and a 服务器's settings on its tile.
 export const sliders: Star[][] = [

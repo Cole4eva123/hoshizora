@@ -19,7 +19,8 @@ use tauri::{AppHandle, Manager};
 
 use super::{Command, Player, State};
 
-// a skip from Control Center or a headset, as the page's arrows are 5 s and a remote's buttons are fewer
+// a skip from Control Center or a headset, as the page's arrows are 5 s and a remote's buttons are fewer; the controls'
+// ◀◀ ▶▶ skip as far (pages/Player.tsx `step.skip`)
 const SKIP: f64 = 10.0;
 
 /// The Mac's commands, taken while the player is open, and given back (with 正在播放 cleared) when it closes.

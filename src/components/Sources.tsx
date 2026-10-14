@@ -20,16 +20,22 @@ import { useT } from '@/lib/i18n'
 import { type PlayError, playVersion } from '@/lib/player'
 import { asideOf, audioLabel, noTrack, picksOf, releaseNameOf, specOf, subtitleLabel, subtitlesOf } from '@/lib/tracks'
 import { type Card, mediaTypes, titleOf } from '@/lib/tmdb'
-import { captions, cn, play, star, wave } from '@/lib/utils'
+import { cn, play, star } from '@/lib/utils'
 
 // The 片源 picked: on which server, signed in as whom, and the server's own id for the 作品 there.
 export type Picked = { server: string; user: string; item: string }
 
-// A 片源's versions, drawn like the logo: a cut gem with its girdle across (版本); its 音频 and 字幕 are utils' `wave` and
-// `captions`, which the player shares.
+// What a 片源 plays, drawn like the logo: a cut gem with its girdle across (版本), a sound wave (音频), and a screen with
+// two lines of words along its foot (字幕).
 const gem: Star[][] = [
   [[3, 9], [8, 4], [16, 4], [21, 9], [12, 20.5], [3, 9]],
   [[3, 9], [21, 9]],
+]
+const wave: Star[][] = [[[2, 13, 1.1], [6, 13], [9, 5.5], [13, 19], [16, 8.5], [19, 13], [22, 13, 1.1]]]
+const captions: Star[][] = [
+  [[2, 5], [22, 5], [22, 19], [2, 19], [2, 5]],
+  [[6, 12.5, 1.1], [18, 12.5, 1.1]],
+  [[6, 15.5, 1.1], [13, 15.5, 1.1]],
 ]
 
 // Where each list opens from, by CSS anchor names written out whole for Tailwind; a page shows one list of each.
