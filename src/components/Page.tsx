@@ -22,7 +22,7 @@ export function Page({
     <div className="px-(--gutter) pt-(--page-top) pb-(--page-bottom)">
       {back && <BackButton />}
       {/* a long English word (Documentaries, Schwarzenegger) is hyphenated rather than run off a phone's screen */}
-      <h1 className={hideTitle ? 'sr-only' : 'font-heading text-5xl font-black wrap-break-word hyphens-auto md:text-7xl'}>
+      <h1 className={hideTitle ? 'sr-only' : 'font-heading text-5xl font-extrabold wrap-break-word hyphens-auto md:text-7xl'}>
         {title}
       </h1>
       <div className={hideTitle ? undefined : 'mt-8 md:mt-10'}>{children}</div>
@@ -61,8 +61,8 @@ export function ToLibrary({ children }: { children?: ReactNode }) {
   )
 }
 
-// A section's serif heading: a row's, an empty state's, an actor's 作品.
-export const sectionTitle = 'font-heading text-xl font-black md:text-2xl'
+// A section's heading: a row's, an empty state's, an actor's 作品.
+export const sectionTitle = 'font-heading text-xl font-extrabold md:text-2xl'
 
 // What an empty page or section says, and where to go to fill it.
 export function EmptyState({ title, children }: { title: string; children: ReactNode }) {

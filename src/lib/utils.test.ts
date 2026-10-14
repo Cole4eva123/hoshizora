@@ -14,7 +14,7 @@ test("the theme's sizes and glows merge as sizes and glows, not as colours", () 
   expect(cn('[&_svg]:drop-shadow-glow text-star')).toBe('[&_svg]:drop-shadow-glow text-star')
 })
 
-test('every size and glow index.css adds to the theme is one cn merges as such', async () => {
+test('every size, glow and font index.css adds to the theme is one cn merges as such', async () => {
   const css = await Bun.file(`${import.meta.dir}/../index.css`).text()
   const names = (scale: string, name = '[a-z-]+') =>
     [...css.matchAll(new RegExp(`^\\s*--${scale}-(${name}):`, 'gm'))].map((m) => m[1])
@@ -22,7 +22,8 @@ test('every size and glow index.css adds to the theme is one cn merges as such',
   for (const n of names('text', '[a-z]+')) expect(cn('text-sm text-star', `text-${n}`)).toBe(`text-star text-${n}`)
   for (const n of names('shadow')) expect(cn('shadow-sm shadow-(color:--glow)', `shadow-${n}`)).toBe(`shadow-(color:--glow) shadow-${n}`)
   for (const n of names('drop-shadow')) expect(cn('drop-shadow-sm', `drop-shadow-${n}`)).toBe(`drop-shadow-${n}`)
+  for (const n of names('font', '[a-z]+')) expect(cn('font-mono font-extrabold', `font-${n}`)).toBe(`font-extrabold font-${n}`)
   for (const n of names('text-shadow')) expect(cn('text-shadow-sm text-star', `text-shadow-${n}`)).toBe(`text-star text-shadow-${n}`)
   // and the scan found them, so the loops above checked something
-  expect(names('text', '[a-z]+').length && names('shadow').length).toBeGreaterThan(0)
+  expect(names('text', '[a-z]+').length && names('shadow').length && names('font', '[a-z]+').length).toBeGreaterThan(0)
 })

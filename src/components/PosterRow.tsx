@@ -24,7 +24,7 @@ export function Frame({ src, className, children }: { src?: string; className: s
   return (
     <div
       className={cn(
-        'grid place-items-center overflow-hidden rounded-lg bg-muted font-heading text-muted-foreground outline -outline-offset-1 outline-shine/8 *:[grid-area:1/1]',
+        'grid place-items-center overflow-hidden rounded-lg bg-muted font-heading font-extrabold text-muted-foreground outline -outline-offset-1 outline-shine/8 *:[grid-area:1/1]',
         className,
       )}
     >

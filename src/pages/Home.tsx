@@ -92,7 +92,7 @@ function Fallback({ error }: { error?: string }) {
   if (!error) return null
   return (
     <div className="pointer-events-auto max-w-xl">
-      <h2 className="font-heading text-4xl font-black md:text-5xl">
+      <h2 className="font-heading text-4xl font-extrabold md:text-5xl">
         {t('热门作品会在这里轮播', 'Trending titles take turns here')}
       </h2>
       <p className="mt-4 text-body leading-7 text-foreground/75">

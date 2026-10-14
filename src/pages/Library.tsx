@@ -162,7 +162,7 @@ function Tile({
       )}
     >
       <ServerMark status={status} className="size-12" />
-      <h2 className="mt-4 truncate font-heading text-lg font-black">
+      <h2 className="mt-4 truncate font-heading text-lg font-extrabold">
         {to ? (
           // its box is the tile's, so the whole tile takes the click; the tile shows the focus
           <Link to={to} onClick={onOpen} viewTransition className="outline-none after:absolute after:inset-0 after:rounded-2xl">

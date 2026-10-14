@@ -83,8 +83,8 @@ export default function Search() {
         className="flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-star/15 pb-3 transition-colors has-[input:focus]:border-tone"
       >
         <Constellation lines={lens} className="size-6 text-tone" />
-        {/* what's typed is set like a title, in the headings' serif. While the placeholder shows, the field takes its
-            smaller sans, else the placeholder would sit on the serif's baseline, below the middle */}
+        {/* what's typed is set like a title, in the headings' extrabold. While the placeholder shows, the field takes
+            its smaller regular type, else the placeholder would sit on the title's baseline, below the middle */}
         <input
           type="search"
           defaultValue={q}
@@ -95,7 +95,7 @@ export default function Search() {
           onCompositionEnd={(e) => setTyped(e.currentTarget.value)}
           placeholder={scope.placeholder}
           aria-label={scope.placeholder}
-          className="h-9 min-w-0 grow basis-48 bg-transparent font-heading text-2xl font-black caret-tone outline-none placeholder-shown:font-sans placeholder-shown:text-lg placeholder-shown:font-normal placeholder:text-muted-foreground sm:basis-64 md:h-10 md:text-3xl"
+          className="h-9 min-w-0 grow basis-48 bg-transparent font-heading text-2xl font-extrabold caret-tone outline-none placeholder-shown:text-lg placeholder-shown:font-normal placeholder:text-muted-foreground sm:basis-64 md:h-10 md:text-3xl"
         />
         <Choices
           legend={t('搜索范围', 'Search in')}

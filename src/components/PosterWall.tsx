@@ -31,8 +31,8 @@ const isDark = (logo: HTMLImageElement) => {
   }
 }
 
-// The title in its 片名艺术字 when TMDB has some, else in our serif. Under lettering in another language goes the
-// name in the language shown; otherwise the original name goes there, as with the text title.
+// The title in its 片名艺术字 when TMDB has some, else in the headings' type. Under lettering in another language goes
+// the name in the language shown; otherwise the original name goes there, as with the text title.
 function Title({ m, logo, as: Heading = 'h2' }: { m: Media; logo?: Logo; as?: 'h1' | 'h2' }) {
   const t = useT()
   const [tone, setTone] = useState<'light' | 'dark' | 'broken'>()
@@ -58,7 +58,7 @@ function Title({ m, logo, as: Heading = 'h2' }: { m: Media; logo?: Logo; as?: 'h
           />
         </Heading>
       ) : (
-        <Heading className="line-clamp-2 font-heading text-4xl leading-tight font-black text-balance md:text-6xl">
+        <Heading className="line-clamp-2 font-heading text-4xl leading-tight font-extrabold text-balance md:text-6xl">
           {title}
         </Heading>
       )}

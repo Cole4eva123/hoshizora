@@ -20,8 +20,13 @@
 }
 
 @theme inline {
-  --font-heading: "Noto Serif SC", "Songti SC", serif;
+  /* Netflix's way (Gotham, then Netflix Sans, of which Montserrat is the free likeness) over 思源黑体 for Chinese: the
+     user's pick among five schemes (git stash "prototype: 字体方案"); headings the same, extrabold, their Chinese
+     punctuation set close. The player's page keeps the Mac's own (`font-system`), as it looks native. */
+  --font-sans: var(--sans);
+  --font-heading: var(--sans);
   --font-heading--font-feature-settings: "palt";
+  --font-system: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
   --color-tone: var(--tone);
   --color-shine: var(--shine);
   --color-film: var(--film);
@@ -109,6 +114,24 @@
       opacity: 1;
     }
   }
+}
+
+/* The punctuation Chinese shares with Latin (· ‘’ “” …), which Montserrat would draw first, and narrow: 思源黑体's,
+   full width, in Chinese, from its latin subset, which has them all. Not the dash: 思源黑体's is short of the em, so
+   a —— breaks in two, where Montserrat's runs edge to edge. */
+@font-face {
+  font-family: "Noto Sans SC Punctuation";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(@fontsource-variable/noto-sans-sc/files/noto-sans-sc-latin-wght-normal.woff2) format("woff2-variations");
+  unicode-range: U+00B7, U+2018-2019, U+201C-201D, U+2026;
+}
+:root {
+  --sans: "Montserrat Variable", "Noto Sans SC Variable", sans-serif;
+}
+:root:lang(zh) {
+  --sans: "Noto Sans SC Punctuation", "Montserrat Variable", "Noto Sans SC Variable", sans-serif;
 }
 
 /* Dark only, in the logo's palette: its midnight sky behind everything, starlight as the one accent. */
