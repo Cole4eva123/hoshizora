@@ -26,7 +26,7 @@ use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 
 pub use browse::{Item, Library, Page, Sort, Tmdb};
-pub use sources::{Episode, Play, Source, Track, Version, Video};
+pub use sources::{Beside, Episode, Play, Source, Track, Version, Video};
 pub use watching::{Resume, Watch};
 use find::Info;
 

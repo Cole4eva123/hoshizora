@@ -72,8 +72,9 @@ pub struct Video {
 }
 
 /// An 音轨 or a 字幕, by its index in the file: its language as Emby has it (ISO 639-2, often the older `chi`), its
-/// title in the file (`chs`, `SDH`, a commentary's), how it's coded, and an 音轨's channels.
-#[derive(Debug, PartialEq, Serialize)]
+/// title in the file (`chs`, `SDH`, a commentary's), how it's coded, and an 音轨's channels; `external` for a 字幕 in
+/// a file of its own beside the video's, numbered after the file's own.
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Track {
     pub index: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -86,6 +87,14 @@ pub struct Track {
     pub channels: Option<u32>,
     pub default: bool,
     pub forced: bool,
+    pub external: bool,
+}
+
+/// A 字幕 in a file beside the video's, and the link the player reads it by, from the server.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Beside {
+    pub track: Track,
+    pub link: String,
 }
 
 // The parts of Emby's answers read here. A list leaves some out unless its `Fields` asks for them: those `Found` reads
@@ -153,13 +162,14 @@ struct MediaSource {
 }
 
 /// What a version plays: its own link, played from where it is, or one on this Mac for the server's stream of it
-/// (`Relay`), and where the user left off (seconds in, 0 for the start); and the version, by its id, as the reports on
-/// it name it (`watch`).
+/// (`Relay`), and where the user left off (seconds in, 0 for the start); the version, by its id, as the reports on it
+/// name it (`watch`); and the 字幕 beside its file.
 #[derive(Debug, PartialEq)]
 pub struct Play {
     pub url: String,
     pub start: f64,
     pub version: String,
+    pub beside: Vec<Beside>,
 }
 
 // The parts of a 作品's own answer `play` reads: its versions, and the user's place in it.
@@ -201,6 +211,9 @@ struct Stream {
     is_forced: bool,
     #[serde(default)]
     is_external: bool,
+    // a 字幕 of text (SRT, ASS), not pictures, which the server sends as a file of its own only so
+    #[serde(default)]
+    is_text_subtitle_stream: bool,
 }
 
 impl Emby {
@@ -316,7 +329,7 @@ impl Emby {
         let (url, id) = match named.iter().find_map(|m| Some((link_of(m, server)?, m.id.clone()))) {
             Some(linked) => linked,
             None => {
-                let id = named.into_iter().find(|m| m.supports_direct_stream).ok_or(Error::Unplayable)?.id;
+                let id = named.iter().find(|m| m.supports_direct_stream).ok_or(Error::Unplayable)?.id.clone();
                 let stream = self.ask(self.http.get(format!("{}/Videos/{item}/stream", s.server.address)), &s.token);
                 let stream = stream.query(&[("static", "true"), ("MediaSourceId", id.as_str())]).build().map_err(unsent)?;
                 // nothing to listen on (out of ports or files), which no version gets past
@@ -324,8 +337,10 @@ impl Emby {
                 (relay.map_err(|_| Error::Unplayable)?.link(stream), id)
             }
         };
+        let streams = named.into_iter().find(|m| m.id == id).map(|m| m.media_streams).unwrap_or_default();
+        let beside = streams.into_iter().filter_map(|t| beside(&s.server.address, item, &id, t)).collect();
         let ticks = playing.user_data.map_or(0, |u| u.playback_position_ticks);
-        Ok(Play { url, start: ticks as f64 / TICKS, version: id })
+        Ok(Play { url, start: ticks as f64 / TICKS, version: id, beside })
     }
 
     // Has the server read a 作品's file (the version named, or each) as for playback, as otherwise it answers from what
@@ -353,10 +368,10 @@ fn version(m: MediaSource, server: Reach) -> Version {
             "Video" if video.is_none() => {
                 video = Some(Video { width: s.width.unwrap_or(0), height: s.height.unwrap_or(0), range: s.video_range })
             }
-            // an 音轨 or a 字幕 in a file beside the video, which only the server has and mpv isn't given:
-            // none to pick
+            // an 音轨 in a file beside the video's, which mpv isn't given (rare: none on the user's servers), nor a 字幕
+            // of pictures there: none to pick
             "Audio" if !s.is_external => audio.push(track(s)),
-            "Subtitle" if !s.is_external => subtitles.push(track(s)),
+            "Subtitle" if !s.is_external || readable(&s) => subtitles.push(track(s)),
             _ => {}
         }
     }
@@ -464,7 +479,29 @@ fn track(s: Stream) -> Track {
         channels: s.channels,
         default: s.is_default,
         forced: s.is_forced,
+        external: s.is_external,
     }
+}
+
+// A 字幕 of text in a file beside that of a version (`id`) of `item`, with its link: Emby's, in the file's own format
+// (an external one's codec is its file's: ass, srt), which needs no token, as Emby's own apps read them so (checked on
+// both of the user's servers), so the player is given it.
+// ponytail: a server that asks for a token there leaves the 字幕 unread and the film playing without; read them through
+// `Relay` if one turns up.
+fn beside(address: &str, item: &str, id: &str, s: Stream) -> Option<Beside> {
+    if !(s.kind == "Subtitle" && s.is_external && readable(&s)) {
+        return None;
+    }
+    let (index, file) = (s.index.to_string(), format!("Stream.{}", s.codec.as_deref()?));
+    let mut link = Url::parse(address).ok()?;
+    link.path_segments_mut().ok()?.pop_if_empty().extend(["Videos", item, id, "Subtitles", &index, &file]);
+    Some(Beside { link: link.into(), track: track(s) })
+}
+
+// Whether a 字幕 beside the file can be given to the player, and so is offered: one of text, which the server sends as a
+// file of its own, in a format a path can name.
+fn readable(s: &Stream) -> bool {
+    s.is_text_subtitle_stream && s.codec.as_deref().is_some_and(plain)
 }
 
 #[cfg(test)]

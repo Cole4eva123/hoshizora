@@ -419,6 +419,8 @@ export type Track = {
   channels?: number
   default: boolean
   forced: boolean
+  // a 字幕 in a file beside the video's, numbered after the file's own
+  external: boolean
 }
 export type Version = {
   id: string

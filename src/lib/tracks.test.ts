@@ -5,7 +5,13 @@ import { asideOf, audioLabel, picksOf, releaseNameOf, specOf, subtitleLabel, sub
 
 // Versions as the user's server has them (2026-10-09): X加Y, a 4K file read long ago; 春江水暖, a .strm read once; and
 // a .strm it hasn't read, known only by its name.
-const track = (index: number, more: Partial<Track> = {}): Track => ({ index, default: false, forced: false, ...more })
+const track = (index: number, more: Partial<Track> = {}): Track => ({
+  index,
+  default: false,
+  forced: false,
+  external: false,
+  ...more,
+})
 const xy: Version = {
   id: 'x',
   name: 'X加Y',
@@ -67,6 +73,10 @@ test("asideOf keeps what a 字幕's title adds to its name, and drops what it re
   expect(aside({ language: 'chi', title: 'Big5' })).toBeUndefined()
   expect(aside({ language: 'eng', title: 'English' })).toBeUndefined()
   expect(aside({ language: 'pt-BR', title: 'Brazilian Portuguese' })).toBeUndefined()
+  // titled by another code of its language, as Emby titles a file beside the video's; not when neither is a language
+  expect(aside({ language: 'zh-CN', title: 'chi' })).toBeUndefined()
+  expect(aside({ language: 'por', title: 'pt-BR' })).toBe('pt-BR')
+  expect(aside({ language: 'Chinese Simplified', title: 'Cantonese Lyrics' })).toBe('Cantonese Lyrics')
   expect(xy.subtitles.map((s) => asideOf(s, zh))).toEqual([undefined, undefined, undefined, undefined])
 })
 
@@ -102,6 +112,13 @@ test('picksOf starts on the default 音轨, and on a 字幕 in the language show
     track(9, { language: 'chi', title: 'Hans Zimmer interview' }),
   ]
   expect(picksOf({ ...spring, subtitles: titled }, zh)).toEqual({ audio: 1, subtitle: 8 })
+  // with none in the language shown nor a default, one beside the file that doesn't say its language, put there to be
+  // read; not one that says it's in another
+  const english = [track(1, { language: 'eng', default: true })]
+  const beside = (more: Partial<Track>) => picksOf({ ...strm('1080p'), audio: english, subtitles: [track(2, more)] }, zh)
+  expect(beside({ codec: 'ass', external: true })).toEqual({ audio: 1, subtitle: 2 })
+  expect(beside({ codec: 'ass', external: true, language: 'eng' })).toEqual({ audio: 1, subtitle: -1 })
+  expect(beside({ codec: 'ass' })).toEqual({ audio: 1, subtitle: -1 })
   expect(titled.map((s) => subtitleLabel(s, zh))).toEqual(['繁体中文', '简体中文', '中文'])
 })
 

@@ -112,6 +112,10 @@ export function asideOf(tr: Named, t: Translate) {
   const names = code
     ? [code, ...[code, tr.language!].flatMap((c) => [named(c, 'en'), named(c, 'zh')])]
     : []
+  // or by another code of it alone (chi for zh-CN, as Emby titles a file beside the video's .chi.zh-cn.ass), not one
+  // with a region, which tells two apart (pt-BR, pt-PT)
+  const coded = named(title, 'en')
+  if (code && coded && coded === named(code, 'en')) return
   return names.some((n) => n?.toLowerCase() === title.toLowerCase()) ? undefined : title
 }
 
@@ -119,8 +123,9 @@ export function asideOf(tr: Named, t: Translate) {
 export const noTrack = -1
 
 // The 音轨 and 字幕 a version starts on, by index, noTrack for none: the file's default 音轨, else its first; a whole 字幕 in
-// the language shown when the 音轨 isn't in it (简体 first among Chinese ones), else the file's default 字幕; and with
-// the 音轨 in the language shown, only a forced 字幕 in it, for what isn't spoken in it.
+// the language shown when the 音轨 isn't in it (简体 first among Chinese ones), else the file's default 字幕, else one
+// beside the file that doesn't say its language, put there to be read (on the user's second server, many a film's only
+// 字幕); and with the 音轨 in the language shown, only a forced 字幕 in it, for what isn't spoken in it.
 export function picksOf(v: Version, t: Translate) {
   const shown = langOf(t)
   const audio = v.audio.find((a) => a.default) ?? v.audio[0]
@@ -130,7 +135,10 @@ export function picksOf(v: Version, t: Translate) {
   const subtitle =
     audio && isIn(audio, shown)
       ? mine.find(forced)
-      : (whole.find(simplified) ?? whole[0] ?? v.subtitles.find((s) => s.default))
+      : (whole.find(simplified) ??
+        whole[0] ??
+        v.subtitles.find((s) => s.default) ??
+        v.subtitles.find((s) => s.external && (!s.language || s.language === 'und')))
   return { audio: audio?.index ?? noTrack, subtitle: subtitle?.index ?? noTrack }
 }
 

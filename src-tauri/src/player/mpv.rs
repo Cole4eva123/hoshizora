@@ -106,6 +106,7 @@ unsafe extern "C" {
     fn mpv_terminate_destroy(ctx: *mut Handle);
     fn mpv_set_option_string(ctx: *mut Handle, name: *const c_char, data: *const c_char) -> c_int;
     fn mpv_command(ctx: *mut Handle, args: *mut *const c_char) -> c_int;
+    fn mpv_command_async(ctx: *mut Handle, reply_userdata: u64, args: *mut *const c_char) -> c_int;
     fn mpv_set_property(ctx: *mut Handle, name: *const c_char, format: c_int, data: *mut c_void) -> c_int;
     fn mpv_get_property(ctx: *mut Handle, name: *const c_char, format: c_int, data: *mut c_void) -> c_int;
     fn mpv_get_property_string(ctx: *mut Handle, name: *const c_char) -> *mut c_char;
@@ -197,9 +198,20 @@ impl Mpv {
     }
 
     pub fn command(&self, args: &[&str]) -> Result<(), String> {
+        self.ask(args, false)
+    }
+
+    /// As `command`, answering at once while mpv does it (its answer an event no one listens for, a failure in mpv's own
+    /// log); one that loads a file is dropped as the file playing ends.
+    pub fn command_async(&self, args: &[&str]) -> Result<(), String> {
+        self.ask(args, true)
+    }
+
+    fn ask(&self, args: &[&str], meanwhile: bool) -> Result<(), String> {
         let args: Vec<CString> = args.iter().map(|a| text(a)).collect();
         let mut args: Vec<*const c_char> = args.iter().map(|a| a.as_ptr()).chain([null()]).collect();
-        check(unsafe { mpv_command(self.0, args.as_mut_ptr()) })
+        let args = args.as_mut_ptr();
+        check(unsafe { if meanwhile { mpv_command_async(self.0, 0, args) } else { mpv_command(self.0, args) } })
     }
 
     pub fn set_flag(&self, name: &str, value: bool) -> Result<(), String> {

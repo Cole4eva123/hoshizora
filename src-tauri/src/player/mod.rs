@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use block2::RcBlock;
-use emby_core::Play;
+use emby_core::{Beside, Play};
 use objc2::MainThreadMarker;
 use objc2::rc::Retained;
 use objc2::runtime::{NSObjectProtocol, ProtocolObject};
@@ -141,9 +141,10 @@ pub struct State {
     audio: Vec<Track>,
     subtitles: Vec<Track>,
     sub_delay: f64,
-    /// the 作品 page's picks for the version opening, with its link, put on as that file has opened
+    /// the 作品 page's picks for the version opening, with its link and the 字幕 beside its file, put on as that file
+    /// has opened
     #[serde(skip)]
-    picks: Option<(String, Picks)>,
+    picks: Option<(String, Picks, Vec<Beside>)>,
     /// a version asked for and not yet started: the last file's time is told no more
     #[serde(skip)]
     next: bool,
@@ -179,12 +180,15 @@ pub struct Track {
     // audio, sub or video
     #[serde(rename(deserialize = "type"), skip_serializing)]
     kind: String,
-    // its index in the file, FFmpeg's, which Emby's (ffprobe's) is too, so the 作品 page's pick finds it (a file beside
-    // the video, which mpv would number in its own, isn't offered: emby-core leaves those out)
+    // its index in the file, FFmpeg's, which Emby's (ffprobe's) is too, so the 作品 page's pick finds it; one in a file
+    // beside the video's is numbered in that file, so it's found by the file (`file`)
     // ponytail: matched by the index alone, as mpv's own mkv reader numbers tracks as FFmpeg does, though its manual
     // gives no guarantee; one numbered apart gets another track: have the page send the language to check, if one does
     #[serde(rename(deserialize = "ff-index"), skip_serializing)]
     index: Option<i64>,
+    // the link of the file beside the video's it's in, as it was added (`Beside`)
+    #[serde(rename(deserialize = "external-filename"), skip_serializing)]
+    file: Option<String>,
     #[serde(rename(deserialize = "lang"), skip_serializing_if = "Option::is_none")]
     language: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -390,7 +394,13 @@ fn tracks_in(list: &str) -> (Vec<Track>, Vec<Track>) {
         eprintln!("player: the track list: {e}");
         vec![]
     });
-    for track in listed {
+    for mut track in listed {
+        // one beside the file added with no title of its own mpv titles by its file's name, Emby's Stream.ass
+        if let (Some(file), Some(title)) = (&track.file, &track.title)
+            && file.ends_with(&format!("/{title}"))
+        {
+            track.title = None;
+        }
         match track.kind.as_str() {
             "audio" => audio.push(track),
             "sub" => subtitles.push(track),
@@ -401,9 +411,17 @@ fn tracks_in(list: &str) -> (Vec<Track>, Vec<Track>) {
 }
 
 // The 作品 page's picks as mpv's sets: the 音轨's and the 字幕's ids (or no 字幕), found among the file's tracks by
-// their index in it; one not found is left to the file.
-fn picked((audio, subtitles): &(Vec<Track>, Vec<Track>), picks: &Picks) -> Vec<(&'static str, String)> {
-    let id = |tracks: &[Track], index: i64| tracks.iter().find(|t| t.index == Some(index)).map(|t| t.id.to_string());
+// their index in it, or one `beside` it by its link; one not found (one beside it that couldn't be read) is left to
+// the file.
+fn picked((audio, subtitles): &(Vec<Track>, Vec<Track>), picks: &Picks, beside: &[Beside]) -> Vec<(&'static str, String)> {
+    let id = |tracks: &[Track], index: i64| {
+        let file = beside.iter().find(|b| i64::from(b.track.index) == index).map(|b| b.link.as_str());
+        let found = tracks.iter().find(|t| match file {
+            Some(link) => t.file.as_deref() == Some(link),
+            None => t.file.is_none() && t.index == Some(index),
+        });
+        found.map(|t| t.id.to_string())
+    };
     let aid = picks.audio.and_then(|index| id(audio, index));
     let sid = match picks.subtitle {
         Some(NO_TRACK) => Some(sid_of(NO_TRACK)),
@@ -463,7 +481,7 @@ fn open_here(app: &AppHandle, play: &Play, title: String, picks: Picks, origin: 
         s.origin = Some((play.url.clone(), origin));
         (s.title, s.from, s.position, s.next) = (title.clone(), (play.start > 0.0).then_some(play.start), None, true);
         s.opens += 1;
-        s.picks = Some((play.url.clone(), picks));
+        s.picks = Some((play.url.clone(), picks, play.beside.clone()));
         let _ = app.emit_to(LABEL, STATE, s.clone());
         drop(s);
         // through the queue, after what was asked of the version before, which mustn't land in this one; it starts on
@@ -580,13 +598,25 @@ fn listen(app: &AppHandle, mpv: &Mpv, state: &Mutex<State>, tell: &Sender<Told>)
     let mut wait = -1.0;
     loop {
         let event = mpv.next(wait);
-        // a file opened, mpv waiting to pick its tracks: the 作品 page's picks for it go on first; mpv asked with the
-        // state let go, as the main thread waits on it
+        // a file opened, mpv waiting to pick its tracks: the 字幕 beside it go in, unpicked, then the 作品 page's picks go
+        // on; mpv asked with the state let go, as the main thread waits on it
         if let Event::Hook(hook) = event {
             let path = mpv.string("path");
-            let picks = state.lock().unwrap().picks.take_if(|(link, _)| path.as_ref() == Some(link));
-            if let Some((_, picks)) = picks {
-                for (name, id) in picked(&tracks_in(&mpv.string("track-list").unwrap_or_default()), &picks) {
+            let picks = state.lock().unwrap().picks.take_if(|(link, ..)| path.as_ref() == Some(link));
+            if let Some((_, picks, beside)) = picks {
+                for b in &beside {
+                    let (title, language) = (b.track.title.as_deref(), b.track.language.as_deref());
+                    let add = ["sub-add", &b.link, "auto", title.unwrap_or(""), language.unwrap_or("")];
+                    // each read from the server, 0.5–1.2 s on the user's: the one picked before the film starts, so
+                    // it's among those mpv picks from (put on below), the rest as it plays, which mpv drops as the file
+                    // ends (measured); one that can't be read is in mpv's log
+                    // ponytail: a server that hangs on the one picked holds the start up to mpv's network timeout (60
+                    // s), though it has just answered for the 作品; read it as the rest are and put it on once it's in
+                    // (mpv only marks one that comes between picking and playing) if that turns up
+                    let picked = picks.subtitle == Some(i64::from(b.track.index));
+                    let _ = if picked { mpv.command(&add) } else { mpv.command_async(&add) };
+                }
+                for (name, id) in picked(&tracks_in(&mpv.string("track-list").unwrap_or_default()), &picks, &beside) {
                     let _ = mpv.command(&["set", name, &id]);
                 }
             }
@@ -829,13 +859,15 @@ mod tests {
         NSRect::new(NSPoint::new(x, y), NSSize::new(width, height))
     }
 
-    // mpv's list for a film with two 音轨 and two 字幕 (some of each track's keys; the last one's flags left out)
+    // mpv's list for a film with two 音轨 and two 字幕, and a 字幕 beside it (some of each track's keys; the last ones'
+    // flags left out)
     const LIST: &str = r#"[
         {"id":1,"type":"video","ff-index":0,"codec":"h264","default":true,"forced":false,"selected":true},
         {"id":1,"type":"audio","ff-index":1,"lang":"chi","title":"国语","codec":"aac","demux-channel-count":1,"forced":false,"selected":false},
         {"id":2,"type":"audio","ff-index":2,"lang":"eng","title":"Commentary","codec":"ac3","demux-channel-count":6,"forced":false,"selected":true},
         {"id":1,"type":"sub","ff-index":3,"codec":"hdmv_pgs_subtitle","forced":true,"selected":true},
-        {"id":2,"type":"sub","ff-index":4,"lang":"eng","codec":"subrip"}
+        {"id":2,"type":"sub","ff-index":4,"lang":"eng","codec":"subrip"},
+        {"id":3,"type":"sub","ff-index":0,"lang":"zh-CN","title":"Stream.ass","codec":"ass","external":true,"external-filename":"https://emby.example/emby/Videos/m1/v1/Subtitles/6/Stream.ass"}
     ]"#;
 
     #[test]
@@ -852,7 +884,8 @@ mod tests {
             serde_json::to_value(&subtitles).unwrap(),
             json!([
                 {"id":1,"codec":"hdmv_pgs_subtitle","forced":true,"selected":true},
-                {"id":2,"language":"eng","codec":"subrip","forced":false,"selected":false}
+                {"id":2,"language":"eng","codec":"subrip","forced":false,"selected":false},
+                {"id":3,"language":"zh-CN","codec":"ass","forced":false,"selected":false}
             ])
         );
         // nothing read, nothing listed
@@ -862,10 +895,24 @@ mod tests {
     #[test]
     fn the_pages_picks_are_mpvs_tracks_of_the_same_index_in_the_file() {
         let tracks = tracks_in(LIST);
-        let sets = |audio, subtitle| picked(&tracks, &Picks { audio, subtitle });
+        let track = emby_core::Track {
+            index: 6,
+            language: Some("zh-CN".into()),
+            title: None,
+            codec: Some("ass".into()),
+            channels: None,
+            default: false,
+            forced: false,
+            external: true,
+        };
+        let beside = [Beside { track, link: "https://emby.example/emby/Videos/m1/v1/Subtitles/6/Stream.ass".into() }];
+        let sets = |audio, subtitle| picked(&tracks, &Picks { audio, subtitle }, &beside);
         assert_eq!(sets(Some(1), Some(4)), [("aid", "1".to_string()), ("sid", "2".to_string())]);
         assert_eq!(sets(None, Some(NO_TRACK)), [("sid", "no".to_string())]);
-        // one the file hasn't (a 字幕 beside it on the server), left to the file
+        // one beside the file, by its link, not the index it has in its own file
+        assert_eq!(sets(None, Some(6)), [("sid", "3".to_string())]);
+        assert!(sets(None, Some(0)).is_empty());
+        // one the file hasn't, left to the file
         assert!(sets(Some(9), None).is_empty());
     }
 

@@ -180,9 +180,12 @@ fn read_version() -> Value {
           "IsDefault": true, "IsForced": true },
         { "Type": "Subtitle", "Index": 4, "Codec": "ass", "Language": "chi", "Title": "chs" },
         { "Type": "EmbeddedImage", "Index": 5, "Codec": "mjpeg" },
-        // files of their own beside the video, left out
-        { "Type": "Subtitle", "Index": 6, "Codec": "srt", "Language": "chi", "Title": "简体", "IsExternal": true },
+        // files of their own beside the video: a 字幕 of text, numbered after the file's own; an 音轨 and a 字幕 of
+        // pictures, left out
+        { "Type": "Subtitle", "Index": 6, "Codec": "srt", "Language": "chi", "Title": "简体", "IsExternal": true,
+          "IsTextSubtitleStream": true },
         { "Type": "Audio", "Index": 7, "Codec": "aac", "Language": "chi", "Channels": 2, "IsExternal": true },
+        { "Type": "Subtitle", "Index": 8, "Codec": "pgssub", "Language": "chi", "IsExternal": true },
     ]})
 }
 
@@ -795,6 +798,7 @@ fn track(
         channels,
         default,
         forced,
+        external: false,
     }
 }
 
@@ -824,6 +828,7 @@ async fn a_movies_sources_are_found_by_its_tmdb_entry_with_their_versions_and_tr
                 subtitles: vec![
                     track(3, "subrip", Some("eng"), Some("Forced SRT"), None, (true, true)),
                     track(4, "ass", Some("chi"), Some("chs"), None, (false, false)),
+                    Track { external: true, ..track(6, "srt", Some("chi"), Some("简体"), None, (false, false)) },
                 ],
             }],
         }]
@@ -886,7 +891,7 @@ async fn a_version_plays_from_its_own_link_where_the_user_left_off() {
     emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
     // the link alone, which carries no token, without the fragment
     let url = "https://drive.example/d/%E6%98%A5%E6%B1%9F.1080p.BluRay.mkv?sign=secret".to_owned();
-    let played = Play { url, start: 1234.5, version: "v2".into() };
+    let played = Play { url, start: 1234.5, version: "v2".into(), beside: vec![] };
     assert_eq!(emby.play("srv", "u1", "m2", Some("v2")).await.as_ref(), Ok(&played));
     // none named, from the 继续观看: its first that plays so
     assert_eq!(emby.play("srv", "u1", "m2", None).await, Ok(played));
@@ -908,6 +913,9 @@ async fn a_version_only_the_server_can_send_plays_through_a_link_on_this_mac_tha
     emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
     let played = emby.play("srv", "u1", "m1", Some("v1")).await.unwrap();
     assert!(played.url.starts_with("http://127.0.0.1:") && !played.url.contains("token"));
+    // and the 字幕 of text beside its file, read from the server itself, which asks no token for them
+    let beside: Vec<_> = played.beside.iter().map(|b| (b.track.index, b.link.as_str())).collect();
+    assert_eq!(beside, [(6, format!("http://{at}/emby/Videos/m1/v1/Subtitles/6/Stream.srt").as_str())]);
     // as mpv asks: from where in the file, and no redirect followed for it
     let mpv = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
     let answer = mpv.get(&played.url).header("Range", "bytes=4-").send().await.unwrap();
