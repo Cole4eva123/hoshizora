@@ -6,6 +6,7 @@ mod colour;
 mod layer;
 mod mpv;
 mod now;
+mod report;
 mod symbol;
 
 use std::ffi::c_int;
@@ -33,6 +34,8 @@ use colour::{Hdr, Look};
 use layer::Picture;
 use mpv::{Event, Mpv};
 use now::Remote;
+pub use report::Origin;
+use report::{Told, due, numbered};
 pub use symbol::symbol;
 
 // the player's window, as its capability names it (capabilities/player.json)
@@ -147,6 +150,16 @@ pub struct State {
     /// the film's HDR, by its picture's parameters, whatever the screen shows of it (`colour`)
     #[serde(skip)]
     hdr: Option<Hdr>,
+    /// the version opening, as the server knows it, with its link (as `picks`), told as started once that file plays;
+    /// the one playing's number once it has been (report.rs), so its progress and its stop are told; and where it last
+    /// was, its stop's place, as mpv says where no more once it has stopped the file (the window closing, or a failure
+    /// mid-film)
+    #[serde(skip)]
+    origin: Option<(String, Origin)>,
+    #[serde(skip)]
+    watching: Option<u64>,
+    #[serde(skip)]
+    last: Option<i64>,
 }
 
 impl State {
@@ -227,9 +240,9 @@ pub enum Command {
     SubPos { pos: f64 },
 }
 
-/// The player, as the app keeps it: nothing while its window is closed.
-#[derive(Default)]
-pub struct Player(Mutex<Option<Playing>>);
+/// The player, as the app keeps it: nothing while its window is closed; and how playing goes, told to the server by one
+/// thread for the app (report.rs), so a window closed and another opened at once tell their stop and start in order.
+pub struct Player(Mutex<Option<Playing>>, Sender<Told>);
 
 struct Playing {
     // an Option, to go first: libmpv asks for the renderer to go before the core, which the event and jobs threads hold
@@ -297,8 +310,8 @@ impl Playing {
         std::thread::Builder::new()
             .name("mpv events".into())
             .spawn({
-                let (app, mpv, state) = (app.clone(), mpv.clone(), state.clone());
-                move || listen(&app, &mpv, &state)
+                let (app, mpv, state, tell) = (app.clone(), mpv.clone(), state.clone(), app.state::<Player>().1.clone());
+                move || listen(&app, &mpv, &state, &tell)
             })
             .map_err(|e| e.to_string())?;
         Ok(Playing { picture: Some(picture), state, jobs, _remote: Remote::take(app) })
@@ -315,6 +328,10 @@ impl Drop for Playing {
 }
 
 impl Player {
+    pub fn new(app: &AppHandle) -> Result<Player, String> {
+        Ok(Player(Mutex::default(), report::reporter(app)?))
+    }
+
     pub fn state(&self) -> State {
         let playing = self.0.lock().unwrap();
         playing.as_ref().map_or_else(State::new, |p| p.state.lock().unwrap().clone())
@@ -412,31 +429,38 @@ fn fullscreen(app: &AppHandle, on: impl FnOnce(&WebviewWindow) -> bool) {
     }
 }
 
-/// Plays `play` in the player's window, opening it if it's closed, from where the user left off.
-pub async fn open(app: &AppHandle, play: Play, title: String, picks: Picks) -> Result<(), String> {
+/// Plays `play` in the player's window, opening it if it's closed, from where the user left off; `origin`, the version
+/// as the server knows it, is told how playing goes.
+pub async fn open(app: &AppHandle, play: Play, title: String, picks: Picks, origin: Origin) -> Result<(), String> {
     // on the main thread, where windows and their views are made
     let (done, mut answer) = tauri::async_runtime::channel(1);
     let on_main = app.clone();
     app.run_on_main_thread(move || {
-        let _ = done.try_send(open_here(&on_main, &play, title, picks));
+        let _ = done.try_send(open_here(&on_main, &play, title, picks, origin));
     })
     .map_err(|e| e.to_string())?;
     answer.recv().await.unwrap_or_else(|| Err("the main thread didn't answer".into()))
 }
 
-fn open_here(app: &AppHandle, play: &Play, title: String, picks: Picks) -> Result<(), String> {
+fn open_here(app: &AppHandle, play: &Play, title: String, picks: Picks, origin: Origin) -> Result<(), String> {
     let window = match app.get_webview_window(LABEL) {
         Some(window) => window,
         None => create(app, &title)?,
     };
     {
-        let playing = app.state::<Player>();
-        let playing = playing.0.lock().unwrap();
+        let player = app.state::<Player>();
+        let playing = player.0.lock().unwrap();
         let p = playing.as_ref().ok_or("the player has closed")?;
         // what's playing now, which the page hears at once, opening from here: the last file's time is told no more,
         // so what mpv says of it as it ends (its options put back) is no one's change and the corner tells nothing; the
         // rest of its state goes when mpv starts this one (`listen`)
         let mut s = p.state.lock().unwrap();
+        // the last one told as stopped where it got to, before this one's start, which waits till it plays
+        // none where it got to isn't known, as 0 would wipe the user's place (the next start stops it where last told)
+        if let (Some(n), Some(at)) = (s.watching.take(), s.last) {
+            let _ = player.1.send(Told::Stopped(n, at as f64));
+        }
+        s.origin = Some((play.url.clone(), origin));
         (s.title, s.from, s.position, s.next) = (title.clone(), (play.start > 0.0).then_some(play.start), None, true);
         s.opens += 1;
         s.picks = Some((play.url.clone(), picks));
@@ -537,8 +561,10 @@ type Activity = Retained<ProtocolObject<dyn NSObjectProtocol>>;
 
 // The event thread: keeps the state as mpv tells it, and sends it to the page once a burst of events is over, till mpv
 // shuts down.
-fn listen(app: &AppHandle, mpv: &Mpv, state: &Mutex<State>) {
+fn listen(app: &AppHandle, mpv: &Mpv, state: &Mutex<State>, tell: &Sender<Told>) {
     let (mut loading, mut seeking, mut stalled) = (false, false, false);
+    // where it was last told to be, and whether paused (report.rs)
+    let mut told: Option<(i64, bool)> = None;
     // the picture's size as last heard, mpv telling of a change only, and whether it changed since the file started
     // and has been fitted
     let (mut width, mut height, mut resized, mut sized) = (None, None, false, false);
@@ -569,12 +595,12 @@ fn listen(app: &AppHandle, mpv: &Mpv, state: &Mutex<State>) {
         }
         // the file's tracks, read out when they change, with the state let go too; and once a file plays, its picture's
         // HDR, by its transfer and primaries, known by then, read once a file (the window may be on another screen by
-        // now), as mpv tells of no change of them between two files alike
+        // now), as mpv tells of no change of them between two files alike; and which file it is, whose start is told
         let tracks = matches!(event, Event::Property(id, _) if id == Watched::Tracks as u64)
             .then(|| tracks_in(&mpv.string("track-list").unwrap_or_default()));
-        let hdr = (loading && matches!(event, Event::PlaybackRestart)).then(|| {
+        let opened = (loading && matches!(event, Event::PlaybackRestart)).then(|| {
             let read = |name| mpv.string(name).unwrap_or_default();
-            Hdr::of(&read("video-params/gamma"), &read("video-params/primaries"))
+            (Hdr::of(&read("video-params/gamma"), &read("video-params/primaries")), read("path"))
         });
         let mut s = state.lock().unwrap();
         match event {
@@ -584,6 +610,10 @@ fn listen(app: &AppHandle, mpv: &Mpv, state: &Mutex<State>) {
                 if resized && !sized && let (Some(w), Some(h)) = (width, height) {
                     sized = true;
                     fit(app, w as f64, h as f64);
+                }
+                if let (Some(n), false, Some(at)) = (s.watching, s.next, s.position) && due(told, at, s.paused) {
+                    let _ = tell.send(Told::Progress(n, at as f64, s.paused));
+                    told = Some((at, s.paused));
                 }
                 let playing = !s.paused && !s.ended && s.failed.is_none() && s.position.is_some();
                 if playing && awake.is_none() {
@@ -599,7 +629,11 @@ fn listen(app: &AppHandle, mpv: &Mpv, state: &Mutex<State>) {
                 wait = -1.0;
                 continue;
             }
+            // the window closed: what played told as stopped where it got to
             Event::Shutdown => {
+                if let (Some(n), Some(at)) = (s.watching, s.last) {
+                    let _ = tell.send(Told::Stopped(n, at as f64));
+                }
                 let_sleep(&mut awake);
                 return;
             }
@@ -607,13 +641,22 @@ fn listen(app: &AppHandle, mpv: &Mpv, state: &Mutex<State>) {
             // a file starting, in order after the last one's events, so its state goes here: the page's wait shows
             Event::StartFile => {
                 (loading, resized, sized) = (true, false, false);
-                (s.position, s.duration, s.ended, s.failed, s.next, s.hdr) = (None, None, false, None, false, None);
+                (s.position, s.duration, s.ended, s.failed, s.next, s.hdr, s.last) =
+                    (None, None, false, None, false, None, None);
             }
             // after the file's opening or a seek, which the page's corner tells
             Event::PlaybackRestart => {
-                if loading {
-                    s.hdr = hdr.flatten();
+                if let Some((hdr, path)) = opened {
+                    s.hdr = hdr;
                     colour(app);
+                    // the version asked for plays: told as started (not the last one, still opening as this was asked)
+                    if let Some((_, origin)) = s.origin.take_if(|(link, _)| *link == path) {
+                        let at = s.position.or(s.from.map(|f| f as i64)).unwrap_or(0);
+                        let n = numbered();
+                        let _ = tell.send(Told::Started(n, origin, at as f64));
+                        (s.watching, s.last) = (Some(n), Some(at));
+                        told = Some((at, s.paused));
+                    }
                 } else {
                     s.seeks += 1;
                 }
@@ -622,7 +665,7 @@ fn listen(app: &AppHandle, mpv: &Mpv, state: &Mutex<State>) {
             // its HDR, if the last film's was, no longer shown behind the failure
             Event::Failed(why) => {
                 loading = false;
-                s.failed = Some(why);
+                (s.failed, s.hdr) = (Some(why), None);
                 colour(app);
             }
             Event::Property(id, value) => match Watched::ALL.into_iter().find(|w| *w as u64 == id) {
@@ -630,6 +673,7 @@ fn listen(app: &AppHandle, mpv: &Mpv, state: &Mutex<State>) {
                 Some(Watched::Position) => {
                     if !s.next {
                         s.position = value.int();
+                        s.last = s.position.or(s.last);
                     }
                 }
                 Some(Watched::Duration) => s.duration = value.double(),

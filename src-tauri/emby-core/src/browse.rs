@@ -95,8 +95,9 @@ struct Listed {
 
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct Tags {
-    primary: Option<String>,
+pub(crate) struct Tags {
+    pub(crate) primary: Option<String>,
+    pub(crate) thumb: Option<String>,
 }
 
 #[derive(Default, Deserialize)]
@@ -117,7 +118,7 @@ impl Emby {
             .filter(|v| {
                 v.collection_type.as_deref().is_none_or(|t| t == Kind::MIXED || Kind::ALL.map(Kind::collection).contains(&t))
             })
-            .map(|v| Library { cover: image(&s.server.address, &v.id, v.image_tags.primary, COVER), id: v.id, name: v.name })
+            .map(|v| Library { cover: image(&s.server.address, &v.id, PRIMARY, v.image_tags.primary, COVER), id: v.id, name: v.name })
             .collect())
     }
 
@@ -171,12 +172,23 @@ impl Emby {
     }
 }
 
-// A server's picture, sized down to `width`; `tag` changes when one is replaced, so a new one isn't served from the
-// cache. Pictures need no token, so the pages load them from the server directly.
+// A server's picture of a kind (PRIMARY, a 作品's 海报 or an episode's 剧照; THUMB; BACKDROP), sized down to `width`;
+// `tag` changes when one is replaced, so a new one isn't served from the cache. Pictures need no token, so the pages
+// load them from the server directly.
 // ponytail: an http server's pictures may be blocked in the bundled app (its page is tauri://, and macOS's ATS); hand
 // them over through a URI scheme of the app's own if that turns up.
-fn image(address: &str, id: &str, tag: Option<String>, width: u32) -> Option<String> {
-    tag.map(|tag| format!("{address}/Items/{id}/Images/Primary?tag={tag}&maxWidth={width}&quality={QUALITY}"))
+pub(crate) fn image(address: &str, id: &str, kind: &str, tag: Option<String>, width: u32) -> Option<String> {
+    tag.map(|tag| format!("{address}/Items/{id}/Images/{kind}?tag={tag}&maxWidth={width}&quality={QUALITY}"))
+}
+pub(crate) const PRIMARY: &str = "Primary";
+pub(crate) const THUMB: &str = "Thumb";
+// the first of a 作品's backdrops
+pub(crate) const BACKDROP: &str = "Backdrop/0";
+
+// The TMDB entry a server names for a 作品 of a kind, by the id in its ProviderIds: none for one that isn't a number
+// TMDB gives.
+pub(crate) fn tmdb_of(kind: Kind, id: Option<&str>) -> Option<Tmdb> {
+    id?.parse::<u64>().ok().filter(|&id| id > 0).map(|id| Tmdb { media_type: kind, id })
 }
 
 // Where a signed-in user's 作品 are asked for, a 媒体库's or one found by its TMDB entry (`sources`).
@@ -186,11 +198,10 @@ pub(crate) fn items_of(s: &Signed) -> String {
 
 // A 作品 as listed, linked to its TMDB entry when the server knows it and it's of a kind there's a page for.
 fn item(address: &str, i: Listed) -> Item {
-    let tmdb = i.provider_ids.tmdb.and_then(|id| id.parse::<u64>().ok()).filter(|&id| id > 0);
     let kind = Kind::ALL.into_iter().find(|k| k.item_type() == i.kind);
     Item {
-        poster: image(address, &i.id, i.image_tags.primary, POSTER),
-        tmdb: kind.zip(tmdb).map(|(media_type, id)| Tmdb { media_type, id }),
+        poster: image(address, &i.id, PRIMARY, i.image_tags.primary, POSTER),
+        tmdb: kind.and_then(|kind| tmdb_of(kind, i.provider_ids.tmdb.as_deref())),
         year: i.production_year,
         id: i.id,
         name: i.name,

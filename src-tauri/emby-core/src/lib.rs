@@ -6,13 +6,15 @@
 //! Behind it, each module is where one kind of change lands: `find`, where a server answers; `session`, asking as this
 //! device and its signed-in user; `kept`, the servers kept on this device; `browse`, the 媒体库 and 作品; `sources`,
 //! where a 作品 can be played, its 片源 and their versions and tracks, and what a version plays (its link, and where
-//! the user left off). This file ties them together: adding a server, changing it, removing it, and how it answers now.
+//! the user left off); `watching`, the user's place in what they play, the 继续观看 and telling the server. This file
+//! ties them together: adding a server, changing it, removing it, and how it answers now.
 
 mod browse;
 mod find;
 mod kept;
 mod session;
 mod sources;
+mod watching;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -24,6 +26,7 @@ use serde::{Deserialize, Serialize};
 
 pub use browse::{Item, Library, Page, Sort, Tmdb};
 pub use sources::{Episode, Play, Source, Track, Version, Video};
+pub use watching::{Resume, Watch};
 use find::Info;
 
 // How long a request asked of a kept server may take: whether it answers now, and the 媒体库 and 作品. Finding a
@@ -74,6 +77,14 @@ impl Kind {
         match self {
             Kind::Movie => "movies",
             Kind::Tv => "tvshows",
+        }
+    }
+
+    /// Emby's item type for what of it plays, which has the user's place in it: a movie, or an episode of a series
+    fn plays(self) -> &'static str {
+        match self {
+            Kind::Movie => "Movie",
+            Kind::Tv => "Episode",
         }
     }
 

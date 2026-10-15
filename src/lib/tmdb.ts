@@ -167,8 +167,14 @@ export const lineupOf = (list: Card[]): Lineup =>
   list.map((m) => ({ media_type: m.media_type, id: m.id, title: titleOf(m) }))
 // Where a title page was opened from: the lineup, and for a list that pages on (a 分类, a search, a 服务器's 媒体库)
 // its request and the pages it showed, so stepping past the last one goes on into the next page. `item`: the 服务器's
-// id for the card clicked in a 媒体库, as one may keep a 作品 twice; a step drops it.
-export type From = { lineup: Lineup; list?: { path: string; pages: number } | Shelf; item?: string }
+// id for the card clicked in a 媒体库 or the 继续观看, as one may keep a 作品 twice; a step drops it. `on`: the server a
+// 继续观看 card is on, whose 片源 the page starts on, as a 媒体库's does.
+export type From = {
+  lineup: Lineup
+  list?: { path: string; pages: number } | Shelf
+  item?: string
+  on?: { server: string; user: string }
+}
 export const originalTitleOf = (m: Media) => m.original_title ?? m.original_name ?? ''
 export const yearOf = (m: Card) => (m.release_date ?? m.first_air_date ?? '').slice(0, 4)
 // TMDB's picture sizes, by what each is drawn as: a 海报 on a card, an episode's 剧照, the 片名艺术字 (and twice that

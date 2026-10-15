@@ -1,8 +1,10 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { arrivedOf, ask, forget, has, useAnswers } from '@/lib/cache'
 import { type Translate, useT } from '@/lib/i18n'
-import type { Lineup, Media, MediaType } from '@/lib/tmdb'
+import { type PlayError, clockOf } from '@/lib/player'
+import { type Lineup, type Media, episodeText } from '@/lib/tmdb'
 
 // Emby lives on the app's Rust side (src-tauri/emby-core): it finds where a 服务器 answers, signs in, keeps the token
 // where no page script can read it, and asks the server. This module hands its answers to the pages through cache.ts.
@@ -262,11 +264,15 @@ export const errorText = (e: unknown, t: Translate) => {
   }
 }
 
+// Why a version couldn't be opened, in words: what Emby said, or that the player itself couldn't start.
+export const playErrorText = (e: PlayError | undefined, t: Translate) =>
+  e?.kind === 'player' ? t('播放器没能打开', "The player couldn't start") : errorText(e, t)
+
 // A server's answers are kept in cache.ts under its own prefix, `emby/{server}/{user}/{address}/`, then what was
 // asked: `views`, `items/{library}/{sort}/{page}`, a 作品's `sources/{type}/{tmdb}`, a series'
-// `episodes/{series}/{season}`, or what the server read of a file, `versions/{item}`. The address is in it as its
-// pictures' URLs carry it, so one moved to another address asks again. The cache asks for a key it doesn't have by
-// these, which read the key back.
+// `episodes/{series}/{season}`, what the server read of a file, `versions/{item}`, or the 继续观看, `resume/{n}` (asked
+// again n times). The address is in it as its pictures' URLs carry it, so one moved to another address asks again. The
+// cache asks for a key it doesn't have by these, which read the key back.
 const keyOf = (s: Server) => `emby/${s.id}/${s.userId}/${encodeURIComponent(s.address)}/`
 // a key read back: its server and user (what the Rust side knows the server by), and the parts of what was asked after
 // its name (`items/{library}/{sort}/{page}`: library, sort, page)
@@ -342,7 +348,7 @@ export function useLibraries(s: Server) {
 
 // A 作品 as a server keeps it: its name and poster there, and the TMDB entry it is, for its page, when the server
 // knows it.
-type Item = { id: string; name: string; year?: number; poster?: string; tmdb?: { media_type: MediaType; id: number } }
+type Item = { id: string; name: string; year?: number; poster?: string; tmdb?: Pick<Media, 'media_type' | 'id'> }
 // a page of them; the first has the count of them all
 type Page = { items: Item[]; total?: number }
 
@@ -529,4 +535,111 @@ export function useVersions(s: Server | undefined, item: string | undefined, ver
     error: failed && errorText(failed.error, t),
     retry,
   }
+}
+
+// A 继续观看 on a 服务器 (emby-core's Resume): a movie or an episode started there and not finished, its name (and for an
+// episode its series', the series' item there and its numbers), the TMDB entry of the movie or the series, for its page, a 16:9 剧照,
+// where it was left off and how long it is (seconds; unknown for a .strm the server hasn't read), and when it was last
+// played (ISO 8601, in UTC).
+export type Resume = {
+  item: string
+  name: string
+  series?: string
+  seriesItem?: string
+  season?: number
+  episode?: number
+  year?: number
+  tmdb?: Pick<Media, 'media_type' | 'id'>
+  still?: string
+  position: number
+  runtime?: number
+  played?: string
+}
+// one with its server
+type ServerResume = { s: Server; r: Resume }
+
+// Each server's 继续观看 as one list, the last played first, whichever server it was on; one with no date goes last.
+const playedAt = (r: Resume) => Date.parse(r.played ?? '') || 0
+export const resumesOf = (lists: { s: Server; resumes?: Resume[] }[]): ServerResume[] =>
+  lists.flatMap(({ s, resumes }) => (resumes ?? []).map((r) => ({ s, r }))).sort((a, b) => playedAt(b.r) - playedAt(a.r))
+
+// A 继续观看's episode in words (第 1 季第 5 集), none for a movie: with its season, as how many seasons a series has
+// (which the 作品 page goes by, naming none for one) isn't known here.
+export const episodeOf = (r: Resume, t: Translate) =>
+  r.series && r.episode !== undefined ? episodeText({ season: r.season, episode: r.episode }, t) : undefined
+
+// A 继续观看 as the player's window names it: the movie, or the series and the episode.
+export const resumeTitle = (r: Resume, t: Translate) => {
+  const episode = episodeOf(r, t)
+  return episode ? `${r.series} · ${episode}` : r.name
+}
+
+// What's left of a 继续观看, in words (还剩 1 小时 5 分钟); its length unknown, where it was left off (看到 20:43).
+export const leftOf = ({ position, runtime }: Pick<Resume, 'position' | 'runtime'>, t: Translate) => {
+  if (!runtime) return t(`看到 ${clockOf(position)}`, `At ${clockOf(position)}`)
+  const m = Math.max(1, Math.round((runtime - position) / 60))
+  const [h, min] = [Math.floor(m / 60), m % 60]
+  const left = !h ? t(`${m} 分钟`, `${m} min`) : min ? t(`${h} 小时 ${min} 分钟`, `${h} h ${min} min`) : t(`${h} 小时`, `${h} h`)
+  return t(`还剩 ${left}`, `${left} left`)
+}
+
+// Each server's 继续观看 as last answered, by its prefix (keyOf, the address in it, as the pictures' URLs carry it): shown
+// while it's asked again, so the row doesn't empty meanwhile and a page drawn again (back from a 作品) draws it in its
+// first frame. The one exception to a hook's answers being its own request's: the same list, asked again.
+const lastResumes = new Map<string, Resume[]>()
+const atOf = (s: Pick<Server, 'id' | 'userId'>) => `${s.id}/${s.userId}`
+const askResume = (key: string) => {
+  const { server, user, asked: [, n] } = askedIn(key)
+  return invoke<Resume[]>('emby_resume', { server, user }).then((resumes) => {
+    // not one asked before it that answers after it
+    if (Number(n) === (again.get(atOf({ id: server, userId: user })) ?? 0))
+      lastResumes.set(key.slice(0, key.lastIndexOf('resume/')), resumes)
+    return resumes
+  })
+}
+
+// How many times each server's list has been asked again, its key's last part, as the cache keeps an answer for good;
+// `asked` counts them all, for the hooks to hear.
+const again = new Map<string, number>()
+let asked = 0
+const resumeKey = (s: Server) => `${keyOf(s)}resume/${again.get(atOf(s)) ?? 0}`
+// Asks these servers' 继续观看 again now, whether a row shows it or not: the last answer forgotten (its list shown
+// meanwhile), the next asked under a key of its own.
+const askAgain = (these: Server[]) => {
+  for (const s of these) {
+    forget(resumeKey(s))
+    again.set(atOf(s), (again.get(atOf(s)) ?? 0) + 1)
+    ask(resumeKey(s), askResume).catch(() => {}) // asked again by the row that shows it
+  }
+  asked++
+  notify()
+}
+if (canConnect) {
+  // a stop the player has told a server of (src-tauri/src/player/report.rs); not heard, the rows change as the window
+  // comes back
+  listen<{ server: string; user: string }>('emby://resume', ({ payload }) =>
+    askAgain(servers.filter((s) => s.id === payload.server && s.userId === payload.user)),
+  ).catch(console.error)
+  // the window brought back, as what was watched elsewhere meanwhile (another of Emby's apps) shows here too; at most
+  // every 30 s, as switching apps brings it back often
+  let back = 0
+  window.addEventListener('focus', () => {
+    if (Date.now() - back < 30_000) return
+    back = Date.now()
+    askAgain(servers)
+  })
+}
+
+// The 继续观看 of each of `servers` as one list, the last played first, each server's as it answers, or its last while
+// it's asked again. `down`: those that couldn't be asked, with why.
+export function useResume(servers: Server[]) {
+  const t = useT()
+  useSyncExternalStore(subscribe, () => asked)
+  const keys = servers.map(resumeKey)
+  const { data, failed, retry } = useAnswers<Resume[]>(keys, askResume)
+  const lists = servers.map((s, i) => {
+    const down = !data[i] && !!failed && keys[i] in failed.of
+    return { s, resumes: data[i] ?? lastResumes.get(keyOf(s)), error: down ? errorText(failed.of[keys[i]], t) : undefined }
+  })
+  return { resumes: resumesOf(lists), down: lists.filter((l) => l.error), retry }
 }

@@ -10,7 +10,9 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use emby_core::{Emby, Error, Form, Item, Kind, Library, Page, Play, Server, Sort, Source, Status, Tmdb, Track, Version, Video};
+use emby_core::{
+    Emby, Error, Form, Item, Kind, Library, Page, Play, Resume, Server, Sort, Source, Status, Tmdb, Track, Version, Video,
+};
 use serde_json::{Value, json};
 
 // What the stand-in server handed out and was told.
@@ -28,6 +30,10 @@ struct Seen {
     refused: bool,
     // what the last list of 作品 was asked with
     items_asked: HashMap<String, String>,
+    // what it was told of playing: each report's path, and what it said
+    reports: Vec<(String, Value)>,
+    // whether its lookup of the 继续观看's series fails
+    series_down: bool,
 }
 type Shared = Arc<Mutex<Seen>>;
 
@@ -100,6 +106,14 @@ async fn views(State(seen): State<Shared>, headers: HeaderMap) -> Response {
 async fn items(State(seen): State<Shared>, headers: HeaderMap, Query(q): Query<HashMap<String, String>>) -> Response {
     if !signed_in(&seen, &headers) {
         return StatusCode::UNAUTHORIZED.into_response();
+    }
+    // the series of the 继续观看's episodes, for their TMDB entries (not kept as what a list was asked with, which the
+    // 继续观看's own is)
+    if q.get("Ids").map(String::as_str) == Some("s1") {
+        if seen.lock().unwrap().series_down {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+        return Json(json!({ "Items": [{ "Id": "s1", "ProviderIds": { "Tmdb": "68507" } }] })).into_response();
     }
     seen.lock().unwrap().items_asked = q.clone();
     // a 作品's 片源, by its TMDB entry
@@ -249,6 +263,38 @@ async fn playback_info(
     Json(json!({ "MediaSources": sources, "PlaySessionId": "p" })).into_response()
 }
 
+// The 继续观看: an episode with a 剧照 of its own, a movie on a .strm the server hasn't read (its length unknown), and a
+// music video, which has no page.
+async fn resume(State(seen): State<Shared>, headers: HeaderMap, Query(q): Query<HashMap<String, String>>) -> Response {
+    if !signed_in(&seen, &headers) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    // when each was last played only when asked for, as Emby 4.9 answers
+    let dated = q["Fields"].split(',').any(|f| f == "UserDataLastPlayedDate");
+    let played = |date: &str| if dated { json!(date) } else { Value::Null };
+    seen.lock().unwrap().items_asked = q;
+    Json(json!({ "Items": [
+        { "Id": "e7", "Name": "控制", "Type": "Episode", "SeriesId": "s1", "SeriesName": "黑暗物质", "ParentIndexNumber": 2,
+          "IndexNumber": 1, "RunTimeTicks": 27_000_000_000u64, "ImageTags": { "Primary": "es" },
+          "ParentBackdropItemId": "s1", "ParentBackdropImageTags": ["sb"],
+          "UserData": { "PlaybackPositionTicks": 6_000_000_000u64, "LastPlayedDate": played("2026-10-14T12:00:00.0000000Z") } },
+        { "Id": "m2", "Name": "春江水暖", "Type": "Movie", "ProductionYear": 2019, "ProviderIds": { "Tmdb": "596881" },
+          "ImageTags": { "Primary": "mp" }, "BackdropImageTags": ["mb"],
+          "UserData": { "PlaybackPositionTicks": 12_345_000_000u64, "LastPlayedDate": played("2026-10-13T20:00:00.0000000Z") } },
+        { "Id": "mv", "Name": "MV", "Type": "MusicVideo", "UserData": { "PlaybackPositionTicks": 1 } },
+    ], "TotalRecordCount": 3 }))
+    .into_response()
+}
+
+// A report on playing, kept as told.
+async fn playing(State(seen): State<Shared>, headers: HeaderMap, uri: axum::http::Uri, Json(body): Json<Value>) -> Response {
+    if !signed_in(&seen, &headers) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    seen.lock().unwrap().reports.push((uri.path().trim_start_matches("/emby/").to_owned(), body));
+    StatusCode::NO_CONTENT.into_response()
+}
+
 async fn logout(State(seen): State<Shared>, headers: HeaderMap) -> StatusCode {
     let mut seen = seen.lock().unwrap();
     if let Some(t) = token(&headers) {
@@ -271,6 +317,10 @@ async fn emby() -> (String, Shared) {
         .route("/emby/Users/u1/Views", get(views))
         .route("/emby/Users/u1/Items", get(items))
         .route("/emby/Users/u1/Items/{item}", get(item))
+        .route("/emby/Users/u1/Items/Resume", get(resume))
+        .route("/emby/Sessions/Playing", post(playing))
+        .route("/emby/Sessions/Playing/Progress", post(playing))
+        .route("/emby/Sessions/Playing/Stopped", post(playing))
         .route("/emby/Shows/{series}/Episodes", get(episodes))
         .route("/emby/Items/{item}/PlaybackInfo", post(playback_info))
         .route("/emby/Sessions/Logout", post(logout))
@@ -805,13 +855,95 @@ async fn a_version_plays_from_its_own_link_where_the_user_left_off() {
     emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
     // the link alone, which carries no token, without the fragment
     let url = "https://drive.example/d/%E6%98%A5%E6%B1%9F.1080p.BluRay.mkv?sign=secret".to_owned();
-    assert_eq!(emby.play("srv", "u1", "m2", "v2").await, Ok(Play { url, start: 1234.5 }));
+    let played = Play { url, start: 1234.5, version: "v2".into() };
+    assert_eq!(emby.play("srv", "u1", "m2", Some("v2")).await.as_ref(), Ok(&played));
+    // none named, from the 继续观看: its first that plays so
+    assert_eq!(emby.play("srv", "u1", "m2", None).await, Ok(played));
     // a file on the server's disk plays only through the server
-    assert_eq!(emby.play("srv", "u1", "m1", "v1").await, Err(Error::NotDirect));
+    assert_eq!(emby.play("srv", "u1", "m1", Some("v1")).await, Err(Error::NotDirect));
+    assert_eq!(emby.play("srv", "u1", "m1", None).await, Err(Error::NotDirect));
     // a version the 作品 no longer has, and an id that isn't one Emby gives, as if the server had neither
-    assert_eq!(emby.play("srv", "u1", "m2", "v9").await, Err(Error::Server { status: 404 }));
-    assert_eq!(emby.play("srv", "u1", "../m2", "v2").await, Err(Error::Server { status: 404 }));
-    assert_eq!(emby.play("gone", "u1", "m2", "v2").await, Err(Error::NoServer));
+    assert_eq!(emby.play("srv", "u1", "m2", Some("v9")).await, Err(Error::Server { status: 404 }));
+    assert_eq!(emby.play("srv", "u1", "../m2", Some("v2")).await, Err(Error::Server { status: 404 }));
+    assert_eq!(emby.play("gone", "u1", "m2", Some("v2")).await, Err(Error::NoServer));
+}
+
+#[tokio::test]
+async fn the_resume_list_links_episodes_to_their_series_with_pictures_and_where_each_was_left_off() {
+    let (at, seen) = emby().await;
+    let emby = Emby::open(file("resume"));
+    emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
+    let picture = |id: &str, kind: &str, tag: &str| {
+        Some(format!("http://{at}/emby/Items/{id}/Images/{kind}?tag={tag}&maxWidth=640&quality=90"))
+    };
+    assert_eq!(
+        emby.resume("srv", "u1").await.unwrap(),
+        [
+            Resume {
+                item: "e7".into(),
+                name: "控制".into(),
+                series: Some("黑暗物质".into()),
+                series_item: Some("s1".into()),
+                season: Some(2),
+                episode: Some(1),
+                year: None,
+                tmdb: Some(Tmdb { media_type: Kind::Tv, id: 68507 }),
+                // its own 剧照 over the series' backdrop
+                still: picture("e7", "Primary", "es"),
+                position: 600.0,
+                runtime: Some(2700.0),
+                played: Some("2026-10-14T12:00:00.0000000Z".into()),
+            },
+            Resume {
+                item: "m2".into(),
+                name: "春江水暖".into(),
+                series: None,
+                series_item: None,
+                season: None,
+                episode: None,
+                year: Some(2019),
+                tmdb: Some(Tmdb { media_type: Kind::Movie, id: 596881 }),
+                // a movie's 海报 isn't a 剧照: its backdrop
+                still: picture("m2", "Backdrop/0", "mb"),
+                position: 1234.5,
+                runtime: None,
+                played: Some("2026-10-13T20:00:00.0000000Z".into()),
+            },
+        ]
+    );
+    // movies and episodes, what of each kind plays
+    assert_eq!(seen.lock().unwrap().items_asked["IncludeItemTypes"], "Movie,Episode");
+    // the series not found, the episode is still there, with no page
+    seen.lock().unwrap().series_down = true;
+    let tmdb: Vec<_> = emby.resume("srv", "u1").await.unwrap().into_iter().map(|r| r.tmdb).collect();
+    assert_eq!(tmdb, [None, Some(Tmdb { media_type: Kind::Movie, id: 596881 })]);
+    assert_eq!(emby.resume("gone", "u1").await, Err(Error::NoServer));
+}
+
+#[tokio::test]
+async fn playing_is_told_as_started_then_where_it_is_then_stopped_under_the_servers_play_session() {
+    let (at, seen) = emby().await;
+    let emby = Emby::open(file("watch"));
+    emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
+    let mut watch = emby.watch("srv", "u1", "m2", "v2", 1234.5).await.unwrap();
+    emby.progress(&mut watch, 1244.0, true).await.unwrap();
+    emby.stopped(&watch, 1250.0).await.unwrap();
+    let reports = std::mem::take(&mut seen.lock().unwrap().reports);
+    let paths: Vec<_> = reports.iter().map(|(path, _)| path.as_str()).collect();
+    assert_eq!(paths, ["Sessions/Playing", "Sessions/Playing/Progress", "Sessions/Playing/Stopped"]);
+    // each names the version under the session PlaybackInfo opened, where it is in Emby's ticks
+    for (_, body) in &reports {
+        assert_eq!((&body["ItemId"], &body["MediaSourceId"], &body["PlaySessionId"]), (&json!("m2"), &json!("v2"), &json!("p")));
+        assert_eq!(body["PlayMethod"], "DirectPlay");
+    }
+    let ticks: Vec<_> = reports.iter().map(|(_, body)| body["PositionTicks"].as_u64()).collect();
+    assert_eq!(ticks, [Some(12_345_000_000), Some(12_440_000_000), Some(12_500_000_000)]);
+    // a pause told as one
+    assert_eq!((&reports[1].1["IsPaused"], &reports[1].1["EventName"]), (&json!(true), &json!("pause")));
+    // an id that isn't one Emby gives isn't put in a path
+    assert_eq!(emby.watch("srv", "u1", "../m2", "v2", 0.0).await.err(), Some(Error::Server { status: 404 }));
+    seen.lock().unwrap().tokens.clear();
+    assert_eq!(emby.progress(&mut watch, 1.0, false).await, Err(Error::SignedOut));
 }
 
 #[tokio::test]

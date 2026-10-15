@@ -18,6 +18,7 @@
     "allow-emby-sources",
     "allow-emby-episodes",
     "allow-emby-versions",
+    "allow-emby-resume",
     "allow-player-open"
   ]
 }

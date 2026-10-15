@@ -57,6 +57,13 @@ impl Emby {
         answer(request.query(query).json(&serde_json::json!({})).timeout(timeout)).await
     }
 
+    // Tells a kept server what its signed-in user is doing (playing), as the JSON `body`; Emby takes it with an empty
+    // answer.
+    pub(crate) async fn tell(&self, s: &Signed, path: &str, body: &serde_json::Value, timeout: Duration) -> Result<(), Error> {
+        let request = self.ask(self.http.post(format!("{}/{path}", s.server.address)), &s.token);
+        checked(request.json(body).timeout(timeout)).await.map(drop)
+    }
+
     // Signs in as `username` to the server found at `address`; its entry has no 备注 yet.
     pub(crate) async fn sign_in(
         &self,
@@ -141,17 +148,22 @@ fn header_safe(name: &str) -> String {
     name.bytes().map(|b| if keep(b) { char::from(b).to_string() } else { format!("%{b:02X}") }).collect()
 }
 
-// Sends a request asked as the signed-in user, and reads what Emby answered: `SignedOut` when it turned the token down,
+// Sends a request asked as the signed-in user, and reads what Emby answered.
+async fn answer<T: DeserializeOwned>(request: RequestBuilder) -> Result<T, Error> {
+    checked(request).await?.json().await.map_err(|_| Error::Offline)
+}
+
+// Sends a request asked as the signed-in user, and checks that Emby took it: `SignedOut` when it turned the token down,
 // `Refused` when it turned the user away, `Moved` for a redirect on its own host, which isn't followed; `Untrusted` when
 // its certificate no longer is (expired, say).
-async fn answer<T: DeserializeOwned>(request: RequestBuilder) -> Result<T, Error> {
+async fn checked(request: RequestBuilder) -> Result<Response, Error> {
     let answer = request.send().await.map_err(unsent)?;
     match answer.status() {
         StatusCode::UNAUTHORIZED => Err(Error::SignedOut),
         StatusCode::FORBIDDEN => Err(Error::Refused),
         status if status.is_redirection() && within(&answer) => Err(Error::Moved),
         status if !status.is_success() => Err(Error::Server { status: status.as_u16() }),
-        _ => answer.json().await.map_err(|_| Error::Offline),
+        _ => Ok(answer),
     }
 }
 

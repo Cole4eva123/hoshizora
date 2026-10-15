@@ -9,7 +9,7 @@ use serde_json::{Map, Value};
 use url::{Host, Url};
 
 use crate::browse::{Ids, Listing, items_of};
-use crate::{BROWSE, Emby, Error, Kind};
+use crate::{BROWSE, Emby, Error, Kind, Signed};
 
 // how long resolving a server's name may take, for how far it is (`reach_of`): it just answered, so it's known
 const RESOLVE: Duration = Duration::from_secs(2);
@@ -117,11 +117,14 @@ struct Aired {
     media_sources: Vec<MediaSource>,
 }
 
+// What a read as for playback answers (`read`): the versions read, and the play session it opened, which reports on
+// playing name (`watch`).
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct PlaybackInfo {
+pub(crate) struct PlaybackInfo {
     #[serde(default)]
     media_sources: Vec<MediaSource>,
+    pub(crate) play_session_id: Option<String>,
 }
 
 // A version as Emby has it; with how Emby says it can be played (`link_of`).
@@ -145,11 +148,12 @@ struct MediaSource {
 }
 
 /// What a version plays: its own link, played from where it is, and where the user left off (seconds in, 0 for the
-/// start).
+/// start); and the version, by its id, as the reports on it name it (`watch`).
 #[derive(Debug, PartialEq)]
 pub struct Play {
     pub url: String,
     pub start: f64,
+    pub version: String,
 }
 
 // The parts of a 作品's own answer `play` reads: its versions, and the user's place in it.
@@ -161,13 +165,16 @@ struct Playing {
     user_data: Option<UserData>,
 }
 
+// The user's place in a 作品: where they left off, in Emby's ticks (TICKS a second), and when they last played it, which
+// a list leaves out unless asked for (`resume`).
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct UserData {
-    // in Emby's ticks, 10 million a second
+pub(crate) struct UserData {
     #[serde(default)]
-    playback_position_ticks: u64,
+    pub(crate) playback_position_ticks: u64,
+    pub(crate) last_played_date: Option<String>,
 }
+pub(crate) const TICKS: f64 = 1e7;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -267,25 +274,21 @@ impl Emby {
     }
 
     /// The versions of a movie's 片源 or of an episode, with their 音轨 and 字幕, having the server read a file it
-    /// hasn't yet (a .strm), which it then keeps, so `sources` and `episodes` bring them too from then on. Asked as for
-    /// playback, as otherwise the server answers from what it has; but nothing plays, and nothing is recorded as
-    /// watched.
+    /// hasn't yet (a .strm), which it then keeps, so `sources` and `episodes` bring them too from then on (`read`).
     pub async fn versions(&self, server: &str, user: &str, item: &str) -> Result<Vec<Version>, Error> {
         let s = self.signed(server, user)?;
         if !plain(item) {
             return Ok(vec![]);
         }
-        let query =
-            [("UserId", s.server.user_id.as_str()), ("IsPlayback", "true"), ("AutoOpenLiveStream", "false")];
-        let info: PlaybackInfo = self.post(&s, &format!("Items/{item}/PlaybackInfo"), &query, READ).await?;
+        let info = self.read(&s, item, None).await?;
         let server = reach_for(&s.server.address, &info.media_sources).await;
         Ok(info.media_sources.into_iter().map(|m| version(m, server)).collect())
     }
 
     /// What a version of a 作品 (a movie, or an episode) plays: its own link, which the player is given to play
-    /// from where it is, never the server's stream with the token, and where the user left off. `NotDirect` for one
-    /// that only the server can play (`link_of`).
-    pub async fn play(&self, server: &str, user: &str, item: &str, version: &str) -> Result<Play, Error> {
+    /// from where it is, never the server's stream with the token, and where the user left off. With no version named
+    /// (from the 继续观看), its first that plays so. `NotDirect` for one that only the server can play (`link_of`).
+    pub async fn play(&self, server: &str, user: &str, item: &str, version: Option<&str>) -> Result<Play, Error> {
         let s = self.signed(server, user)?;
         // as for one the server doesn't have, never put in a path
         let gone = Error::Server { status: 404 };
@@ -293,15 +296,30 @@ impl Emby {
             return Err(gone);
         }
         let playing: Playing = self.get(&s, &format!("{}/{item}", items_of(&s)), &[], BROWSE).await?;
-        let m = playing.media_sources.into_iter().find(|m| m.id == version).ok_or(gone)?;
-        let url = link_of(&m, reach_for(&s.server.address, [&m]).await).ok_or(Error::NotDirect)?;
+        let named = playing.media_sources.into_iter().filter(|m| version.is_none_or(|v| m.id == v)).collect::<Vec<_>>();
+        if named.is_empty() {
+            return Err(gone);
+        }
+        // ponytail: none named, the first that plays, as Emby keeps no version with the user's place in a 作品; a 片源
+        // with a 4K copy before the 1080p one watched opens the 4K. Keep the version told as played (`watch`) on this
+        // device if that turns up.
+        let server = reach_for(&s.server.address, &named).await;
+        let (url, id) = named.into_iter().find_map(|m| Some((link_of(&m, server)?, m.id))).ok_or(Error::NotDirect)?;
         let ticks = playing.user_data.map_or(0, |u| u.playback_position_ticks);
-        Ok(Play { url, start: ticks as f64 / 1e7 })
+        Ok(Play { url, start: ticks as f64 / TICKS, version: id })
+    }
+
+    // Has the server read a 作品's file (the version named, or each) as for playback, as otherwise it answers from what
+    // it has; nothing plays, and nothing is recorded as watched. `item` is one `plain` passed.
+    pub(crate) async fn read(&self, s: &Signed, item: &str, version: Option<&str>) -> Result<PlaybackInfo, Error> {
+        let mut query = vec![("UserId", s.server.user_id.as_str()), ("IsPlayback", "true"), ("AutoOpenLiveStream", "false")];
+        query.extend(version.map(|v| ("MediaSourceId", v)));
+        self.post(s, &format!("Items/{item}/PlaybackInfo"), &query, READ).await
     }
 }
 
 // Whether an id the pages hand over is one Emby gives (digits, or a GUID's hex), safe to put in a path.
-fn plain(id: &str) -> bool {
+pub(crate) fn plain(id: &str) -> bool {
     !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric())
 }
 

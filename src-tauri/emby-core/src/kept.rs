@@ -96,7 +96,7 @@ fn write(file: &Path, json: &[u8]) -> std::io::Result<()> {
 }
 
 // This device's id, made on the first launch and kept with the servers.
-fn random_id() -> String {
+pub(crate) fn random_id() -> String {
     use std::hash::BuildHasher;
     format!("{:016x}", std::collections::hash_map::RandomState::new().hash_one(SystemTime::now()))
 }

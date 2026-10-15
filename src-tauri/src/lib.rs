@@ -2,8 +2,8 @@
 // a window of its own.
 mod player;
 
-use emby_core::{Emby, Episode, Error, Form, Kind, Library, Page, Server, Sort, Source, Status, Version};
-use player::{Command, Picks, Player};
+use emby_core::{Emby, Episode, Error, Form, Kind, Library, Page, Resume, Server, Sort, Source, Status, Version};
+use player::{Command, Origin, Picks, Player};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
@@ -86,6 +86,11 @@ async fn emby_versions(
     emby.versions(&server, &user, &item).await
 }
 
+#[tauri::command]
+async fn emby_resume(emby: State<'_, Emby>, server: String, user: String) -> Result<Vec<Resume>, Error> {
+    emby.resume(&server, &user).await
+}
+
 // Why player_open couldn't play: what Emby said, as the pages read it (EmbyError), or `{ kind: "player" }` when the
 // player itself couldn't start.
 #[derive(Serialize)]
@@ -97,6 +102,7 @@ enum Failed {
 
 // Plays a version of a 作品 (a movie, an episode) in the player's window, from where the user left off, on the 音轨 and
 // 字幕 picked (by their index in the file; none to leave them to the file); the page names it for the window's title.
+// With no version (a 继续观看's), its first that plays. The server is told how playing goes (player/report.rs).
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 async fn player_open(
@@ -105,13 +111,14 @@ async fn player_open(
     server: String,
     user: String,
     item: String,
-    version: String,
+    version: Option<String>,
     title: String,
     audio: Option<i64>,
     subtitle: Option<i64>,
 ) -> Result<(), Failed> {
-    let play = emby.play(&server, &user, &item, &version).await.map_err(Failed::Emby)?;
-    player::open(&app, play, title, Picks { audio, subtitle }).await.map_err(|e| {
+    let play = emby.play(&server, &user, &item, version.as_deref()).await.map_err(Failed::Emby)?;
+    let origin = Origin { server, user, item, version: play.version.clone() };
+    player::open(&app, play, title, Picks { audio, subtitle }, origin).await.map_err(|e| {
         eprintln!("player: {e}");
         Failed::Player { kind: "player" }
     })
@@ -135,7 +142,7 @@ pub fn run() {
         .setup(|app| {
             // the servers are kept with the app's data, ~/Library/Application Support/<identifier>/ on a Mac
             app.manage(Emby::open(app.path().app_data_dir()?.join("emby.json")));
-            app.manage(Player::default());
+            app.manage(Player::new(app.handle())?);
             Ok(())
         })
         // the Mac's own symbols, which the player's controls are drawn with (player/symbol.rs): off the main thread, which
@@ -155,6 +162,7 @@ pub fn run() {
             emby_sources,
             emby_episodes,
             emby_versions,
+            emby_resume,
             player_open,
             player_state,
             player_command

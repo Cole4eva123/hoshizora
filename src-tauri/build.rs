@@ -11,6 +11,7 @@ const COMMANDS: &[(&str, &str)] = &[
   ("emby_sources", MAIN),
   ("emby_episodes", MAIN),
   ("emby_versions", MAIN),
+  ("emby_resume", MAIN),
   ("player_open", MAIN),
   ("player_state", PLAYER),
   ("player_command", PLAYER),

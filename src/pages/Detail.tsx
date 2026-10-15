@@ -136,13 +136,20 @@ function TitlePage({
 // the 类型 the wall names beside its type and date, the first few, so the line stays one
 const factGenres = 3
 
-// the card clicked (`item`) is the one stepped from, not the one stepped to
-const stepping = (from: From) => ({ state: { ...from, item: undefined }, replace: true, viewTransition: true })
+// the card clicked (`item`), and a 继续观看's server (`on`, a row of several servers'), are the one stepped from, not the
+// one stepped to
+const stepping = (from: From) => ({
+  state: { ...from, item: undefined, on: undefined },
+  replace: true,
+  viewTransition: true,
+})
 
-// The 片源 a 作品 opened from a 服务器's 媒体库 starts on: the card clicked there, or for a step, which names none,
-// that server's first.
+// The 片源 a 作品 opened from a 服务器's 媒体库, or from a 继续观看, starts on: the card clicked there, or for a step,
+// which names none, that server's first.
 const preferredOf = (from: From | null): Partial<Picked> | undefined =>
-  from?.list && 'library' in from.list ? { server: from.list.server, user: from.list.user, item: from.item } : undefined
+  from?.list && 'library' in from.list
+    ? { server: from.list.server, user: from.list.user, item: from.item }
+    : from?.on && { ...from.on, item: from.item }
 
 // The 作品 before and after this one in the list it was opened from (a 分类, a search, a home row or the wall, an
 // actor's 作品, a 服务器's 媒体库). Past the last one loaded from a list that pages on, the next page is asked for and the

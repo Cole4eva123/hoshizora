@@ -11,6 +11,7 @@ import {
   type Status,
   type Version,
   errorText,
+  playErrorText,
   nameOf,
   readAheadOn,
   useServers,
@@ -378,7 +379,7 @@ export function Tracks({
       {failed?.on === on && (
         <Failed
           // in words as it's drawn, so in the language shown
-          error={failed.error?.kind === 'player' ? t('播放器没能打开', "The player couldn't start") : errorText(failed.error, t)}
+          error={playErrorText(failed.error, t)}
           retry={start}
           className="mt-4"
         />

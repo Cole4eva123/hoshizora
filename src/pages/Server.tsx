@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Navigate, useParams, useSearchParams } from 'react-router'
 import { Choices } from '@/components/Choices'
 import { ServerMark } from '@/components/Constellation'
+import { ContinueWatching } from '@/components/ContinueWatching'
 import { EmptyState, Page } from '@/components/Page'
 import { Failed, Frame, PagedGrid, Poster, Row, StillSkeletons } from '@/components/PosterRow'
 import {
@@ -111,6 +112,10 @@ function Browse({ server }: { server: Server }) {
             ? libraries.map((l) => <Cover key={l.id} library={l} picked={l === library} onPick={() => choose('lib', l.id)} />)
             : <StillSkeletons n={mostCols(coverTrack)} />}
         </Row>
+      </div>
+      {/* this server's 继续观看 under its 媒体库, the row running to the screen's edges too; none, no room left */}
+      <div className="-mx-(--gutter) mt-10 empty:hidden">
+        <ContinueWatching servers={[server]} />
       </div>
       <div className="my-8">
         <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">

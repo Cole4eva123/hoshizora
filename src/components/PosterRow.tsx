@@ -148,8 +148,9 @@ export function Row({
     measure() // a new list changes how far the row scrolls, without firing onScroll or the ResizeObserver
   }, [start, items])
   // a row made wider or narrower can lose or gain its overflow, and so can one whose items come in by themselves (a
-  // child that draws several, as the 片源 of a server that has just answered)
-  useEffect(() => {
+  // child that draws several, as the 片源 of a server that has just answered); let go in the commit that takes the row
+  // away, with its ref, as an observer heard after it would find none
+  useLayoutEffect(() => {
     const ro = new ResizeObserver(measure)
     const mo = new MutationObserver(measure)
     ro.observe(ref.current!)

@@ -1,7 +1,9 @@
 import { type ReactNode, useMemo } from 'react'
+import { ContinueWatching } from '@/components/ContinueWatching'
 import { EmptyState, ToLibrary } from '@/components/Page'
 import { PosterRow } from '@/components/PosterRow'
 import { PosterWall, TitleInfo } from '@/components/PosterWall'
+import { useServers } from '@/lib/emby'
 import { useT } from '@/lib/i18n'
 import {
   categories,
@@ -46,8 +48,8 @@ export default function Home() {
           pb-(--page-bottom)：下内边距，用 index.css 里的 --page-bottom（至少 64px，iPhone 底部横条更高时取横条高度），
             最后一行不会贴着屏幕底 */}
       <div className="space-y-4 pb-(--page-bottom)">
-        {/* 继续观看：Emby 还没做，现在是占位 */}
-        <ContinueWatching />
+        {/* 继续观看：所有服务器的合在一起，每张卡标出是哪台服务器的；还没连服务器时，说去哪连 */}
+        <Resuming />
         {/* 其余分类每个一行；key 让 React 认出哪行是哪个分类 */}
         {rest.map((c) => (
           <PosterRow key={c.key} category={c} />
@@ -113,8 +115,11 @@ function Fallback({ error }: { error?: string }) {
   )
 }
 
-function ContinueWatching() {
+// Every server's 继续观看, each card naming its server; before any is connected, where to connect one.
+function Resuming() {
   const t = useT()
+  const servers = useServers()
+  if (servers.length) return <ContinueWatching servers={servers} named />
   return (
     <section className="px-(--gutter)">
       <EmptyState title={t('继续观看', 'Continue Watching')}>

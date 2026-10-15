@@ -1,7 +1,18 @@
 import { expect, test } from 'bun:test'
 // Finding a server, signing in and reading its answers are emby-core's, tested in Rust (src-tauri/emby-core).
-import { type Answer, type Server, itemsOf, librarySorts, lineupOfItems, pickOf } from '@/lib/emby'
-import { zh } from '@/lib/i18n'
+import {
+  type Answer,
+  type Resume,
+  type Server,
+  itemsOf,
+  leftOf,
+  librarySorts,
+  lineupOfItems,
+  pickOf,
+  resumeTitle,
+  resumesOf,
+} from '@/lib/emby'
+import { en, zh } from '@/lib/i18n'
 
 test('librarySorts turns 最新 into 最早 where it stands, and back', () => {
   const keys = (picked?: string) => librarySorts(zh, picked).map((s) => [s.key, s.flip])
@@ -54,4 +65,33 @@ test('pickOf shows the 片源 wanted, waiting for its server, else the first fou
   // with episodes over the wanted one's without
   expect(picked(pickOf([has(a, ['a0', 0], ['a1', 2])], { server: 'a', user: 'u' }))).toBe('a/a1')
   expect(picked(pickOf([has(a, ['a0', 0]), has(b, ['b1', 2])], { server: 'a', user: 'u' }))).toBe('b/b1')
+})
+
+test('resumesOf puts every server\'s 继续观看 in one list, the last played first, one with no date last', () => {
+  const [a, b] = [{ id: 'a', userId: 'u' }, { id: 'b', userId: 'u' }] as Server[]
+  const r = (item: string, played?: string): Resume => ({ item, name: item, position: 60, played })
+  const lists = [
+    { s: a, resumes: [r('a1', '2026-10-14T21:00:00.0000000Z'), r('a2', '2026-10-12T08:00:00.0000000Z'), r('a3')] },
+    // another Emby's way of writing them
+    { s: b, resumes: [r('b1', '2026-10-14T05:00:00+08:00'), r('b2', '2026-10-13T23:59:59Z')] },
+    // one still asked, or that couldn't be
+    { s: b },
+  ]
+  expect(resumesOf(lists).map(({ s, r }) => `${s.id}:${r.item}`)).toEqual(['a:a1', 'b:b2', 'b:b1', 'a:a2', 'a:a3'])
+})
+
+test('leftOf says what is left of a 继续观看, or where it was left off when its length is unknown', () => {
+  expect(leftOf({ position: 1243, runtime: 7507 }, zh)).toBe('还剩 1 小时 44 分钟')
+  expect(leftOf({ position: 0, runtime: 3600 }, zh)).toBe('还剩 1 小时')
+  expect(leftOf({ position: 2520, runtime: 2700 }, en)).toBe('3 min left')
+  // a few seconds from the end still has a minute left, not none
+  expect(leftOf({ position: 2695, runtime: 2700 }, zh)).toBe('还剩 1 分钟')
+  expect(leftOf({ position: 1243 }, zh)).toBe('看到 20:43')
+})
+
+test('resumeTitle names an episode by its series and numbers, as the 作品 page names what it plays', () => {
+  const r = (more: Partial<Resume>): Resume => ({ item: 'i', name: '控制', position: 0, ...more })
+  expect(resumeTitle(r({ series: '漫长的季节', season: 1, episode: 5 }), zh)).toBe('漫长的季节 · 第 1 季第 5 集')
+  expect(resumeTitle(r({ series: 'The Long Season', season: 1, episode: 5 }), en)).toBe('The Long Season · S1 E5')
+  expect(resumeTitle(r({ name: '流浪地球' }), zh)).toBe('流浪地球')
 })
