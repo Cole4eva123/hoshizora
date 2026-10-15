@@ -2,6 +2,7 @@
 //! drawn under the page (player.html), whose controls float over it. player_open (src/lib.rs) opens the window, or
 //! plays the next version in it; the page tells it what to do (`Command`), and hears how playing goes (`State`).
 
+mod colour;
 mod layer;
 mod mpv;
 mod now;
@@ -19,13 +20,16 @@ use emby_core::Play;
 use objc2::MainThreadMarker;
 use objc2::rc::Retained;
 use objc2::runtime::{NSObjectProtocol, ProtocolObject};
-use objc2_app_kit::{NSAnimatablePropertyContainer, NSAnimationContext, NSEvent, NSWindow, NSWindowButton, NSWindowStyleMask};
+use objc2_app_kit::{
+    NSAnimatablePropertyContainer, NSAnimationContext, NSEvent, NSScreen, NSWindow, NSWindowButton, NSWindowStyleMask,
+};
 use objc2_foundation::{NSActivityOptions, NSPoint, NSProcessInfo, NSRect, NSSize, NSString};
 use serde::{Deserialize, Serialize};
 use tauri::window::Color;
 use tauri::{AppHandle, Emitter, Manager, Theme, TitleBarStyle, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri::WindowEvent;
 
+use colour::{Hdr, Look};
 use layer::Picture;
 use mpv::{Event, Mpv};
 use now::Remote;
@@ -140,6 +144,9 @@ pub struct State {
     /// a version asked for and not yet started: the last file's time is told no more
     #[serde(skip)]
     next: bool,
+    /// the film's HDR, by its picture's parameters, whatever the screen shows of it (`colour`)
+    #[serde(skip)]
+    hdr: Option<Hdr>,
 }
 
 impl State {
@@ -256,6 +263,12 @@ impl Playing {
             ("ytdl", "no"),
             // the page's slider runs to 100, mpv's own to 130
             ("volume-max", "100"),
+            // the screen's profile (colour.rs) as a black that's black, as Apple's display profiles have (the XDR's,
+            // Display P3): mpv reads that black as a contrast past its range and draws a film grey or black, so it's
+            // taken as BT.1886's pure 2.4 power
+            // ponytail: a calibrated profile's measured black loses the lift BT.1886 gives its shadows; set this per
+            // profile, by the black lcms reads in it, if one of those turns up
+            ("icc-force-contrast", "inf"),
         ])?);
         for watched in Watched::ALL {
             let (name, format) = watched.property();
@@ -501,10 +514,17 @@ fn create(app: &AppHandle, title: &str) -> Result<WebviewWindow, String> {
                     }
                 }
             }
+            // another screen, whose colours and headroom the picture takes too
+            // ponytail: heard only when the scale changes; a window dragged to a screen of the same scale, or a screen
+            // given another profile or preset (an XDR's reference modes), keeps the last colours till the next film.
+            // Hear NSWindowDidChangeScreenNotification and NSWindowDidChangeScreenProfileNotification if that matters.
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 if let Some(picture) = player.0.lock().unwrap().as_ref().and_then(|p| p.picture.as_ref()) {
                     picture.rescale(*scale_factor);
                 }
+                // after this event's handling, as on the main thread the look would be made inside it, which may write
+                let app = app.clone();
+                std::thread::spawn(move || colour(&app));
             }
             _ => {}
         }
@@ -547,9 +567,15 @@ fn listen(app: &AppHandle, mpv: &Mpv, state: &Mutex<State>) {
             let _ = mpv.proceed(hook);
             continue;
         }
-        // the file's tracks, read out when they change, with the state let go too
+        // the file's tracks, read out when they change, with the state let go too; and once a file plays, its picture's
+        // HDR, by its transfer and primaries, known by then, read once a file (the window may be on another screen by
+        // now), as mpv tells of no change of them between two files alike
         let tracks = matches!(event, Event::Property(id, _) if id == Watched::Tracks as u64)
             .then(|| tracks_in(&mpv.string("track-list").unwrap_or_default()));
+        let hdr = (loading && matches!(event, Event::PlaybackRestart)).then(|| {
+            let read = |name| mpv.string(name).unwrap_or_default();
+            Hdr::of(&read("video-params/gamma"), &read("video-params/primaries"))
+        });
         let mut s = state.lock().unwrap();
         match event {
             Event::Quiet => {
@@ -581,18 +607,23 @@ fn listen(app: &AppHandle, mpv: &Mpv, state: &Mutex<State>) {
             // a file starting, in order after the last one's events, so its state goes here: the page's wait shows
             Event::StartFile => {
                 (loading, resized, sized) = (true, false, false);
-                (s.position, s.duration, s.ended, s.failed, s.next) = (None, None, false, None, false);
+                (s.position, s.duration, s.ended, s.failed, s.next, s.hdr) = (None, None, false, None, false, None);
             }
             // after the file's opening or a seek, which the page's corner tells
             Event::PlaybackRestart => {
-                if !loading {
+                if loading {
+                    s.hdr = hdr.flatten();
+                    colour(app);
+                } else {
                     s.seeks += 1;
                 }
                 loading = false;
             }
+            // its HDR, if the last film's was, no longer shown behind the failure
             Event::Failed(why) => {
                 loading = false;
                 s.failed = Some(why);
+                colour(app);
             }
             Event::Property(id, value) => match Watched::ALL.into_iter().find(|w| *w as u64 == id) {
                 Some(Watched::Pause) => s.paused = value.flag(),
@@ -621,6 +652,41 @@ fn listen(app: &AppHandle, mpv: &Mpv, state: &Mutex<State>) {
     }
 }
 
+// The picture's colours for the film (`State.hdr`) on the window's screen now (colour.rs): the layer's at once, on the
+// main thread, as AppKit reads the screen there, and mpv's queued.
+fn colour(app: &AppHandle) {
+    on_window(app, |app, ns_window| {
+        // a window between screens, or minimised, has none: the main one's, till the next film
+        let Some(screen) = ns_window.screen().or_else(|| NSScreen::mainScreen(MainThreadMarker::new()?)) else { return };
+        let cache = app.path().app_cache_dir().ok();
+        let player = app.state::<Player>();
+        // read, and the locks let go, as the look may write the screen's profile
+        let (hdr, floats) = {
+            let playing = player.0.lock().unwrap();
+            let Some(p) = playing.as_ref() else { return };
+            (p.state.lock().unwrap().hdr, p.picture.as_ref().is_some_and(Picture::floats))
+        };
+        let look = Look::on(&screen, hdr, floats, cache.as_deref());
+        let playing = player.0.lock().unwrap();
+        let Some(p) = playing.as_ref() else { return };
+        if let Some(picture) = &p.picture {
+            picture.colour(&look.space, look.edr);
+        }
+        let target = look.target;
+        let _ = p.jobs.send(Box::new(move |mpv| target.apply(mpv)));
+    });
+}
+
+// Runs `f` on the main thread, where AppKit is used, with the player's window; nothing once it's gone.
+fn on_window(app: &AppHandle, f: impl FnOnce(&AppHandle, &NSWindow) + Send + 'static) {
+    let on_main = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let Some(window) = on_main.get_webview_window(LABEL) else { return };
+        let Ok(ns_window) = window.ns_window() else { return };
+        f(&on_main, unsafe { &*(ns_window as *const NSWindow) });
+    });
+}
+
 // The window takes the video's size, as IINA's does when it opens a file: its pixels as the screen's (1080p as 960×540
 // points on a Retina screen), within the screen and about where the window is; and its shape from then on, which full
 // screen keeps for when it's left.
@@ -628,11 +694,7 @@ fn fit(app: &AppHandle, width: f64, height: f64) {
     if width <= 0.0 || height <= 0.0 {
         return;
     }
-    let on_main = app.clone();
-    let _ = app.run_on_main_thread(move || {
-        let Some(window) = on_main.get_webview_window(LABEL) else { return };
-        let Ok(ns_window) = window.ns_window() else { return };
-        let ns_window = unsafe { &*(ns_window as *const NSWindow) };
+    on_window(app, move |_, ns_window| {
         ns_window.setContentAspectRatio(NSSize::new(width, height));
         let Some(screen) = ns_window.screen() else { return };
         if ns_window.styleMask().contains(NSWindowStyleMask::FullScreen) {
@@ -655,14 +717,10 @@ fn chrome(app: &AppHandle, shown: bool) {
 static ASKED: AtomicU64 = AtomicU64::new(0);
 
 fn fade(app: AppHandle, shown: bool, asked: u64) {
-    let on_main = app.clone();
-    let _ = app.run_on_main_thread(move || {
+    on_window(&app, move |app, ns_window| {
         if ASKED.load(Ordering::Relaxed) != asked {
             return;
         }
-        let Some(window) = on_main.get_webview_window(LABEL) else { return };
-        let Ok(ns_window) = window.ns_window() else { return };
-        let ns_window = unsafe { &*(ns_window as *const NSWindow) };
         // the buttons' bar, as wry finds it to move them: the close button's superview's superview
         let close = ns_window.standardWindowButton(NSWindowButton::CloseButton);
         let Some(bar) = close.and_then(|b| unsafe { b.superview()?.superview() }) else { return };
@@ -680,9 +738,10 @@ fn fade(app: AppHandle, shown: bool, asked: u64) {
             if across && top - bar.frame().size.height <= at.y && at.y <= top {
                 // ponytail: a short thread every half second while the pointer rests there, to look again; a tracking
                 // area on the title bar would hear it leave instead, if this ever shows up
+                let app = app.clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(Duration::from_millis(500));
-                    fade(on_main, shown, asked);
+                    fade(app, shown, asked);
                 });
                 return;
             }

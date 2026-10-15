@@ -17,7 +17,8 @@ use objc2::rc::{Allocated, Retained};
 use objc2::{AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{NSAutoresizingMaskOptions, NSView, NSWindow, NSWindowOrderingMode};
 use objc2_foundation::NSObject;
-use objc2_quartz_core::{CALayer, CAOpenGLLayer, CATransaction, kCAGravityResizeAspectFill};
+use objc2_core_graphics::CGColorSpace;
+use objc2_quartz_core::{CALayer, CAOpenGLLayer, CATransaction, kCAContentsFormatRGBA16Float, kCAGravityResizeAspectFill};
 
 use super::mpv::{self, Mpv, RenderParam};
 
@@ -54,6 +55,10 @@ const ACCELERATED: c_int = 73;
 const DOUBLE_BUFFER: c_int = 5;
 const ALLOW_OFFLINE_RENDERERS: c_int = 96;
 const AUTOMATIC_GRAPHICS_SWITCHING: c_int = 101;
+// and its colours as 16-bit floats, as IINA's are (mpv's cocoa-cb-10bit-context), for HDR's PQ and 10-bit films without
+// banding
+const COLOR_SIZE: c_int = 8;
+const COLOR_FLOAT: c_int = 58;
 // kCGLCPSwapInterval: drawn in step with the screen
 const SWAP_INTERVAL: c_int = 222;
 // gl3.h
@@ -68,6 +73,11 @@ const RTLD_DEFAULT: *mut c_void = -2isize as *mut c_void;
 struct Gl {
     format: PixelFormat,
     context: Context,
+    // the context's colours are floats, else 8 bits
+    floats: bool,
+    // the picture goes past white (an HDR film, only ever in floats), so mpv draws its floats whole, not dithered down
+    // to 8 bits as it does an SDR film's, whose floats a screen may take as 8 bits
+    edr: AtomicBool,
     // mpv's renderer for the layer's context, null till made and once freed
     render: AtomicPtr<mpv::RenderContext>,
     // the drawing thread is drawing for mpv, and the layer hasn't drawn yet
@@ -91,21 +101,30 @@ unsafe impl Sync for Gl {}
 
 impl Gl {
     fn new() -> Result<Gl, String> {
-        let attributes =
-            [PROFILE, CORE_3_2, ACCELERATED, DOUBLE_BUFFER, ALLOW_OFFLINE_RENDERERS, AUTOMATIC_GRAPHICS_SWITCHING, 0];
-        let (mut format, mut count) = (null_mut(), 0);
-        unsafe { CGLChoosePixelFormat(attributes.as_ptr(), &mut format, &mut count) };
-        if format.is_null() {
-            return Err("no OpenGL 3.2 pixel format".into());
+        let base = [PROFILE, CORE_3_2, ACCELERATED, DOUBLE_BUFFER, ALLOW_OFFLINE_RENDERERS, AUTOMATIC_GRAPHICS_SWITCHING];
+        // floats where the GPU makes a context of them, else 8 bits
+        let (mut format, mut context, mut floats) = (null_mut(), null_mut(), false);
+        for (extra, float) in [(&[COLOR_SIZE, 64, COLOR_FLOAT][..], true), (&[], false)] {
+            let (attributes, mut count) = ([&base[..], extra, &[0]].concat(), 0);
+            unsafe { CGLChoosePixelFormat(attributes.as_ptr(), &mut format, &mut count) };
+            if format.is_null() {
+                continue;
+            }
+            unsafe { CGLCreateContext(format, null_mut(), &mut context) };
+            if !context.is_null() {
+                floats = float;
+                break;
+            }
+            unsafe { CGLReleasePixelFormat(format) };
+            format = null_mut();
         }
-        let mut context = null_mut();
-        unsafe { CGLCreateContext(format, null_mut(), &mut context) };
         if context.is_null() {
-            return Err("no OpenGL context".into());
+            return Err("no OpenGL 3.2 pixel format or context".into());
         }
         unsafe { CGLSetParameter(context, SWAP_INTERVAL, &1) };
         let (render, flip, force) = (AtomicPtr::default(), AtomicBool::default(), AtomicBool::default());
-        Ok(Gl { format, context, render, flip, force, wake: Mutex::default(), woken: Condvar::new() })
+        let edr = AtomicBool::default();
+        Ok(Gl { format, context, floats, edr, render, flip, force, wake: Mutex::default(), woken: Condvar::new() })
     }
 
     // Has the drawing thread draw: mpv's next frame, or with `force` set first, the one there again.
@@ -227,10 +246,12 @@ define_class!(
                     glGetIntegerv(DRAW_FRAMEBUFFER_BINDING, &mut fbo);
                     glGetIntegerv(VIEWPORT, viewport.as_mut_ptr());
                     let mut target = mpv::OpenGlFbo { fbo, w: viewport[2], h: viewport[3], internal_format: 0 };
-                    let mut flip: c_int = 1;
+                    let depth = if gl.edr.load(Ordering::Relaxed) { 16 } else { 8 };
+                    let (mut flip, mut depth): (c_int, c_int) = (1, depth);
                     let mut params = [
                         param(mpv::RENDER_PARAM_OPENGL_FBO, &mut target),
                         param(mpv::RENDER_PARAM_FLIP_Y, &mut flip),
+                        param(mpv::RENDER_PARAM_DEPTH, &mut depth),
                         end(),
                     ];
                     mpv::mpv_render_context_render(render, params.as_mut_ptr());
@@ -298,7 +319,8 @@ pub struct Picture {
     thread: Option<JoinHandle<()>>,
 }
 
-// Its layer is only displayed off the main thread, or rescaled on it; its renderer is freed with the context locked.
+// Its layer is only displayed off the main thread, or rescaled and coloured on it; its renderer is freed with the context
+// locked.
 unsafe impl Send for Picture {}
 
 impl Picture {
@@ -311,6 +333,9 @@ impl Picture {
         layer.setContentsGravity(unsafe { kCAGravityResizeAspectFill });
         layer.setNeedsDisplayOnBoundsChange(true);
         layer.setContentsScale(window.backingScaleFactor());
+        if gl.floats {
+            layer.setContentsFormat(unsafe { kCAContentsFormatRGBA16Float });
+        }
         let content = window.contentView().ok_or("the window has no content view")?;
         let view = NSView::initWithFrame(NSView::alloc(mtm), content.bounds());
         // hosting the layer, which is set before the view wants one, as IINA's VideoView does
@@ -349,6 +374,24 @@ impl Picture {
     /// The window is on a screen of another scale now: the picture is drawn at its resolution.
     pub fn rescale(&self, scale: f64) {
         self.layer.setContentsScale(scale);
+        self.redraw();
+    }
+
+    /// Whether its colours are floats, which HDR's PQ wants.
+    pub fn floats(&self) -> bool {
+        self.layer.ivars().floats
+    }
+
+    /// The picture's colours are `space`'s, past white where `edr` lets them (colour.rs).
+    pub fn colour(&self, space: &CGColorSpace, edr: bool) {
+        self.layer.setColorspace(Some(space));
+        self.layer.setWantsExtendedDynamicRangeContent(edr);
+        self.layer.ivars().edr.store(edr, Ordering::Relaxed);
+        self.redraw();
+    }
+
+    // the frame there drawn again, as it is now
+    fn redraw(&self) {
         let gl = self.layer.ivars();
         gl.force.store(true, Ordering::Relaxed);
         gl.wake();
