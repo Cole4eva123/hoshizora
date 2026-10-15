@@ -1,21 +1,13 @@
 import { type ReactNode, useMemo } from 'react'
+import { Link } from 'react-router'
 import { ContinueWatching } from '@/components/ContinueWatching'
 import { EmptyState, ToLibrary } from '@/components/Page'
 import { PosterRow } from '@/components/PosterRow'
 import { PosterWall, TitleInfo } from '@/components/PosterWall'
 import { useServers } from '@/lib/emby'
 import { useT } from '@/lib/i18n'
-import {
-  categories,
-  hasToken,
-  hrefOf,
-  lineupOf,
-  titleOf,
-  tokenTakesEffect,
-  trendingToday,
-  useTitles,
-  wallSlides,
-} from '@/lib/tmdb'
+import { useKey } from '@/lib/keys'
+import { categories, hrefOf, lineupOf, titleOf, trendingToday, useTitles, wallSlides } from '@/lib/tmdb'
 
 // 打乱数组顺序，返回新数组，原数组不变（画报墙每次进首页轮播的顺序都不一样）
 // <T,>：泛型，什么类型的数组都能打乱；逗号让 .tsx 不把 <T> 当成 JSX 标签
@@ -91,6 +83,7 @@ function TrendingWall({ children }: { children: ReactNode }) {
 
 function Fallback({ error }: { error?: string }) {
   const t = useT()
+  const token = useKey('tmdb')
   if (!error) return null
   return (
     <div className="pointer-events-auto max-w-xl">
@@ -98,18 +91,17 @@ function Fallback({ error }: { error?: string }) {
         {t('热门作品会在这里轮播', 'Trending titles take turns here')}
       </h2>
       <p className="mt-4 text-body leading-7 text-foreground/75">
-        {hasToken
-          ? error
-          : t(
-              <>
-                还没有配置 TMDB 令牌。在项目根目录新建 <code>.env.local</code>，写入{' '}
-                <code>VITE_TMDB_TOKEN=你的读访问令牌</code>，然后{tokenTakesEffect(t)}。
-              </>,
-              <>
-                No TMDB token yet. Create <code>.env.local</code> in the project root with{' '}
-                <code>VITE_TMDB_TOKEN=your read access token</code>, then {tokenTakesEffect(t)}.
-              </>,
-            )}
+        {token ? (
+          error
+        ) : (
+          <>
+            {t('还没有 TMDB 令牌，', 'No TMDB token yet, ')}
+            <Link to="/settings" viewTransition className="text-star underline-offset-4 hover:underline">
+              {t('到设置里填一个', 'put one in Settings')}
+            </Link>
+            {t('。', '.')}
+          </>
+        )}
       </p>
     </div>
   )

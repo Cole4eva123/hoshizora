@@ -3,17 +3,15 @@ import { useMemo } from 'react'
 import { arrivedOf, ask, useAnswers } from '@/lib/cache'
 import type { Shelf } from '@/lib/emby'
 import { type Copy, type Translate, en, langOf, localeOf, useT, zh } from '@/lib/i18n'
+import { checked, apiKeyOf } from '@/lib/keys'
 
-const token: string | undefined = import.meta.env.VITE_TMDB_TOKEN
-export const hasToken = Boolean(token)
-// what makes a token put in .env.local count: the dev server reads it when it starts, a built version when it's built
-export const tokenTakesEffect = (t: Translate) =>
-  import.meta.env.DEV ? t('重启开发服务器', 'restart the dev server') : t('重新构建', 'rebuild')
-
-const api = axios.create({
-  baseURL: 'https://api.themoviedb.org/3',
-  headers: { Authorization: `Bearer ${token}` },
-})
+const api = axios.create({ baseURL: 'https://api.themoviedb.org/3' })
+// How a key goes to TMDB, which hands out two kinds on one page: an API key (32 hex digits) as `api_key`, a read access
+// token as a bearer.
+export const tmdbAuth = (key: string) =>
+  /^[0-9a-f]{32}$/i.test(key) ? { params: { api_key: key } } : { headers: { Authorization: `Bearer ${key}` } }
+// Whether TMDB takes a key, before it's kept (Settings): none if it does, else why not.
+export const checkTmdb = (key: string) => checked(api.get('/authentication', tmdbAuth(key)))
 
 // The kinds of 作品, by TMDB's name for each, which their routes and lists use too: what each is called, the date
 // TMDB's discover orders it by and what that date is (上映, 开播), and whether it plays by the episode. A kind added
@@ -364,18 +362,23 @@ export function lifeOf(p: Person, t: Translate, now = new Date()) {
   ].filter((fact): fact is string => !!fact)
 }
 
+// what's asked with no key at all, told apart by itself, as one may have been put in since
+const noKey = new Error('no TMDB token')
 const errorText = (e: unknown, t: Translate) => {
-  if (!token) return t('还没有配置 TMDB 令牌', 'No TMDB token set up yet')
+  if (e === noKey) return t('还没有 TMDB 令牌，到设置里填一个', 'No TMDB token yet, put one in Settings')
   if (!axios.isAxiosError(e)) return e instanceof Error ? e.message : String(e)
-  if (e.response?.status === 401) return t('TMDB 令牌无效，检查 VITE_TMDB_TOKEN', 'TMDB rejected the token, check VITE_TMDB_TOKEN')
+  if (e.response?.status === 401) return t('TMDB 不认这个令牌，到设置里换一个', 'TMDB turned the token down, change it in Settings')
   return e.response
     ? t(`TMDB 返回错误 ${e.response.status}`, `TMDB answered with error ${e.response.status}`)
     : t('连不上 TMDB，检查一下网络', "Can't reach TMDB, check your connection")
 }
 
-// TMDB's answer to a path; without a token, there's none to ask for (errorText says so, in the language shown).
-const getTmdb = (path: string) =>
-  token ? api.get(path).then((r) => r.data) : Promise.reject(new Error('no TMDB token'))
+// TMDB's answer to a path, asked with the key in use now; without one, there's none to ask for (errorText says so, in
+// the language shown).
+const getTmdb = (path: string) => {
+  const key = apiKeyOf('tmdb')
+  return key ? api.get(path, tmdbAuth(key)).then((r) => r.data) : Promise.reject(noKey)
+}
 
 // Each request asks for the language shown, so the two languages' answers are cached apart.
 // ponytail: a switch asks again for everything on screen, and pages show their loading state until it's in: Detail and

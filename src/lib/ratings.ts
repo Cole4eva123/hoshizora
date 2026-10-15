@@ -1,10 +1,8 @@
 import axios from 'axios'
 import { useEffect, useState } from 'react'
 import type { Copy } from '@/lib/i18n'
+import { checked, apiKeyOf } from '@/lib/keys'
 import { type Media, type MediaType, originalTitleOf, titleOf, yearOf } from '@/lib/tmdb'
-
-const mdblistKey: string | undefined = import.meta.env.VITE_MDBLIST_KEY
-export const hasMdblistKey = Boolean(mdblistKey)
 
 // The 评分来源, in the order the wall shows them: what each is called, and for those MDBList aggregates, its name for
 // the source there and, where it scores only some 作品, which (`only`). TMDB's own score comes with the 作品, and
@@ -28,11 +26,17 @@ type MdbList = { ratings: { source: string; value: number | null }[] }
 // MDBList's name for each kind of 作品
 const mdblistTypes: Record<MediaType, string> = { movie: 'movie', tv: 'show' }
 
-// MDBList's answer for a path; without a key, there's none to ask for.
-const mdblistGet = (path: string): Promise<MdbList> =>
-  mdblistKey
-    ? axios.get(`https://api.mdblist.com/${path}`, { params: { apikey: mdblistKey } }).then((r) => r.data)
+// MDBList's answer for a path, asked with the key in use now; without one, there's none to ask for.
+const mdblistGet = (path: string): Promise<MdbList> => {
+  const apikey = apiKeyOf('mdblist')
+  return apikey
+    ? axios.get(`https://api.mdblist.com/${path}`, { params: { apikey } }).then((r) => r.data)
     : Promise.resolve({ ratings: [] })
+}
+// Whether MDBList takes a key, before it's kept (Settings): none if it does, else why not. Its account's own page,
+// which counts against none of the day's requests, and answers a key it doesn't know with a 403 (checked).
+export const checkMdblist = (apikey: string) =>
+  checked(axios.get('https://api.mdblist.com/user', { params: { apikey } }))
 
 // MDBList's scores for a title, from all its sources at once: one request per title.
 export async function mdblist(m: Media, get = mdblistGet): Promise<Ratings> {
@@ -67,9 +71,10 @@ export async function douban(m: Media, get = doubanGet) {
 const cache = new Map<string, Promise<Ratings>[]>()
 
 // A title's lookups, one per source, started the first time the title is asked for.
-// Douban is searched by the title shown, so a title is looked up again in the other language.
+// Douban is searched by the title shown, so a title is looked up again in the other language, and MDBList by the key
+// in use, so one put in Settings asks again (none answers with no scores).
 function lookups(m: Media) {
-  const key = `${m.media_type}/${m.id}/${titleOf(m)}`
+  const key = `${m.media_type}/${m.id}/${titleOf(m)}/${apiKeyOf('mdblist') ?? ''}`
   let sources = cache.get(key)
   if (!sources) {
     sources = [mdblist(m), ...(hasDouban ? [douban(m).then((rate) => ({ douban: rate }))] : [])]

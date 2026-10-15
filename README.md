@@ -25,12 +25,14 @@ bun test
 bun run lint
 ```
 
-在 `.env.local` 里放密钥：
+在 `.env.local` 里放内置的密钥（会写进打包出来的网页和 App，拿到的人都能读出来）：
 
 ```sh
-VITE_TMDB_TOKEN=...   # TMDB read access token，必需
+VITE_TMDB_TOKEN=...   # TMDB 的读访问令牌或 API 密钥
 VITE_MDBLIST_KEY=...  # MDBList，可选，用来显示 IMDb / 烂番茄 / MAL 评分
 ```
+
+两个都可以不放，在设置页填自己的，只存在那台设备上。MDBList 的免费密钥每天 1000 次，给别人用的版本别放自己的。
 
 豆瓣评分走 Vite 的开发代理，所以只在 `bun run dev` 下能用。
 

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { en, zh } from './i18n'
-import { type Category, type Credit, type Details, type Episode, type Logo, type Media, type Person, daysUntil, episodeText, genresOf, isDarkInk, lifeOf, nextEpisodeText, pickLogo, releaseOf, sortsOf, toTitles, withGenres, worksOf } from './tmdb'
+import { type Category, type Credit, type Details, type Episode, type Logo, type Media, type Person, daysUntil, episodeText, genresOf, isDarkInk, lifeOf, nextEpisodeText, pickLogo, releaseOf, sortsOf, tmdbAuth, toTitles, withGenres, worksOf } from './tmdb'
 
 const now = new Date('2026-10-02T21:30')
 const ep = (season_number: number, episode_number: number, air_date: string | null) =>
@@ -167,4 +167,11 @@ test('an episode is named by its number, its season where there are several, and
   expect(episodeText({ episode: 3, season: 2 }, en)).toBe('S2 E3')
   expect(episodeText({ episode: 1, season: 1, last: 2 }, zh)).toBe('第 1 季第 1–2 集')
   expect(episodeText({ episode: 1, last: 2 }, en)).toBe('Episodes 1–2')
+})
+
+test('tmdbAuth sends an API key as api_key and a read access token as a bearer', () => {
+  expect(tmdbAuth('0123456789abcdefABCDEF0123456789')).toEqual({ params: { api_key: '0123456789abcdefABCDEF0123456789' } })
+  expect(tmdbAuth('eyJhbGciOiJIUzI1NiJ9.e30.x')).toEqual({ headers: { Authorization: 'Bearer eyJhbGciOiJIUzI1NiJ9.e30.x' } })
+  // 32 characters that aren't all hex digits are no API key
+  expect(tmdbAuth('0123456789abcdef0123456789abcdeg')).toHaveProperty('headers')
 })
