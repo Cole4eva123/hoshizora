@@ -40,7 +40,7 @@ export type EmbyError =
         | 'refused'
         | 'noServer'
         | 'storage'
-        | 'notDirect'
+        | 'unplayable'
     }
   | { kind: 'server'; status: number }
 
@@ -246,8 +246,8 @@ export const errorText = (e: unknown, t: Translate) => {
       return t('这不是一个服务器地址', "That isn't a server address")
     case 'signIn':
       return t('登录没成功，检查一下用户名和密码', "Couldn't sign in, check the username and password")
-    case 'notDirect':
-      return t('这个版本只能经服务器播放，放映室还不支持', "This version plays only through the server, which Hoshizora can't do yet")
+    case 'unplayable':
+      return t('这个版本要服务器转码才能播放，放映室不转码', "This version plays only transcoded by the server, which Hoshizora doesn't ask for")
     case 'storage':
       return t(
         '没能存到这台设备上。看看磁盘是不是满了、放映室的数据文件夹能不能读写，再重开放映室。',
@@ -409,8 +409,8 @@ export function useLineupAfter(shelf: Shelf | undefined) {
 
 // Where a 作品 can be played on a 服务器 (emby-core's sources): its 片源 there, the versions of each, and each version's
 // 音轨 and 字幕 by their index in the file. A version the server hasn't read yet (a .strm) has no `video`, `bitrate` or
-// tracks. `file` is its file's name, as on the server's disk or in a .strm's link (URI-encoded there). `direct` when
-// the player can play it from its own link; one that only the server can play (a file on its disk) it can't yet.
+// tracks. `file` is its file's name, as on the server's disk or in a .strm's link (URI-encoded there). `plays` when
+// the player can play it, from its own link or through the server; one only transcoded it can't.
 export type Track = {
   index: number
   language?: string
@@ -423,7 +423,7 @@ export type Track = {
 export type Version = {
   id: string
   name: string
-  direct: boolean
+  plays: boolean
   file?: string
   bitrate?: number
   video?: { width: number; height: number; range?: string }

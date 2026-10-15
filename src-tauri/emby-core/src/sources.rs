@@ -1,5 +1,5 @@
 //! Where a 作品 can be played on a 服务器: its 片源 there, the versions of each (their 清晰度), and the 音轨 and 字幕
-//! of each version; and what a version plays, its own link and where the user left off.
+//! of each version; and what a version plays, its own link or the server's stream of it, and where the user left off.
 
 use std::net::IpAddr;
 use std::time::Duration;
@@ -9,6 +9,8 @@ use serde_json::{Map, Value};
 use url::{Host, Url};
 
 use crate::browse::{Ids, Listing, items_of};
+use crate::find::unsent;
+use crate::relay::Relay;
 use crate::{BROWSE, Emby, Error, Kind, Signed};
 
 // how long resolving a server's name may take, for how far it is (`reach_of`): it just answered, so it's known
@@ -43,12 +45,12 @@ pub struct Episode {
 /// A version of a 片源, one file: its name (as a release names itself, the 作品's name, 清晰度, source and group),
 /// its picture, bitrate, and its 音轨 and 字幕, once the server has read it. One it hasn't read yet (a .strm) has
 /// neither picture nor bitrate nor tracks, till `versions` has it read; its `name` and `file` often say its 清晰度 anyway.
-/// `direct` when the app can play it (`play`).
+/// `plays` when the app can play it (`play`), from its link or through the server.
 #[derive(Debug, PartialEq, Serialize)]
 pub struct Version {
     pub id: String,
     pub name: String,
-    pub direct: bool,
+    pub plays: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file: Option<String>,
     /// bits a second
@@ -144,11 +146,15 @@ struct MediaSource {
     is_remote: bool,
     #[serde(default)]
     supports_direct_play: bool,
+    // whether the server can send the file as it is, unconverted (Emby's static stream)
+    #[serde(default)]
+    supports_direct_stream: bool,
     required_http_headers: Option<Map<String, Value>>,
 }
 
-/// What a version plays: its own link, played from where it is, and where the user left off (seconds in, 0 for the
-/// start); and the version, by its id, as the reports on it name it (`watch`).
+/// What a version plays: its own link, played from where it is, or one on this Mac for the server's stream of it
+/// (`Relay`), and where the user left off (seconds in, 0 for the start); and the version, by its id, as the reports on
+/// it name it (`watch`).
 #[derive(Debug, PartialEq)]
 pub struct Play {
     pub url: String,
@@ -285,9 +291,10 @@ impl Emby {
         Ok(info.media_sources.into_iter().map(|m| version(m, server)).collect())
     }
 
-    /// What a version of a 作品 (a movie, or an episode) plays: its own link, which the player is given to play
-    /// from where it is, never the server's stream with the token, and where the user left off. With no version named
-    /// (from the 继续观看), its first that plays so. `NotDirect` for one that only the server can play (`link_of`).
+    /// What a version of a 作品 (a movie, or an episode) plays, and where the user left off: its own link where it
+    /// plays from where it is (`link_of`), else the server's stream of its file through a link on this Mac (`Relay`),
+    /// as the player is never given the token. With no version named (from the 继续观看), the first that plays from
+    /// its link, else the first through the server. `Unplayable` for one that plays only converted.
     pub async fn play(&self, server: &str, user: &str, item: &str, version: Option<&str>) -> Result<Play, Error> {
         let s = self.signed(server, user)?;
         // as for one the server doesn't have, never put in a path
@@ -304,7 +311,19 @@ impl Emby {
         // with a 4K copy before the 1080p one watched opens the 4K. Keep the version told as played (`watch`) on this
         // device if that turns up.
         let server = reach_for(&s.server.address, &named).await;
-        let (url, id) = named.into_iter().find_map(|m| Some((link_of(&m, server)?, m.id))).ok_or(Error::NotDirect)?;
+        // from its link where one plays so (the user's call: faster, and none of the server's bandwidth), else through
+        // the server, which sends the file as it is
+        let (url, id) = match named.iter().find_map(|m| Some((link_of(m, server)?, m.id.clone()))) {
+            Some(linked) => linked,
+            None => {
+                let id = named.into_iter().find(|m| m.supports_direct_stream).ok_or(Error::Unplayable)?.id;
+                let stream = self.ask(self.http.get(format!("{}/Videos/{item}/stream", s.server.address)), &s.token);
+                let stream = stream.query(&[("static", "true"), ("MediaSourceId", id.as_str())]).build().map_err(unsent)?;
+                // nothing to listen on (out of ports or files), which no version gets past
+                let relay = self.relay.get_or_try_init(|| Relay::start(self.http.clone())).await;
+                (relay.map_err(|_| Error::Unplayable)?.link(stream), id)
+            }
+        };
         let ticks = playing.user_data.map_or(0, |u| u.playback_position_ticks);
         Ok(Play { url, start: ticks as f64 / TICKS, version: id })
     }
@@ -326,22 +345,23 @@ pub(crate) fn plain(id: &str) -> bool {
 // A version as Emby lists it, on a `server` that far away: its first picture, its 音轨 and 字幕, none of them while
 // the server hasn't read it; and whether the app can play it.
 fn version(m: MediaSource, server: Reach) -> Version {
-    let direct = link_of(&m, server).is_some();
+    // from its link, or through the server as it is
+    let plays = m.supports_direct_stream || link_of(&m, server).is_some();
     let (mut video, mut audio, mut subtitles) = (None, vec![], vec![]);
     for s in m.media_streams {
         match s.kind.as_str() {
             "Video" if video.is_none() => {
                 video = Some(Video { width: s.width.unwrap_or(0), height: s.height.unwrap_or(0), range: s.video_range })
             }
-            // an 音轨 or a 字幕 in a file beside the video only the server has, and the app plays nothing through it
-            // yet: none to pick
+            // an 音轨 or a 字幕 in a file beside the video, which only the server has and mpv isn't given:
+            // none to pick
             "Audio" if !s.is_external => audio.push(track(s)),
             "Subtitle" if !s.is_external => subtitles.push(track(s)),
             _ => {}
         }
     }
     Version {
-        direct,
+        plays,
         id: m.id,
         name: m.name,
         file: m.path.as_deref().and_then(file_name),
@@ -367,8 +387,7 @@ fn file_name(path: &str) -> Option<String> {
 // The link a version plays by, from where it is, when Emby would play it so (as its web app plays a .strm's): a remote
 // http(s) link the server says plays directly and asks no headers for, as nothing but the link goes to the player, the
 // token least of all. One on this Mac or a local network only when the `server` is there too: the server's 127.0.0.1
-// is another machine than this one, and its network may not be this one's. Any other is played through the server,
-// which isn't done yet.
+// is another machine than this one, and its network may not be this one's. Any other plays through the server.
 // ponytail: tells a link's host by its IP (and localhost), so a link to nas.local from a server out on the internet
 // still goes to the player, which then fails to open it. Resolve its name too (as `reach_of` does the server's) if one
 // ever turns up.

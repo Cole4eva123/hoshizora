@@ -34,6 +34,8 @@ struct Seen {
     reports: Vec<(String, Value)>,
     // whether its lookup of the 继续观看's series fails
     series_down: bool,
+    // whether it sends a file from where it is on a cloud drive, as some do, rather than itself
+    redirects: bool,
 }
 type Shared = Arc<Mutex<Seen>>;
 
@@ -169,7 +171,7 @@ async fn items(State(seen): State<Shared>, headers: HeaderMap, Query(q): Query<H
 // track.
 fn read_version() -> Value {
     json!({ "Id": "v1", "Name": "2160p - BluRay", "Size": 21_800_000_000u64, "Bitrate": 30_481_253, "Protocol": "File",
-        "SupportsDirectPlay": true,
+        "SupportsDirectPlay": true, "SupportsDirectStream": true,
         "Path": "/mnt/movies/X加Y #1 (2014)/X+Y.2014.2160p.BluRay.x265.10bit.DTS-HD.MA.7.1-SWTYBLZ.mkv", "MediaStreams": [
         { "Type": "Video", "Index": 0, "Codec": "hevc", "Width": 3840, "Height": 1600, "VideoRange": "HDR 10" },
         { "Type": "Audio", "Index": 1, "Codec": "dts", "Language": "eng", "Channels": 8, "IsDefault": true },
@@ -188,7 +190,8 @@ fn read_version() -> Value {
 fn unread_version() -> Value {
     json!({ "Id": "v2", "Name": "1080p - BluRay", "Size": 0, "MediaStreams": [],
         "Path": "https://drive.example/d/%E6%98%A5%E6%B1%9F.1080p.BluRay.mkv?sign=secret#t=0",
-        "Protocol": "Http", "IsRemote": true, "SupportsDirectPlay": true, "RequiredHttpHeaders": {} })
+        "Protocol": "Http", "IsRemote": true, "SupportsDirectPlay": true, "SupportsDirectStream": true,
+        "RequiredHttpHeaders": {} })
 }
 
 // A 作品's own answer: its versions, and where the user left off.
@@ -196,12 +199,39 @@ async fn item(State(seen): State<Shared>, headers: HeaderMap, Path(item): Path<S
     if !signed_in(&seen, &headers) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    let (version, ticks) = match item.as_str() {
-        "m1" => (read_version(), 0),
-        "m2" => (unread_version(), 12_345_000_000u64),
+    let (versions, ticks) = match item.as_str() {
+        "m1" => (vec![read_version()], 0),
+        "m2" => (vec![unread_version()], 12_345_000_000u64),
+        // one on the server's disk, then one with a link
+        "m3" => (vec![read_version(), unread_version()], 0),
+        // a disc image the server would have to convert
+        "m4" => (vec![json!({ "Id": "v4", "Name": "ISO", "Protocol": "File", "Path": "/mnt/movies/X.iso" })], 0),
         _ => return StatusCode::NOT_FOUND.into_response(),
     };
-    Json(json!({ "Id": item, "MediaSources": [version], "UserData": { "PlaybackPositionTicks": ticks } })).into_response()
+    Json(json!({ "Id": item, "MediaSources": versions, "UserData": { "PlaybackPositionTicks": ticks } })).into_response()
+}
+
+// A version's file as the server sends it, unconverted: m1's ten bytes from where asked, or a redirect to where it is
+// on a cloud drive (`redirects`).
+async fn stream(
+    State(seen): State<Shared>,
+    headers: HeaderMap,
+    Path(item): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
+    if !signed_in(&seen, &headers) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    if item != "m1" || q.get("static").map(String::as_str) != Some("true") || q.get("MediaSourceId").map(String::as_str) != Some("v1") {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if seen.lock().unwrap().redirects {
+        return Redirect::temporary("https://drive.example/d/X.mkv?sign=secret").into_response();
+    }
+    let range = headers.get("Range").and_then(|r| r.to_str().ok()?.strip_prefix("bytes=")?.strip_suffix('-')?.parse().ok());
+    let from: usize = range.unwrap_or(0);
+    let headers = [("Content-Range", format!("bytes {from}-9/10")), ("Accept-Ranges", "bytes".into())];
+    (StatusCode::PARTIAL_CONTENT, headers, b"0123456789"[from..].to_vec()).into_response()
 }
 
 // A season of a series' 片源, as Emby numbers it.
@@ -318,6 +348,7 @@ async fn emby() -> (String, Shared) {
         .route("/emby/Users/u1/Items", get(items))
         .route("/emby/Users/u1/Items/{item}", get(item))
         .route("/emby/Users/u1/Items/Resume", get(resume))
+        .route("/emby/Videos/{item}/stream", get(stream))
         .route("/emby/Sessions/Playing", post(playing))
         .route("/emby/Sessions/Playing/Progress", post(playing))
         .route("/emby/Sessions/Playing/Stopped", post(playing))
@@ -781,8 +812,8 @@ async fn a_movies_sources_are_found_by_its_tmdb_entry_with_their_versions_and_tr
             versions: vec![Version {
                 id: "v1".into(),
                 name: "2160p - BluRay".into(),
-                // on the server's disk
-                direct: false,
+                // on the server's disk, through the server
+                plays: true,
                 file: Some("X+Y.2014.2160p.BluRay.x265.10bit.DTS-HD.MA.7.1-SWTYBLZ.mkv".into()),
                 bitrate: Some(30_481_253),
                 video: Some(Video { width: 3840, height: 1600, range: Some("HDR 10".into()) }),
@@ -806,8 +837,8 @@ async fn a_movies_sources_are_found_by_its_tmdb_entry_with_their_versions_and_tr
     let unread = &emby.sources("srv", "u1", Kind::Movie, 596881).await.unwrap()[0].versions[0];
     assert_eq!((unread.bitrate, &unread.video, unread.audio.len()), (None, &None, 0));
     assert_eq!(unread.file.as_deref(), Some("%E6%98%A5%E6%B1%9F.1080p.BluRay.mkv"));
-    // and it plays from its link
-    assert!(unread.direct);
+    // and it plays
+    assert!(unread.plays);
     assert_eq!(emby.sources("gone", "u1", Kind::Movie, 278236).await, Err(Error::NoServer));
 }
 
@@ -859,13 +890,41 @@ async fn a_version_plays_from_its_own_link_where_the_user_left_off() {
     assert_eq!(emby.play("srv", "u1", "m2", Some("v2")).await.as_ref(), Ok(&played));
     // none named, from the 继续观看: its first that plays so
     assert_eq!(emby.play("srv", "u1", "m2", None).await, Ok(played));
-    // a file on the server's disk plays only through the server
-    assert_eq!(emby.play("srv", "u1", "m1", Some("v1")).await, Err(Error::NotDirect));
-    assert_eq!(emby.play("srv", "u1", "m1", None).await, Err(Error::NotDirect));
+    // none named, the one with a link before one on the server's disk; named, the one named, through the server
+    assert_eq!(emby.play("srv", "u1", "m3", None).await.map(|p| p.version), Ok("v2".into()));
+    assert_eq!(emby.play("srv", "u1", "m3", Some("v1")).await.map(|p| p.version), Ok("v1".into()));
+    // one the server would have to convert
+    assert_eq!(emby.play("srv", "u1", "m4", None).await, Err(Error::Unplayable));
     // a version the 作品 no longer has, and an id that isn't one Emby gives, as if the server had neither
     assert_eq!(emby.play("srv", "u1", "m2", Some("v9")).await, Err(Error::Server { status: 404 }));
     assert_eq!(emby.play("srv", "u1", "../m2", Some("v2")).await, Err(Error::Server { status: 404 }));
     assert_eq!(emby.play("gone", "u1", "m2", Some("v2")).await, Err(Error::NoServer));
+}
+
+#[tokio::test]
+async fn a_version_only_the_server_can_send_plays_through_a_link_on_this_mac_that_keeps_the_token_here() {
+    let (at, seen) = emby().await;
+    let emby = Emby::open(file("relay"));
+    emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
+    let played = emby.play("srv", "u1", "m1", Some("v1")).await.unwrap();
+    assert!(played.url.starts_with("http://127.0.0.1:") && !played.url.contains("token"));
+    // as mpv asks: from where in the file, and no redirect followed for it
+    let mpv = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
+    let answer = mpv.get(&played.url).header("Range", "bytes=4-").send().await.unwrap();
+    assert_eq!((answer.status().as_u16(), answer.headers()["Content-Range"].to_str().unwrap()), (206, "bytes 4-9/10"));
+    assert_eq!(answer.bytes().await.unwrap(), "456789");
+    // a server that sends the file from a cloud drive: mpv goes there itself, with no token to take along
+    seen.lock().unwrap().redirects = true;
+    let answer = mpv.get(&played.url).send().await.unwrap();
+    assert_eq!((answer.status().as_u16(), answer.headers()["Location"].to_str().unwrap()), (307, "https://drive.example/d/X.mkv?sign=secret"));
+    // the last few given out: one asked for meanwhile doesn't end the one playing, but the fourth after it does
+    for _ in 0..3 {
+        emby.play("srv", "u1", "m1", None).await.unwrap();
+    }
+    assert_eq!(mpv.get(&played.url).send().await.unwrap().status().as_u16(), 307);
+    let last = emby.play("srv", "u1", "m1", None).await.unwrap();
+    assert_eq!(mpv.get(&played.url).send().await.unwrap().status().as_u16(), 404);
+    assert_eq!(mpv.get(&last.url).send().await.unwrap().status().as_u16(), 307);
 }
 
 #[tokio::test]

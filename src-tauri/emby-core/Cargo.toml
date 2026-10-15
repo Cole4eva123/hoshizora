@@ -7,8 +7,10 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+# a link on this Mac that mpv plays a version by when only the server can send it, the token kept here (relay.rs)
+axum = { version = "0.8", default-features = false, features = ["tokio", "http1"] }
 # rustls, checked against macOS's own certificates; the system proxy is followed, as the browser does
-reqwest = { version = "0.13", features = ["json", "query"] }
+reqwest = { version = "0.13", features = ["json", "query", "stream"] }
 # reqwest's own, only to tell a certificate turned down (find.rs) from no https at all
 rustls = { version = "0.23", default-features = false }
 serde = { version = "1", features = ["derive"] }

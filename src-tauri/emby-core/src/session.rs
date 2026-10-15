@@ -125,7 +125,7 @@ impl Emby {
     }
 
     // As the signed-in user. The token goes in a header rather than the URL, where a proxy's access log would keep it.
-    fn ask(&self, request: RequestBuilder, token: &str) -> RequestBuilder {
+    pub(crate) fn ask(&self, request: RequestBuilder, token: &str) -> RequestBuilder {
         self.identify(request).header("X-Emby-Token", token)
     }
 }

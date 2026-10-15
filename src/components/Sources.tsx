@@ -263,14 +263,14 @@ export function Tracks({
   const [opening, setOpening] = useState(false)
   const [failed, setFailed] = useState<{ on: string; error: PlayError }>()
   const on = `${at}/${v?.id}`
-  // why 播放 can't: no 片源 picked (`why`), no version on it, or one only the server can play
+  // why 播放 can't: no 片源 picked (`why`), no version on it, or one that plays only transcoded
   const whyNot = !item
     ? why
     : !v
       ? t('这里没有能播放的版本', 'No version here to play')
-      : v.direct
+      : v.plays
         ? undefined
-        : errorText({ kind: 'notDirect' }, t)
+        : errorText({ kind: 'unplayable' }, t)
   // one at a time; but not held up by the server reading the tracks, which playing doesn't need
   const start = () => {
     if (!s || !item || !v || opening) return

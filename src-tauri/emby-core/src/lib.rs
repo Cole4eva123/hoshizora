@@ -12,6 +12,7 @@
 mod browse;
 mod find;
 mod kept;
+mod relay;
 mod session;
 mod sources;
 mod watching;
@@ -37,6 +38,9 @@ const RECHECK: Duration = Duration::from_secs(2);
 // a 媒体库's page or a 作品's lookup, which a large 媒体库 on a NAS's disks may take seconds over; past it, the page
 // offers 重试
 const BROWSE: Duration = Duration::from_secs(15);
+// how long a kept server may take to take a connection, for what's asked with no time limit of its own: a film played
+// through the server (relay.rs), whose seek while the server's gone then fails rather than waiting out the system's
+const CONNECT: Duration = Duration::from_secs(10);
 
 // The app as a server's logs and 设备 list name it, and its version, which the workspace gives this crate and the app
 // alike (src-tauri/Cargo.toml).
@@ -164,9 +168,8 @@ pub enum Error {
     Refused,
     /// The server answered with another error.
     Server { status: u16 },
-    /// The version can't be played from where it is, but only through the server (a file on its disk, or a link that
-    /// needs headers of the server's), which the app doesn't do yet.
-    NotDirect,
+    /// The version plays only converted by the server (transcoded or remuxed), which the app doesn't ask for.
+    Unplayable,
     /// No such server is kept here (removed meanwhile).
     NoServer,
     /// What's kept couldn't be written.
@@ -202,6 +205,8 @@ pub struct Emby {
     // One change written at a time, without holding `servers` through the write, so readers don't wait out a fsync.
     // Waited for without holding a thread, as the write it waits out is a fsync too; held by the write till it's done.
     writing: Arc<tokio::sync::Mutex<()>>,
+    // where mpv asks for what plays through the server, started the first time something does
+    relay: tokio::sync::OnceCell<relay::Relay>,
 }
 
 impl Emby {
@@ -211,12 +216,13 @@ impl Emby {
         let (kept, file) = kept::read(file);
         let client = || Client::builder().user_agent(user_agent());
         Emby {
-            http: client().redirect(reqwest::redirect::Policy::none()).build().expect("no TLS backend"),
+            http: client().redirect(reqwest::redirect::Policy::none()).connect_timeout(CONNECT).build().expect("no TLS backend"),
             probing: client().build().expect("no TLS backend"),
             device: kept.device,
             name: session::device_name(),
             servers: Arc::new(Mutex::new(kept.servers)),
             writing: Arc::default(),
+            relay: tokio::sync::OnceCell::new(),
             file,
         }
     }

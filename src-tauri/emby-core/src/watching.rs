@@ -176,6 +176,8 @@ impl Emby {
 }
 
 // A report on a version played (Emby's PlaybackProgressInfo), from where it is.
+// ponytail: told as played directly through the server too (relay.rs), where Emby's apps say DirectStream; only its
+// dashboard reads it. Hand `play`'s route on with the `Origin` if that matters.
 fn report(watch: &Watch, position: f64) -> Value {
     json!({
         "ItemId": watch.item,
