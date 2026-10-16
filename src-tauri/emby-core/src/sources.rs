@@ -162,13 +162,11 @@ struct MediaSource {
 }
 
 /// What a version plays: its own link, played from where it is, or one on this Mac for the server's stream of it
-/// (`Relay`), and where the user left off (seconds in, 0 for the start); the version, by its id, as the reports on it
-/// name it (`watch`); and the 字幕 beside its file.
+/// (`Relay`), and where the user left off (seconds in, 0 for the start); and the 字幕 beside its file.
 #[derive(Debug, PartialEq)]
 pub struct Play {
     pub url: String,
     pub start: f64,
-    pub version: String,
     pub beside: Vec<Beside>,
 }
 
@@ -306,9 +304,8 @@ impl Emby {
 
     /// What a version of a 作品 (a movie, or an episode) plays, and where the user left off: its own link where it
     /// plays from where it is (`link_of`), else the server's stream of its file through a link on this Mac (`Relay`),
-    /// as the player is never given the token. With no version named (from the 继续观看), the first that plays from
-    /// its link, else the first through the server. `Unplayable` for one that plays only converted.
-    pub async fn play(&self, server: &str, user: &str, item: &str, version: Option<&str>) -> Result<Play, Error> {
+    /// as the player is never given the token. `Unplayable` for one that plays only converted.
+    pub async fn play(&self, server: &str, user: &str, item: &str, version: &str) -> Result<Play, Error> {
         let s = self.signed(server, user)?;
         // as for one the server doesn't have, never put in a path
         let gone = Error::Server { status: 404 };
@@ -316,31 +313,23 @@ impl Emby {
             return Err(gone);
         }
         let playing: Playing = self.get(&s, &format!("{}/{item}", items_of(&s)), &[], BROWSE).await?;
-        let named = playing.media_sources.into_iter().filter(|m| version.is_none_or(|v| m.id == v)).collect::<Vec<_>>();
-        if named.is_empty() {
-            return Err(gone);
-        }
-        // ponytail: none named, the first that plays, as Emby keeps no version with the user's place in a 作品; a 片源
-        // with a 4K copy before the 1080p one watched opens the 4K. Keep the version told as played (`watch`) on this
-        // device if that turns up.
-        let server = reach_for(&s.server.address, &named).await;
-        // from its link where one plays so (the user's call: faster, and none of the server's bandwidth), else through
+        let m = playing.media_sources.into_iter().find(|m| m.id == version).ok_or(gone)?;
+        // from its link where it plays so (the user's call: faster, and none of the server's bandwidth), else through
         // the server, which sends the file as it is
-        let (url, id) = match named.iter().find_map(|m| Some((link_of(m, server)?, m.id.clone()))) {
-            Some(linked) => linked,
-            None => {
-                let id = named.iter().find(|m| m.supports_direct_stream).ok_or(Error::Unplayable)?.id.clone();
+        let url = match link_of(&m, reach_for(&s.server.address, [&m]).await) {
+            Some(link) => link,
+            None if m.supports_direct_stream => {
                 let stream = self.ask(self.http.get(format!("{}/Videos/{item}/stream", s.server.address)), &s.token);
-                let stream = stream.query(&[("static", "true"), ("MediaSourceId", id.as_str())]).build().map_err(unsent)?;
+                let stream = stream.query(&[("static", "true"), ("MediaSourceId", version)]).build().map_err(unsent)?;
                 // nothing to listen on (out of ports or files), which no version gets past
                 let relay = self.relay.get_or_try_init(|| Relay::start(self.http.clone())).await;
-                (relay.map_err(|_| Error::Unplayable)?.link(stream), id)
+                relay.map_err(|_| Error::Unplayable)?.link(stream)
             }
+            None => return Err(Error::Unplayable),
         };
-        let streams = named.into_iter().find(|m| m.id == id).map(|m| m.media_streams).unwrap_or_default();
-        let beside = streams.into_iter().filter_map(|t| beside(&s.server.address, item, &id, t)).collect();
+        let beside = m.media_streams.into_iter().filter_map(|t| beside(&s.server.address, item, version, t)).collect();
         let ticks = playing.user_data.map_or(0, |u| u.playback_position_ticks);
-        Ok(Play { url, start: ticks as f64 / TICKS, version: id, beside })
+        Ok(Play { url, start: ticks as f64 / TICKS, beside })
     }
 
     // Has the server read a 作品's file (the version named, or each) as for playback, as otherwise it answers from what

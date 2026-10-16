@@ -14,11 +14,12 @@ import {
   playErrorText,
   nameOf,
   readAheadOn,
+  useResumeOn,
   useServers,
   useVersions,
 } from '@/lib/emby'
 import { useT } from '@/lib/i18n'
-import { type PlayError, playVersion } from '@/lib/player'
+import { type PlayError, clockOf, playVersion } from '@/lib/player'
 import { asideOf, audioLabel, noTrack, picksOf, releaseNameOf, specOf, subtitleLabel, subtitlesOf } from '@/lib/tracks'
 import { type Card, mediaTypes, titleOf } from '@/lib/tmdb'
 import { cn, play, star } from '@/lib/utils'
@@ -216,8 +217,8 @@ function SourceOption({
 // `children` (the 片源's list, on the 画报墙) before them. A file the server hasn't read is read once its tracks are
 // wanted: at once when `eager` (a 片源 or an episode picked), else once one of these is pointed at or opened; till then,
 // and if it can't be, they're picked in the player. Without an item the three don't open, and say `why`. 播放 opens the
-// version picked in the player's window, named `title` there; one that couldn't be opened says why under the row.
-// `after` (收藏, on the 画报墙) follows 字幕.
+// version picked in the player's window, named `title` there, from where the user left off on that server, which it
+// says under it; one that couldn't be opened says why under the row. `after` (收藏, on the 画报墙) follows 字幕.
 export function Tracks({
   s,
   item,
@@ -242,6 +243,7 @@ export function Tracks({
   // the item whose list was opened, which wants its file read as a pick does
   const [opened, setOpened] = useState<string>()
   const { versions, reading, error, retry } = useVersions(s, item, given, eager || opened === at)
+  const left = useResumeOn(s).find((r) => r.item === item)
   const name = useId()
   // What's been picked here, the rest being the version's defaults; the version by its id, as the server's read may
   // list them in another order. Another item starts over, on its own defaults (picksOf).
@@ -298,7 +300,7 @@ export function Tracks({
   return (
     <div>
       <div className="flex items-center gap-7">
-        <Play opening={opening} why={whyNot} onPlay={start} />
+        <Play opening={opening} why={whyNot} from={left?.position} onPlay={start} />
         <div className="flex items-start gap-5">
           {children}
           <Menu
@@ -460,20 +462,27 @@ export function Menu({
 
 // 播放, the logo's triangle alone, glowing, and still (the user wants no motion on it): dimmed while the version is
 // `opening`, as a press then does nothing (one while the server reads the file plays at once, on the file's own
-// tracks). One that can't play says `why` in its title, and stays focusable to say it.
-function Play({ opening, why, onPlay }: { opening: boolean; why?: string; onPlay: () => void }) {
+// tracks). Where it picks up (`from`, seconds in), 继续播放 under it, which leaves the row where it was. One that can't
+// play says `why` in its title instead, and stays focusable to say it.
+function Play({ opening, why, from, onPlay }: { opening: boolean; why?: string; from?: number; onPlay: () => void }) {
   const t = useT()
+  const resume = from !== undefined && !why
   return (
     <button
       type="button"
       aria-disabled={!!why}
       aria-busy={opening}
-      aria-label={t('播放', 'Play')}
-      title={why}
+      aria-label={resume ? t('继续播放', 'Resume') : t('播放', 'Play')}
+      title={why ?? (resume ? t(`从 ${clockOf(from)} 继续`, `Resume from ${clockOf(from)}`) : undefined)}
       onClick={() => why || onPlay()}
-      className="grid size-11 shrink-0 cursor-pointer place-items-center text-star drop-shadow-glow-lg transition-colors not-aria-disabled:not-aria-busy:hover:text-shine aria-busy:cursor-progress aria-busy:opacity-60 aria-disabled:cursor-not-allowed aria-disabled:opacity-35"
+      className="relative grid size-11 shrink-0 cursor-pointer place-items-center text-star drop-shadow-glow-lg transition-colors not-aria-disabled:not-aria-busy:hover:text-shine aria-busy:cursor-progress aria-busy:opacity-60 aria-disabled:cursor-not-allowed aria-disabled:opacity-35"
     >
       <Constellation lines={play} className="size-full" />
+      {resume && (
+        <span className="absolute top-full -mt-0.5 text-detail leading-none whitespace-nowrap">
+          {t('继续播放', 'Resume')}
+        </span>
+      )}
     </button>
   )
 }

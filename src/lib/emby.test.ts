@@ -9,7 +9,6 @@ import {
   librarySorts,
   lineupOfItems,
   pickOf,
-  resumeTitle,
   resumesOf,
 } from '@/lib/emby'
 import { en, zh } from '@/lib/i18n'
@@ -87,11 +86,4 @@ test('leftOf says what is left of a 继续观看, or where it was left off when 
   // a few seconds from the end still has a minute left, not none
   expect(leftOf({ position: 2695, runtime: 2700 }, zh)).toBe('还剩 1 分钟')
   expect(leftOf({ position: 1243 }, zh)).toBe('看到 20:43')
-})
-
-test('resumeTitle names an episode by its series and numbers, as the 作品 page names what it plays', () => {
-  const r = (more: Partial<Resume>): Resume => ({ item: 'i', name: '控制', position: 0, ...more })
-  expect(resumeTitle(r({ series: '漫长的季节', season: 1, episode: 5 }), zh)).toBe('漫长的季节 · 第 1 季第 5 集')
-  expect(resumeTitle(r({ series: 'The Long Season', season: 1, episode: 5 }), en)).toBe('The Long Season · S1 E5')
-  expect(resumeTitle(r({ name: '流浪地球' }), zh)).toBe('流浪地球')
 })

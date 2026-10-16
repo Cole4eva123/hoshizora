@@ -86,13 +86,12 @@ export function usePlayer() {
 export type PlayError = EmbyError | { kind: 'player' }
 
 // Plays a version of a 作品 (a movie, an episode) in the player's window, from where the user left off, named `title`
-// there, on the 音轨 and 字幕 picked by their index in the file (noTrack for no 字幕), if any were. With no version (a
-// 继续观看's), its first that plays.
+// there, on the 音轨 and 字幕 picked by their index in the file (noTrack for no 字幕), if any were.
 export const playVersion = (p: {
   server: string
   user: string
   item: string
-  version?: string
+  version: string
   title: string
   audio?: number
   subtitle?: number

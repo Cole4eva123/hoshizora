@@ -570,12 +570,6 @@ export const resumesOf = (lists: { s: Server; resumes?: Resume[] }[]): ServerRes
 export const episodeOf = (r: Resume, t: Translate) =>
   r.series && r.episode !== undefined ? episodeText({ season: r.season, episode: r.episode }, t) : undefined
 
-// A 继续观看 as the player's window names it: the movie, or the series and the episode.
-export const resumeTitle = (r: Resume, t: Translate) => {
-  const episode = episodeOf(r, t)
-  return episode ? `${r.series} · ${episode}` : r.name
-}
-
 // What's left of a 继续观看, in words (还剩 1 小时 5 分钟); its length unknown, where it was left off (看到 20:43).
 export const leftOf = ({ position, runtime }: Pick<Resume, 'position' | 'runtime'>, t: Translate) => {
   if (!runtime) return t(`看到 ${clockOf(position)}`, `At ${clockOf(position)}`)
@@ -645,3 +639,9 @@ export function useResume(servers: Server[]) {
   })
   return { resumes: resumesOf(lists), down: lists.filter((l) => l.error), retry }
 }
+
+// The 继续观看 on one server, the last played first: where its 作品 pick up, as 播放 there does (`Emby::play`, from the
+// same place the server keeps); none without a server.
+// ponytail: the server's latest RESUME (24) only, so one started before those plays on from its place with no
+// 继续播放 shown; ask the item's own user data if that turns up.
+export const useResumeOn = (s?: Server) => useResume(s ? [s] : []).resumes.map(({ r }) => r)

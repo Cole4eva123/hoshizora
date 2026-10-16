@@ -102,7 +102,7 @@ enum Failed {
 
 // Plays a version of a 作品 (a movie, an episode) in the player's window, from where the user left off, on the 音轨 and
 // 字幕 picked (by their index in the file; none to leave them to the file); the page names it for the window's title.
-// With no version (a 继续观看's), its first that plays. The server is told how playing goes (player/report.rs).
+// The server is told how playing goes (player/report.rs).
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 async fn player_open(
@@ -111,13 +111,13 @@ async fn player_open(
     server: String,
     user: String,
     item: String,
-    version: Option<String>,
+    version: String,
     title: String,
     audio: Option<i64>,
     subtitle: Option<i64>,
 ) -> Result<(), Failed> {
-    let play = emby.play(&server, &user, &item, version.as_deref()).await.map_err(Failed::Emby)?;
-    let origin = Origin { server, user, item, version: play.version.clone() };
+    let play = emby.play(&server, &user, &item, &version).await.map_err(Failed::Emby)?;
+    let origin = Origin { server, user, item, version };
     player::open(&app, play, title, Picks { audio, subtitle }, origin).await.map_err(|e| {
         eprintln!("player: {e}");
         Failed::Player { kind: "player" }

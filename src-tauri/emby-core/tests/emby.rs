@@ -891,19 +891,16 @@ async fn a_version_plays_from_its_own_link_where_the_user_left_off() {
     emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
     // the link alone, which carries no token, without the fragment
     let url = "https://drive.example/d/%E6%98%A5%E6%B1%9F.1080p.BluRay.mkv?sign=secret".to_owned();
-    let played = Play { url, start: 1234.5, version: "v2".into(), beside: vec![] };
-    assert_eq!(emby.play("srv", "u1", "m2", Some("v2")).await.as_ref(), Ok(&played));
-    // none named, from the 继续观看: its first that plays so
-    assert_eq!(emby.play("srv", "u1", "m2", None).await, Ok(played));
-    // none named, the one with a link before one on the server's disk; named, the one named, through the server
-    assert_eq!(emby.play("srv", "u1", "m3", None).await.map(|p| p.version), Ok("v2".into()));
-    assert_eq!(emby.play("srv", "u1", "m3", Some("v1")).await.map(|p| p.version), Ok("v1".into()));
+    assert_eq!(emby.play("srv", "u1", "m2", "v2").await, Ok(Play { url: url.clone(), start: 1234.5, beside: vec![] }));
+    // the one named, of two: the one on the server's disk through the server, the other from its link
+    assert!(emby.play("srv", "u1", "m3", "v1").await.unwrap().url.starts_with("http://127.0.0.1:"));
+    assert_eq!(emby.play("srv", "u1", "m3", "v2").await.map(|p| p.url), Ok(url));
     // one the server would have to convert
-    assert_eq!(emby.play("srv", "u1", "m4", None).await, Err(Error::Unplayable));
+    assert_eq!(emby.play("srv", "u1", "m4", "v4").await, Err(Error::Unplayable));
     // a version the 作品 no longer has, and an id that isn't one Emby gives, as if the server had neither
-    assert_eq!(emby.play("srv", "u1", "m2", Some("v9")).await, Err(Error::Server { status: 404 }));
-    assert_eq!(emby.play("srv", "u1", "../m2", Some("v2")).await, Err(Error::Server { status: 404 }));
-    assert_eq!(emby.play("gone", "u1", "m2", Some("v2")).await, Err(Error::NoServer));
+    assert_eq!(emby.play("srv", "u1", "m2", "v9").await, Err(Error::Server { status: 404 }));
+    assert_eq!(emby.play("srv", "u1", "../m2", "v2").await, Err(Error::Server { status: 404 }));
+    assert_eq!(emby.play("gone", "u1", "m2", "v2").await, Err(Error::NoServer));
 }
 
 #[tokio::test]
@@ -911,7 +908,7 @@ async fn a_version_only_the_server_can_send_plays_through_a_link_on_this_mac_tha
     let (at, seen) = emby().await;
     let emby = Emby::open(file("relay"));
     emby.add(&form(&at, "bin", "pw", "")).await.unwrap();
-    let played = emby.play("srv", "u1", "m1", Some("v1")).await.unwrap();
+    let played = emby.play("srv", "u1", "m1", "v1").await.unwrap();
     assert!(played.url.starts_with("http://127.0.0.1:") && !played.url.contains("token"));
     // and the 字幕 of text beside its file, read from the server itself, which asks no token for them
     let beside: Vec<_> = played.beside.iter().map(|b| (b.track.index, b.link.as_str())).collect();
@@ -927,10 +924,10 @@ async fn a_version_only_the_server_can_send_plays_through_a_link_on_this_mac_tha
     assert_eq!((answer.status().as_u16(), answer.headers()["Location"].to_str().unwrap()), (307, "https://drive.example/d/X.mkv?sign=secret"));
     // the last few given out: one asked for meanwhile doesn't end the one playing, but the fourth after it does
     for _ in 0..3 {
-        emby.play("srv", "u1", "m1", None).await.unwrap();
+        emby.play("srv", "u1", "m1", "v1").await.unwrap();
     }
     assert_eq!(mpv.get(&played.url).send().await.unwrap().status().as_u16(), 307);
-    let last = emby.play("srv", "u1", "m1", None).await.unwrap();
+    let last = emby.play("srv", "u1", "m1", "v1").await.unwrap();
     assert_eq!(mpv.get(&played.url).send().await.unwrap().status().as_u16(), 404);
     assert_eq!(mpv.get(&last.url).send().await.unwrap().status().as_u16(), 307);
 }

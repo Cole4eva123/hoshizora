@@ -9,6 +9,7 @@ import { PosterWall, TitleInfo } from '@/components/PosterWall'
 import { type Picked, Sources, Tracks } from '@/components/Sources'
 import {
   type EpisodeSource,
+  type Resume,
   type Server,
   canConnect,
   pickOf,
@@ -16,6 +17,7 @@ import {
   useEpisodes,
   useSources,
   useLineupAfter,
+  useResumeOn,
   useServers,
 } from '@/lib/emby'
 import { useT } from '@/lib/i18n'
@@ -228,7 +230,9 @@ function Neighbor({ to, from, side }: { to: Lineup[number]; from: From; side: 'p
 }
 
 // A series' 选集. With a 片源 picked (`on`), each episode says whether it's there, and one that is can be picked, its
-// 播放, 版本, 音频 and 字幕 showing under the row; pointing at it has the server read its file ahead.
+// 播放, 版本, 音频 and 字幕 showing under the row; pointing at it has the server read its file ahead. A 片源 where the
+// user is partway through an episode (its server's 继续观看, the last played) opens on it, picked and scrolled to, each
+// time the 片源 is shown, unless the user has picked a season or an episode while it's shown (the list may answer after).
 function Episodes({ tv, on }: { tv: Details; on?: { s: Server; series: string } }) {
   const t = useT()
   const seasons = tv.seasons!
@@ -240,6 +244,30 @@ function Episodes({ tv, on }: { tv: Details; on?: { s: Server; series: string } 
   // alike), shown while the season shown has it
   const [watching, setWatching] = useState<string>()
   const at = (item: string) => `${on?.s.id}/${on?.s.userId}/${item}`
+  // the episode partway through on the 片源, in a season TMDB has (the server's numbers taken to be TMDB's, as its
+  // episodes are matched by)
+  const left = useResumeOn(on?.s).find(
+    (r) => r.seriesItem === on?.series && seasons.some((s) => s.season_number === r.season),
+  )
+  // the 片源 shown that has opened on its 继续观看 (`at`) and the episode it opened on, which the row stays scrolled to as
+  // the list is asked again; or where the user has picked while it's shown. Forgotten as another is shown.
+  const [opened, setOpened] = useState<{ at?: string; episode?: Resume }>({})
+  const shown = on && at(on.series)
+  const pickSeason = (n: number) => {
+    setSeason(n)
+    setOpened({ ...opened, at: shown })
+  }
+  const pickEpisode = (id?: string) => {
+    setWatching(id)
+    setOpened({ ...opened, at: shown })
+  }
+  if (opened.at !== shown && (left || opened.at)) {
+    setOpened({ at: left && shown, episode: left })
+    if (left) {
+      setSeason(left.season!)
+      setWatching(at(left.item))
+    }
+  }
   const there = useEpisodes(on?.s, on?.series, season)
   const picked = there.episodes?.find((x) => at(x.item) === watching)
   // by its season too where there are several, as the next episode's line says it
@@ -250,7 +278,10 @@ function Episodes({ tv, on }: { tv: Details; on?: { s: Server; series: string } 
   const latest = seasons.slice(-5)
   const older = seasons.slice(0, -5)
   const { episodes, error } = useSeason(tv.id, season)
-  // an airing season opens at its latest aired episode, with the next one beside it; a finished one at the start
+  // the row opens at the episode partway through, in its season; else an airing season at its latest aired episode,
+  // with the next one beside it, and a finished one at the start
+  const r = opened.episode
+  const resumed = episodes?.findIndex((e) => e.season_number === r?.season && e.episode_number === r.episode) ?? -1
   const next = episodes?.findIndex((e) => !e.air_date || daysUntil(e.air_date) >= 0) ?? -1
 
   return (
@@ -267,7 +298,7 @@ function Episodes({ tv, on }: { tv: Details; on?: { s: Server; series: string } 
                 legend={t('选择一季', 'Season')}
                 options={latest.map((s) => ({ key: s.season_number, label: s.name }))}
                 value={season}
-                onChange={setSeason}
+                onChange={pickSeason}
                 className="mt-5"
               >
                 {older.length > 0 && (
@@ -276,7 +307,7 @@ function Episodes({ tv, on }: { tv: Details; on?: { s: Server; series: string } 
                     placeholder={t('更多', 'More')}
                     options={older.map((s) => ({ key: s.season_number, label: s.name }))}
                     value={season}
-                    onChange={setSeason}
+                    onChange={pickSeason}
                   />
                 )}
               </Choices>
@@ -291,7 +322,7 @@ function Episodes({ tv, on }: { tv: Details; on?: { s: Server; series: string } 
           </>
         }
         track={episodeTrack}
-        start={episodes && Math.max(0, next - 1)}
+        start={episodes && (resumed >= 0 ? resumed : Math.max(0, next - 1))}
       >
         {episodes
           ? episodes.map((e) => {
@@ -303,7 +334,7 @@ function Episodes({ tv, on }: { tv: Details; on?: { s: Server; series: string } 
                 <EpisodeCard
                   key={e.id}
                   e={e}
-                  there={on && ep && { s: on.s, ep, name, picked: id === watching, onPick: () => setWatching(id) }}
+                  there={on && ep && { s: on.s, ep, name, picked: id === watching, onPick: () => pickEpisode(id) }}
                   // the 片源's episodes are in, and this one, aired, isn't one of them
                   missing={!!there.episodes && !ep && !!e.air_date && daysUntil(e.air_date) < 0}
                 />
