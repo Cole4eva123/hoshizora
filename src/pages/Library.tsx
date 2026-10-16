@@ -3,6 +3,7 @@ import { Link } from 'react-router'
 import { Plus } from 'lucide-react'
 import { Constellation, ServerMark } from '@/components/Constellation'
 import { EmptyState, Page } from '@/components/Page'
+import { Failed, Frame, Row, StillSkeletons, coverTrack } from '@/components/PosterRow'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -21,20 +22,19 @@ import {
   removeServer,
   statusText,
   useAdding,
+  useLibraries,
   useServers,
   useStatus,
 } from '@/lib/emby'
 import { useT } from '@/lib/i18n'
-import { cn, confirmFor, dialogBox, serverHref, sliders, toneOf } from '@/lib/utils'
+import { cn, confirmFor, dialogBox, mostCols, serverHref, sliders, toneOf } from '@/lib/utils'
 
-// The servers and the tile that adds one, as many to a row as fit: two on a phone.
-const tile = 'min-h-44 rounded-2xl p-5'
-
+// Each kept server as a row of its 媒体库 covers (picked from a prototype: git stash "prototype: 媒体库页", A of three),
+// a server being added under them, then the line that adds one.
 export default function Library() {
   const t = useT()
   const servers = useServers()
   const adding = useAdding()
-  const empty = !servers.length && !adding.length
   const dialog = useRef<HTMLDialogElement>(null)
   // the web version has no Rust side to reach a server through
   if (!canConnect)
@@ -50,7 +50,7 @@ export default function Library() {
     )
   return (
     <Page title={t('媒体库', 'Library')}>
-      {empty && (
+      {!servers.length && !adding.length && (
         <EmptyState title={t('还没有连接 Emby 服务器', 'No Emby server connected')}>
           {t(
             '服务器和它们的媒体库会列在这里。添加地址并登录后，首页和搜索都会用到里面的作品。',
@@ -58,56 +58,134 @@ export default function Library() {
           )}
         </EmptyState>
       )}
-      <ul
-        className={cn(
-          'grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-4 sm:grid-cols-[repeat(auto-fill,minmax(13rem,1fr))]',
-          empty && 'mt-8',
-        )}
-      >
+      {/* the rows run to the screen's edges, past the page's gutter */}
+      <ul className="-mx-(--gutter) space-y-12 md:space-y-14">
         {servers.map((s) => (
-          <ServerTile key={`${s.id}/${s.userId}`} server={s} />
+          <li key={`${s.id}/${s.userId}`}>
+            <KeptServer server={s} />
+          </li>
         ))}
         {adding.map((a) => (
-          // one under way can't be stopped or changed
-          <Tile key={a.id} {...a} adding>
-            {a.status !== 'checking' && <Settings adding={a} />}
-          </Tile>
+          // one under way can't be stopped or changed, and a failed one's sliders open what was typed
+          <li key={a.id}>
+            <ServerRow {...a} adding settings={a.status !== 'checking' && <Settings adding={a} />} />
+          </li>
         ))}
-        <li>
-          <button
-            onClick={() => dialog.current?.showModal()}
-            className={cn(
-              tile,
-              'flex size-full flex-col items-center justify-center gap-3 border border-dashed border-star/25 text-sm text-star/70 transition-colors hover:border-star/60 hover:text-star',
-            )}
-          >
-            <Plus className="size-7" strokeWidth={1.5} />
-            {t('添加服务器', 'Add server')}
-          </button>
-        </li>
       </ul>
+      <button
+        onClick={() => dialog.current?.showModal()}
+        className="mt-12 inline-flex cursor-pointer items-center gap-2 rounded-sm text-sm text-star/70 transition-colors hover:text-star"
+      >
+        <Plus className="size-4" strokeWidth={1.5} />
+        {t('添加服务器', 'Add server')}
+      </button>
       <ServerDialog dialog={dialog} />
     </Page>
   )
 }
 
-// A kept server, as it answers now. It opens its 媒体库; the sliders in its corner open its settings.
-function ServerTile({ server }: { server: Server }) {
+// A kept server, as it answers now, heading its 媒体库 covers, each opening the server's page on that one.
+function KeptServer({ server }: { server: Server }) {
+  const t = useT()
   const status = useStatus(server)
+  const { libraries, error, retry } = useLibraries(server, status)
+  const to = serverHref(server)
+  // opened afresh, by its name or a cover: what the server added since is there
+  const open = () => refresh(server)
   return (
-    <Tile
+    <ServerRow
       {...server}
       name={nameOf(server)}
       status={status}
-      to={serverHref(server)}
-      onOpen={() => refresh(server)}
+      to={to}
+      onOpen={open}
+      settings={<Settings server={server} />}
+      // why its 媒体库 couldn't be listed, only while the server answers: else its light says so (a signed-out one's
+      // 重试 couldn't help)
+      more={
+        error && status === 'online' ? (
+          <Failed error={error} retry={retry} className="text-xs" />
+        ) : (
+          libraries?.length === 0 && <span>{t('没有电影或剧集', 'No movies or series')}</span>
+        )
+      }
     >
-      <Settings server={server} />
-    </Tile>
+      {libraries
+        ? libraries.map((l) => (
+            <Link key={l.id} to={`${to}?lib=${encodeURIComponent(l.id)}`} onClick={open} viewTransition className="group snap-start">
+              <Frame src={l.cover} className="aspect-video transition group-hover:outline-star/60 group-active:scale-[.98]" />
+              <p className="mt-2 truncate text-sm transition-colors group-hover:text-star">{l.name}</p>
+            </Link>
+          ))
+        : // not for one known not to answer, whose request is only waiting to fail
+          !error && (status === 'online' || status === 'checking') && <StillSkeletons n={mostCols(coverTrack)} />}
+    </ServerRow>
   )
 }
 
-// The sliders in a tile's top-right corner, and the dialog they open: a kept server's settings, or a failed add's, to
+// A server as a row of 媒体库 covers (`children`; a server being added has none yet), headed by its mark, whose star is
+// its light, and its name, a link to its page once it's kept (`to`, with `onOpen` as it's followed); under them how it
+// answers in words too, for anyone who can't tell red from green and for screen readers (read out as it changes for one
+// being `adding`, as that may fail after the dialog has closed), who's signed in where, its `settings` (the sliders),
+// and `more` after them.
+function ServerRow({
+  name,
+  userName,
+  address,
+  status,
+  adding,
+  to,
+  onOpen,
+  settings,
+  more,
+  children,
+}: Pick<Server, 'name' | 'userName' | 'address'> & {
+  status: Status
+  adding?: boolean
+  to?: string
+  onOpen?: () => void
+  settings: ReactNode
+  more?: ReactNode
+  children?: ReactNode
+}) {
+  const t = useT()
+  return (
+    <Row
+      title={
+        // a long name (a 备注) cut short rather than wrapped
+        <span className="flex min-w-0 items-center gap-2.5">
+          <ServerMark status={status} className="size-[1.6em]" />
+          {to ? (
+            <Link to={to} onClick={onOpen} viewTransition className="truncate transition-colors hover:text-star">
+              {name}
+            </Link>
+          ) : (
+            <span className="truncate">{name}</span>
+          )}
+        </span>
+      }
+      extra={
+        <div className={cn('mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground', toneOf(status))}>
+          {/* one line, the user and address cut short on a phone, so the sliders stay at its end */}
+          <div className="flex max-w-full min-w-0 items-center gap-x-3">
+            <span role={adding ? 'status' : undefined} className="shrink-0 text-tone">
+              {statusText(status, t)}
+            </span>
+            <span className="truncate">{userName}</span>
+            <span className="truncate">{new URL(address).host}</span>
+            {settings}
+          </div>
+          {more}
+        </div>
+      }
+      track={coverTrack}
+    >
+      {children}
+    </Row>
+  )
+}
+
+// The sliders at the end of a server's line, and the dialog they open: a kept server's settings, or a failed add's, to
 // try it again from what was typed.
 function Settings({ server, adding }: { server?: Server; adding?: Adding }) {
   const t = useT()
@@ -117,77 +195,19 @@ function Settings({ server, adding }: { server?: Server; adding?: Adding }) {
       <button
         onClick={() => dialog.current?.showModal()}
         title={server ? t('服务器设置', 'Server settings') : t('修改后重试', 'Edit and try again')}
-        className="absolute top-3 right-3 rounded-md p-2 text-star/60 transition-colors hover:text-star focus-visible:text-star"
+        className="-my-1 shrink-0 cursor-pointer rounded-md p-1 text-star/60 transition-colors hover:text-star focus-visible:text-star"
       >
-        <Constellation lines={sliders} />
+        <Constellation lines={sliders} className="size-4.5" />
       </button>
       <ServerDialog dialog={dialog} server={server} adding={adding} />
     </>
   )
 }
 
-// A server's light is its icon's own star: green when connected, red when not, grey while it's being asked. The word
-// under the name says the same for anyone who can't tell red from green, and for screen readers. An add's tile
-// (`adding`) is read out as it changes, as it may fail after the dialog has closed. A tile with somewhere to go (`to`)
-// is a link all over, but for what's in its corner (`children`), and `onOpen` runs as it's followed.
-function Tile({
-  name,
-  userName,
-  address,
-  status,
-  adding,
-  to,
-  onOpen,
-  children,
-}: {
-  name: string
-  userName: string
-  address: string
-  status: Status
-  adding?: boolean
-  to?: string
-  onOpen?: () => void
-  children?: ReactNode
-}) {
-  const t = useT()
-  return (
-    <li
-      className={cn(
-        tile,
-        'group relative bg-card inset-ring inset-ring-star/15',
-        toneOf(status),
-        // the link's focus, not the settings button's, which shows its own
-        to &&
-          'transition-shadow hover:inset-ring-star/40 has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-2 has-[a:focus-visible]:outline-ring',
-      )}
-    >
-      <ServerMark status={status} className="size-12" />
-      <h2 className="mt-4 truncate font-heading text-lg font-extrabold">
-        {to ? (
-          // its box is the tile's, so the whole tile takes the click; the tile shows the focus
-          <Link to={to} onClick={onOpen} viewTransition className="outline-none after:absolute after:inset-0 after:rounded-2xl">
-            {name}
-          </Link>
-        ) : (
-          name
-        )}
-      </h2>
-      <p role={adding ? 'status' : undefined} className="mt-1 text-sm text-tone">
-        {statusText(status, t)}
-      </p>
-      <p className="mt-1 flex gap-x-2 text-xs text-muted-foreground">
-        <span className="shrink-0">{userName}</span>
-        <span className="truncate">{new URL(address).host}</span>
-      </p>
-      {children}
-    </li>
-  )
-}
-
 // Adding a server, trying a failed add again from what was typed (`adding`), or changing a kept one (`server`): where
 // it is, the user to sign in as (an Emby user may have no password), and a 备注 to call it by if its own name won't
-// do. An add closes at once and goes on in its tile, so only text that isn't an address is caught here; a failed one
-// opens with why it failed. A change waits for its answer, as one that fails changes nothing and has no tile to say
+// do. An add closes at once and goes on under the rows, so only text that isn't an address is caught here; a failed one
+// opens with why it failed. A change waits for its answer, as one that fails changes nothing and has no entry to say
 // why: it says so here, under the field it's about. A kept server is removed here too, on a second press, and a failed
 // add on the first, having no sign-in to lose.
 function ServerDialog({

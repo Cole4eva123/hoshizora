@@ -29,11 +29,12 @@ export function ask(key: string, get: (key: string) => Promise<unknown>) {
   return p
 }
 
-// Forgets the answers to the keys that start with `prefix`, so the next hook to mount asks for them again. Only for
-// keys no mounted hook reads: one would lose its answer on its next render, and not ask again.
-export function forget(prefix: string) {
+// Forgets the answers to the keys that start with `prefix`, but those that start with `keep`, so the next hook to mount
+// asks for them again. Only for keys no mounted hook reads: one would lose its answer on its next render, and not ask
+// again.
+export function forget(prefix: string, keep?: string) {
   for (const key of cache.keys())
-    if (key.startsWith(prefix)) {
+    if (key.startsWith(prefix) && !(keep && key.startsWith(keep))) {
       cache.delete(key)
       answers.delete(key)
     }

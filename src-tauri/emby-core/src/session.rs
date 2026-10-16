@@ -11,7 +11,7 @@ use serde::de::DeserializeOwned;
 use crate::find::{Info, unsent};
 use crate::{APP, Emby, Error, Server, Signed, VERSION, now};
 
-// a sign-in, which the user waits on as a grey tile: time for the server to start a session for this device, and a
+// a sign-in, which the user waits on as a grey light: time for the server to start a session for this device, and a
 // stuck one turns red rather than staying grey
 const SIGN_IN: Duration = Duration::from_secs(10);
 // a sign-out goes on in the background, so nobody waits on it

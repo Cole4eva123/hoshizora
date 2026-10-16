@@ -51,7 +51,7 @@ export function Filled({ line, className }: { line: Star[]; className?: string }
 }
 
 // A 服务器: the `server` constellation, its star the light, in the server's tone; it glows once there's an answer. On
-// its tile on the 媒体库 page, and by its name on its own page. Sized by `className`.
+// its row on the 媒体库 page, and by its name on its own page. Sized by `className`.
 export function ServerMark({ status, className }: { status: Status; className: string }) {
   return (
     // a span, as it also goes in a heading

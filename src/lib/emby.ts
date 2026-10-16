@@ -66,19 +66,23 @@ export const useServers = () => useSyncExternalStore(subscribe, () => servers)
 const which = (s: Pick<Server, 'id' | 'userId'>) => ({ server: s.id, user: s.userId })
 
 // Forgets a server; the Rust side ends its sign-in on the server too. One it couldn't forget (its file couldn't be
-// written) stays in the list.
-export const removeServer = (s: Server) => invoke('emby_remove', which(s)).then(reload, reload)
+// written) stays in the list. What was kept of its answers goes once it's gone from the list (nothing reads them then),
+// so the same server added again asks afresh.
+export const removeServer = (s: Server) =>
+  invoke('emby_remove', which(s))
+    .then(reload, reload)
+    .then(() => servers.some((x) => keyOf(x) === keyOf(s)) || forget(keyOf(s)))
 
 // Changes a kept server as its settings say; the Rust side works out what that takes (Emby::edit). One that fails
-// changes nothing and rejects with why (an EmbyError). What was kept of the server's answers goes, as nothing asks
-// for those under an old address again.
+// changes nothing and rejects with why (an EmbyError). What was kept of the server's answers under an old address (or
+// another server or user) goes once the list has the new one, as nothing asks for those again; under the same, all but
+// its 媒体库, as with `refresh`.
 export const editServer = (s: Server, form: Form) =>
-  invoke('emby_edit', { ...which(s), form }).then(() => {
-    refresh(s)
-    return reload()
-  })
+  invoke('emby_edit', { ...which(s), form })
+    .then(reload)
+    .then(() => (servers.some((x) => keyOf(x) === keyOf(s)) ? refresh(s) : forget(keyOf(s))))
 
-// How a server's tile shows it: `checking` while it's asked (a grey light), `online`, `offline` when nothing Emby
+// How a server's light shows it: `checking` while it's asked (a grey light), `online`, `offline` when nothing Emby
 // answers, `signedOut` when the server turned a kept token down (revoked, or the user is gone), `moved` when its
 // address redirects on its own host, `refused` when it turns the user away (a 403); and for an add that failed,
 // `untrusted` when its https certificate isn't trusted (on adding, or since), `signIn` when the server answered the sign-in but didn't sign
@@ -112,10 +116,10 @@ export const statusText = (status: Status, t: Translate) =>
 // 备注. Its inputs are named as emby-core's Form's fields are, so what's typed goes to the Rust side as it is.
 export type Form = { address: string; username: string; password: string; nickname: string }
 
-// The adds under way, shown at once as tiles of their own: one that signs in turns into its server, one that fails stays
+// The adds under way, shown at once as entries of their own: one that signs in turns into its server, one that fails stays
 // with why until it's tried again or dismissed. Kept in this window only, as a failed add has nothing to keep. What was
 // typed (`form`) goes with it, the password too, so trying again starts from it rather than from nothing; it's dropped
-// with the tile.
+// with the entry.
 export type Adding = Pick<Server, 'name' | 'userName' | 'address'> & {
   id: number
   status: Status
@@ -132,7 +136,7 @@ const setAdding = (next: Adding[]) => {
 export const useAdding = () => useSyncExternalStore(subscribe, () => adding)
 export const dismiss = (a: Adding) => setAdding(adding.filter((x) => x.id !== a.id))
 
-// How a failed add's tile shows why; anything else is `offline`.
+// How a failed add's light shows why; anything else is `offline`.
 const failedAs: Partial<Record<EmbyError['kind'], Status>> = {
   untrusted: 'untrusted',
   signIn: 'signIn',
@@ -147,7 +151,7 @@ export function addServer(form: Form, instead?: Adding) {
   const text = form.address.trim()
   const url = new URL(/^https?:\/\//i.test(text) ? text : `http://${text}`)
   const entry: Adding = {
-    // a try again keeps the failed one's id, so its tile stays, and reads out how this one goes
+    // a try again keeps the failed one's id, so its entry stays, and reads out how this one goes
     id: instead?.id ?? ++adds,
     name: form.nickname.trim() || url.host,
     userName: form.username,
@@ -164,14 +168,14 @@ export function addServer(form: Form, instead?: Adding) {
     .then(listServers)
     .then((next) => {
       // not notified on its own (as reload would): setAdding below notifies once for both, so no frame shows the server
-      // beside its tile
+      // beside its entry
       servers = next
-      // its tile goes, and so do earlier tries at the same host and user that failed, however its address was typed
+      // its entry goes, and so do earlier tries at the same host and user that failed, however its address was typed
       const host = (a: Adding) => new URL(a.address).hostname
       const tried = (a: Adding) => host(a) === host(entry) && a.userName === form.username && a.status !== 'checking'
       setAdding(adding.filter((a) => a.id !== entry.id && !tried(a)))
     })
-    // red rather than grey for good, so the tile can be tried again or removed
+    // red rather than grey for good, so the entry can be tried again or removed
     .catch((e?: EmbyError) => fail((e && failedAs[e.kind]) ?? 'offline', e))
 }
 
@@ -180,7 +184,7 @@ export function addServer(form: Form, instead?: Adding) {
 // a moment, as its first requests can fail before it's really up. Only the latest check's answer counts, as a
 // slow one can land after it. Keyed by the sign-in and the address, so a server signed in again, or moved, starts at
 // `checking` rather than showing the old answer. Until its own first answer, a check starts from the last one for that
-// key, so the server's page opens with the light its tile had.
+// key, so the server's page opens with the light it had on the 媒体库 page.
 const answered = new Map<string, Status>()
 export function useStatus({ id, userId, signedIn, address }: Server) {
   const key = `${id}/${userId}/${signedIn}/${address}`
@@ -337,14 +341,27 @@ export const librarySorts = (
 export type Library = { id: string; name: string; cover?: string }
 
 // Drops what was kept of a server's answers, so its page asks again: entered from the 媒体库 page, it shows what was
-// added or removed meanwhile, while back from a 作品 it's drawn at once from what's kept, where it was scrolled to.
-export const refresh = (s: Server) => forget(keyOf(s))
+// added or removed meanwhile, while back from a 作品 it's drawn at once from what's kept, where it was scrolled to. All
+// but its 媒体库, which the 媒体库 page reads still (forget's rule).
+// ponytail: so a 媒体库 added, removed or barred to the user on the server (signed in again or not) shows from the
+// next launch (a removed one's cover opens a page that can't list it); forget them as that page closes if that turns up.
+export const refresh = (s: Server) => forget(keyOf(s), viewsKey(s))
 
-export function useLibraries(s: Server) {
+// A server's 媒体库, as it answers now (`status`, useStatus'): asked again, once, when it answers after it didn't (its
+// light turning green: the network back, or signed in again in its settings), as a failure is kept till a retry; a
+// request still on its way then, failing after, too. Once, so one failing while the server answers isn't asked forever.
+export function useLibraries(s: Server, status: Status) {
   const t = useT()
-  const { data, failed, retry } = useAnswers<Library[]>([`${keyOf(s)}views`], askViews)
+  const { data, failed, retry } = useAnswers<Library[]>([viewsKey(s)], askViews)
+  const [doubted, setDoubted] = useState(status !== 'online')
+  if (status !== 'online' && !doubted) setDoubted(true)
+  if (status === 'online' && doubted && failed) {
+    setDoubted(false)
+    retry()
+  }
   return { libraries: data[0], error: failed && errorText(failed.error, t), retry }
 }
+const viewsKey = (s: Server) => `${keyOf(s)}views`
 
 // A 作品 as a server keeps it: its name and poster there, and the TMDB entry it is, for its page, when the server
 // knows it.

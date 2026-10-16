@@ -93,6 +93,9 @@ const gap = '[--gap:0.75rem] sm:[--gap:1rem]'
 const posterCols = '[--cols:3] sm:[--cols:4] lg:[--cols:5] xl:[--cols:6]'
 const widest = mostCols(posterCols)
 
+// A row of 媒体库 covers (the 媒体库 page's, a 服务器's): the next one peeking in on a phone; then three to five to a row.
+export const coverTrack = 'auto-cols-[42%] sm:auto-cols-(--span) sm:[--cols:3] lg:[--cols:4] xl:[--cols:5]'
+
 // A grid of posters, as many to a line as the home rows show on a screen.
 export const posterGrid = `grid grid-cols-[repeat(var(--cols),minmax(0,1fr))] gap-x-(--gap) gap-y-6 sm:gap-y-8 ${gap} ${posterCols}`
 
@@ -112,7 +115,8 @@ export const StillSkeletons = ({ n }: { n: number }) =>
 
 // A titled, horizontally scrolling row. `track` sets how wide its items are: a width of their own, or
 // `auto-cols-(--span)`, `--cols` of them to the row's width less the gaps between, where it sets `--cols` too.
-// `extra` sits under the title.
+// `extra` sits under the title. With no items (none yet or none at all, or they couldn't be had) it's the title alone,
+// no paging buttons and its track hidden rather than taken away, as its ref and observers hold on to it.
 export function Row({
   title,
   extra,
@@ -124,12 +128,13 @@ export function Row({
   extra?: ReactNode
   track: string
   start?: number
-  children: ReactNode
+  children?: ReactNode
 }) {
   const t = useT()
   const ref = useRef<HTMLDivElement>(null)
   // the items' keys: a new list, like another season's episodes, has other keys
   const items = Children.map(children, (c) => (isValidElement(c) ? c.key : null))?.join(' ')
+  const none = !Children.toArray(children).length
   // Whether the row is scrolled to its start and to its end, where the paging buttons have nowhere to go. Booleans, so
   // the scroll events that change neither don't render the row again.
   const [atStart, setAtStart] = useState(true)
@@ -176,14 +181,16 @@ export function Row({
           {extra}
         </div>
         {/* aria-disabled, not disabled, which would drop keyboard focus at the row's end; a click there scrolls nowhere */}
-        <div className="hidden shrink-0 gap-1 pointer-fine:flex *:aria-disabled:pointer-events-none *:aria-disabled:opacity-50">
-          <Button variant="ghost" size="icon" aria-label={t('上一页', 'Previous')} aria-disabled={atStart} onClick={() => page(-1)}>
-            <ChevronLeft />
-          </Button>
-          <Button variant="ghost" size="icon" aria-label={t('下一页', 'Next')} aria-disabled={atEnd} onClick={() => page(1)}>
-            <ChevronRight />
-          </Button>
-        </div>
+        {!none && (
+          <div className="hidden shrink-0 gap-1 pointer-fine:flex *:aria-disabled:pointer-events-none *:aria-disabled:opacity-50">
+            <Button variant="ghost" size="icon" aria-label={t('上一页', 'Previous')} aria-disabled={atStart} onClick={() => page(-1)}>
+              <ChevronLeft />
+            </Button>
+            <Button variant="ghost" size="icon" aria-label={t('下一页', 'Next')} aria-disabled={atEnd} onClick={() => page(1)}>
+              <ChevronRight />
+            </Button>
+          </div>
+        )}
       </div>
       <div
         ref={ref}
@@ -193,6 +200,8 @@ export function Row({
           gap,
           '[--span:calc((100%-(var(--cols)-1)*var(--gap))/var(--cols))]',
           track,
+          // last, as cn keeps the last of two displays
+          none && 'hidden',
         )}
       >
         {children}

@@ -85,7 +85,7 @@ export const dialogBox =
 // The logo's play triangle, three stars: the 播放 button on a 作品's 画报墙.
 export const play: Star[][] = [[[7, 4], [20, 12], [7, 20], [7, 4]]]
 
-// Two sliders, bigger stars for their knobs: the corner menu's 设置, and a 服务器's settings on its tile.
+// Two sliders, bigger stars for their knobs: the corner menu's 设置, and a 服务器's settings on the 媒体库 page.
 export const sliders: Star[][] = [
   [[3, 8], [15, 8, 2.6], [21, 8]],
   [[3, 16], [9, 16, 2.6], [21, 16]],

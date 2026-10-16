@@ -4,7 +4,7 @@ import { Choices } from '@/components/Choices'
 import { ServerMark } from '@/components/Constellation'
 import { ContinueWatching } from '@/components/ContinueWatching'
 import { EmptyState, Page } from '@/components/Page'
-import { Failed, Frame, PagedGrid, Poster, Row, StillSkeletons } from '@/components/PosterRow'
+import { Failed, Frame, PagedGrid, Poster, Row, StillSkeletons, coverTrack } from '@/components/PosterRow'
 import {
   type Library,
   type Server,
@@ -23,9 +23,6 @@ import { choice, cn, libraryHref, mostCols, usePages } from '@/lib/utils'
 // 11,392 in either language, whatever the browser's
 const count = (n: number) => n.toLocaleString('en-US')
 
-// a 媒体库's cover, with the next one peeking in on a phone; then three to five to a row
-const coverTrack = 'auto-cols-[42%] sm:auto-cols-(--span) sm:[--cols:3] lg:[--cols:4] xl:[--cols:5]'
-
 // A 服务器 opened from the 媒体库 page, by its id and its user's, as one server can be signed in as two users. One
 // removed meanwhile, or another device's link, goes back to the 媒体库 page.
 export default function ServerPage() {
@@ -41,8 +38,8 @@ export default function ServerPage() {
 function Browse({ server }: { server: Server }) {
   const t = useT()
   const [params, setParams] = useSearchParams()
-  const { libraries, error, retry } = useLibraries(server)
   const status = useStatus(server)
+  const { libraries, error, retry } = useLibraries(server, status)
   const library = libraries?.find((l) => l.id === params.get('lib')) ?? libraries?.[0]
   const sorts = librarySorts(t, params.get('sort'))
   const sort = sorts.find((s) => s.key === params.get('sort')) ?? sorts[0]
@@ -92,7 +89,7 @@ function Browse({ server }: { server: Server }) {
       <div className="-mx-(--gutter)">
         <Row
           // the server's name, small, over its covers, rather than as the page's large title; its mark and light
-          // before it, as on its tile, so the page reads as the tile opened
+          // before it, as on the 媒体库 page, so the page reads as that server's row opened
           title={
             <span className="inline-flex items-center gap-2">
               <ServerMark status={status} className="size-[1.7em]" />
